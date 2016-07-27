@@ -11,7 +11,6 @@
 \alias{log_lik.stanjm}
 \alias{ngrps}
 \alias{ngrps.stanjm}
-\alias{nsubj.stanjm}
 \alias{ranef}
 \alias{ranef.stanjm}
 \alias{residuals.stanjm}
@@ -28,8 +27,6 @@
 \method{fitted}{stanjm}(object, ...)
 
 \method{log_lik}{stanjm}(object, newdata = NULL, ...)
-
-nsubj.stanjm(object, ...)
 
 \method{residuals}{stanjm}(object, ...)
 
@@ -82,7 +79,7 @@ identifying the submodel from each of the coefficient names}
 identifying the submodel from each of the coefficient names}
 }
 \description{
-S3 methods for \link[=stanjm-objects]{stanjm} objects. There are also 
+S3 methods for \link[=stanjm-object]{stanjm} objects. There are also 
 several methods (listed in See Also, below) with their own individual help
 pages.
 }
@@ -91,6 +88,16 @@ Most of these methods are similar to the methods defined for objects
   of class 'lm', 'glm', 'glmer', etc. However there are a few exceptions:
   
 \describe{
+#' \item{\code{coef}}{
+Returns a list equal to the length of the number of submodels. The first
+elements of the list are the coefficients from each of the fitted longitudinal
+submodels and are the same layout as those returned by \code{coef} method of the
+\pkg{lme4} package, that is, the sum of the random and fixed effects coefficients 
+for each explanatory variable for each level of each grouping factor. The final
+element of the returned list is a vector of fixed effect coefficients from the
+event submodel. 
+}
+
 \item{\code{confint}}{
 For models fit using optimization, confidence intervals are returned via a
 call to \code{\link[stats]{confint.default}}. If \code{algorithm} is
