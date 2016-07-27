@@ -1,0 +1,49 @@
+Package: rstanjm
+Type: Package
+Title: Bayesian joint longitudinal and time-to-event models via Stan
+Version: 0.0.0-1
+Date: 2016-06-28
+Authors@R: c(person("Sam", "Brilleman", email = "sam.brilleman@monash.edu", 
+                    role = c("cre", "aut")),
+             person("Jonah", "Gabry", email = "jsg2201@columbia.edu", 
+			        role = "aut"),
+             person("Ben", "Goodrich", email = "benjamin.goodrich@columbia.edu", 
+                    role = "aut"),
+			 person("Trustees of", "Columbia University", role = "cph"))
+Description: Estimates pre-compiled regression models using the 'rstan' package, which provides
+    the R interface to the Stan C++ library for Bayesian estimation. Users specify models via the
+    customary R syntax with a formula and data.frame plus some additional arguments for priors.
+License: GPL (>=3)
+Depends:
+    R (>= 3.0.2),
+    Rcpp (>= 0.11.0),
+    methods
+Imports:
+	rstanarm,
+    data.table,
+    survival,
+    ggplot2 (>= 2.0.0),
+    lme4 (>= 1.1-8),
+    loo (>= 0.1.4),
+    Matrix,
+    nlme (>= 3.1-124),
+    rstan (>= 2.9.0-3),
+    shinystan (>= 2.1.0),
+    stats,
+    utils
+Suggests:
+    gridExtra,
+    HSAUR3,
+    KernSmooth,
+    knitr,
+    MASS,
+    rmarkdown,
+    roxygen2,
+    testthat
+LinkingTo: StanHeaders (>= 2.9.0), rstan (>= 2.9.0-3), BH (>= 1.58.0), Rcpp (>=
+    0.11.0), RcppEigen
+VignetteBuilder: knitr
+LazyData: true
+NeedsCompilation: yes
+RcppModules: stan_fit4jm_mod
+RoxygenNote: 5.0.1
