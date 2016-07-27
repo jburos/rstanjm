@@ -25,7 +25,7 @@ clustering level (e.g. individual-level random effects). \cr
 \cr
 For the time-to-event submodel the only option currently available is a Weibull 
 proportional hazards model. Time-varying covariates are allowed in both the 
-longitudinal and event submodels. Competing risk events, however, are not 
+longitudinal and event submodels. Competing risk events are not 
 currently allowed. The association structure for the joint model 
 can be based on any of the following parameterisations: 
    current expected value in the longitudinal submodel(s);
@@ -48,11 +48,11 @@ Stan Development Team. (2015). \emph{Stan Modeling Language Users Guide and
 Reference Manual.} \url{http://mc-stan.org/documentation/}
 }
 \seealso{
-\code{\link{stanjm-objects}} and \code{\link{stanjm-methods}} 
+\code{\link{stanjm-object}} and \code{\link{stanjm-methods}} 
   for details on the fitted model object returned by the \code{\link{stan_jm}}
   modelling function..
   
   \url{http://mc-stan.org/} for more information on the Stan C++ package used
-  by \pkg{rstanarm} for model fitting.
+  by \pkg{rstanjm} for model fitting.
 }
 

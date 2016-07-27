@@ -166,7 +166,7 @@
 #'         dataLong = pbcLong,
 #'         formulaEvent = Surv(futimeYears, death) ~ sex + trt, 
 #'         dataEvent = pbcSurv,
-#'         assoc_type = assoc(list("etavalue", "etavalue"), shared_b = c(2,3)),
+#'         assoc_type = assoc(list("etavalue", "etavalue")),
 #'         time_var = "year", adapt_delta = 0.75,
 #'         chains = 1, iter = 1000, warmup = 500, refresh = 25)
 #' summary(mv1, digits = 3)              
@@ -180,7 +180,7 @@
 #'         dataLong = pbcLong,
 #'         formulaEvent = Surv(futimeYears, death) ~ sex + trt, 
 #'         dataEvent = pbcSurv,
-#'         assoc_type = assoc(list("etavalue", "etavalue"), shared_b = c(2,3)),
+#'         assoc_type = assoc(list("etavalue", "etavalue")),
 #'         time_var = "year",
 #'         chains = 3, iter = 1000, warmup = 500, refresh = 25,
 #'         cores = parallel::detectCores())
