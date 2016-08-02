@@ -1,3 +1,16 @@
+# R and rstanjm files
+exec/*.rda
+.Rproj.user
+.Rhistory
+src/
+!src/Makevars
+man/*.Rd
+!man/rstanjm-internal.Rd
+vignettes/*.R
+!vignettes/*.Rmd
+vignettes/*.html
+vignettes/*_files
+
 # Windows image file caches
 Thumbs.db
 ehthumbs.db
