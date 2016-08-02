@@ -62,7 +62,6 @@ print.stanjm <- function(x, digits = 1, ...) {
   print(x$call) 
   
   M <- x$n_markers
-  famname <- sapply(1:M, function(m) x$family[[m]]$family) 
   link    <- sapply(1:M, function(m) x$family[[m]]$link)
 
   mat <- as.matrix(x$stanfit)
@@ -71,35 +70,44 @@ print.stanjm <- function(x, digits = 1, ...) {
   # Estimates table for longitudinal submodel(s)
   for (m in 1:M) {
     cat(paste0("\nLongitudinal submodel", if (M > 1) paste0(" ", m), ":\n"))
-    coef_mat <- mat[, c(nms$y[[m]]), drop = FALSE]
+    coef_mat <- mat[, c(nms$y[[m]], nms$y_extra[[m]]), drop = FALSE]
     
     # Calculate median and MAD
     estimates <- rstanarm:::.median_and_madsd(coef_mat)
     
     # Add column with eform
-    if (link %in% c("log", "logit")) 
+    if (link[m] %in% c("log", "logit")) 
       estimates <- cbind(estimates, 
-                         "exp(Median)" = exp(estimates["Median"]))
+        "exp(Median)" = c(exp(estimates[nms$y_extra[[m]], "Median"]), 
+                          rep(NA, length(nms$y_extra[[m]]))))
     
     # Print estimates
     rownames(estimates) <- 
-      gsub(paste0("^Long\\s", m, "\\|"), "", rownames(estimates))     
+      gsub(paste0("^Long", m, "\\|"), "", rownames(estimates))     
     rstanarm:::.printfr(estimates, digits, ...)
   }
   
   # Estimates table for event submodel
-  cat("\nEvent submodel:\n")   
-  coef_mat <- mat[, c(nms$e, nms$a, nms$e_extra), drop = FALSE]
-  estimates <- rstanarm:::.median_and_madsd(coef_mat)
-  rownames(estimates) <- gsub("^Event\\s\\|", "", rownames(estimates))  
-  rownames(estimates) <- gsub("^Assoc\\s\\|", "", rownames(estimates))   
-  rstanarm:::.printfr(estimates, digits, ...)
+    cat("\nEvent submodel:\n")   
+    coef_mat <- mat[, c(nms$e, nms$a, nms$e_extra), drop = FALSE]
+    
+    # Calculate median and MAD
+    estimates <- rstanarm:::.median_and_madsd(coef_mat)
+  
+    # Add column with eform
+    estimates <- cbind(estimates, 
+      "exp(Median)" = c(exp(estimates[c(nms$e, nms$a), "Median"]), 
+                        rep(NA, length(nms$e_extra))))
+  
+    rownames(estimates) <- gsub("^Event\\|", "", rownames(estimates))  
+    rownames(estimates) <- gsub("^Assoc\\|", "", rownames(estimates))   
+    rstanarm:::.printfr(estimates, digits, ...)
 
-  # Estimates table for random effects
-  cat("\nSubject-specific random effects:\n")   
-#  coef_mat <- mat[, c(), drop = FALSE]
-#  estimates <- rstanarm:::.median_and_madsd(coef_mat) 
-#  rstanarm:::.printfr(estimates, digits, ...)
+  # Estimates table for group-level random effects
+  cat("\nGroup-level random effects:\n") 
+  print(VarCorr(x), digits = digits + 1, ...)
+  cat("Num. levels:", paste(names(ngrps(x)), unname(ngrps(x)), 
+                            collapse = ", "), "\n")  
   
   invisible(x)
 }
@@ -199,9 +207,9 @@ summary.stanjm <- function(object, pars = c("long", "event"), regex_pars = NULL,
     # Reorder rows of output table
     nms_tmp <- rownames(out)  
     nms_tmp_y <- lapply(1:M, function(m) 
-                   grep(paste0("^Long\\s", m, "\\|"), nms_tmp, value = TRUE))
-    nms_tmp_e <- grep("^Event\\s\\|", nms_tmp, value = TRUE)
-    nms_tmp_a <- grep("^Assoc\\s\\|", nms_tmp, value = TRUE)
+                   grep(paste0("^Long", m, "\\|"), nms_tmp, value = TRUE))
+    nms_tmp_e <- grep("^Event\\|", nms_tmp, value = TRUE)
+    nms_tmp_a <- grep("^Assoc\\|", nms_tmp, value = TRUE)
     nms_tmp_b <- rstanarm:::b_names(nms_tmp, value = TRUE)
     out <- out[c(unlist(nms_tmp_y), nms_tmp_e, nms_tmp_a, nms_tmp_b), , drop = FALSE]
     
@@ -219,7 +227,11 @@ summary.stanjm <- function(object, pars = c("long", "event"), regex_pars = NULL,
             algorithm = object$algorithm,
             n_markers = object$n_markers,
             n_subjects = object$n_subjects,
+            n_grps = object$n_grps,
+            n_events = object$n_events,
             n_yobs = object$n_yobs,
+            id_var = object$id_var,
+            time_var = object$time_var,
             family = fam,
             base_haz = object$base_haz,
             posterior_sample_size = rstanarm:::posterior_sample_size(object),
@@ -246,18 +258,18 @@ print.summary.stanjm <- function(x, digits = max(1, attr(x, "print.digits")),
              "variate joint model, consisting of:")) 
   for (m in 1:M) {
     cat(paste0("\n  Family", 
-               if (M > 1) paste0(" (submodel ", m, ")"), 
+               if (M > 1) paste0(" (Long ", m, ")"), 
                ": ", atts$family[m]))
   }
   cat(paste0("\n  Baseline hazard: ", atts$base_haz))  
-  cat("\n  Algorithm:", atts$algorithm)
-  if (!is.null(atts$posterior_sample_size) && atts$algorithm == "sampling")
-    cat("\n  Posterior sample size:", atts$posterior_sample_size)
+  cat(paste0("\n  Clustering variables: ", paste(names(atts$n_grps), sep = ",")))
   if (!is.null(atts$n_subjects))
-    cat("\n  Subjects:", atts$n_subjects)
-  cat("\n  Long. observations: ")
-  cat(atts$n_yobs, sep = ", ")
-
+    cat(paste0("\n  Num. subjects (", atts$id_var, "): ", atts$n_subjects))
+  cat("\n  Num. events:", atts$n_events)
+  cat("\n  Num. long observations: ")
+  cat(paste0(atts$n_yobs, if (M > 1) paste0(" (Long ", 1:M, ")"), sep = ","))
+  cat("\n  Posterior sample size:", atts$posterior_sample_size, "MCMC iterations")
+  
   cat("\n\nTime taken for sampling (mins):\n")
   print(atts$times)
   

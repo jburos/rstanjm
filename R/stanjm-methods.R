@@ -129,7 +129,7 @@ coef.stanjm <- function(object, ...) {
   val <- lapply(val, function(x) structure(x, class = "coef.mer"))
   val <- c(val, fef[length(fef)])         
   val <- list_nms(val, M)
-  structure(val, class = "coef.jm")        
+  val        
 }
 
 #' @rdname stanjm-methods
@@ -293,7 +293,8 @@ update.stanjm <- function(object, formulaLong., formulaEvent., ..., evaluate = T
 vcov.stanjm <- function(object, correlation = FALSE, ...) {
   out <- object$covmat
   if (!correlation) return(out)
-  cov2cor(out)
+  out <- lapply(out, cov2cor)
+  out
 }
 
 
@@ -301,25 +302,34 @@ vcov.stanjm <- function(object, correlation = FALSE, ...) {
   if (!is.jm(object))
     stop("This method is for stanjm objects only.", call. = FALSE)
 }
-.cnms <- function(object) {
+.cnms <- function(object, remove_stub = FALSE) {
   .stanjm_check(object)
-  object$cnms
+  cnms <- object$cnms
+  if (remove_stub) {
+    cnms <- lapply(cnms, rm_stub)
+  }
+  cnms
 }
-.y_cnms <- function(object) {
+.p <- function(object) {
   .stanjm_check(object)
-  object$y_cnms
+  sapply(object$cnms, length)
 }
-.y_flist <- function(object) {
-  .stanjm_check(object)
-  as.list(object$y_flist)
-}
+#.y_cnms <- function(object) {
+#  .stanjm_check(object)
+#  object$y_cnms
+#}
+#.y_flist <- function(object) {
+#  .stanjm_check(object)
+#  as.list(object$y_flist)
+#}
+
 
 #' @rdname stanjm-methods
 #' @export
 #' @export fixef
 #' @importFrom lme4 fixef
-#' @param remove_stub Logical specifying whether or not to remove the string
-#'    identifying the submodel from each of the coefficient names
+#' @param remove_stub Logical specifying whether to remove the string identifying 
+#'    the longitudinal or event submodel from each of the coefficient names
 #' 
 fixef.stanjm <- function(object, remove_stub = TRUE, ...) {
   coefs <- object$coefficients
@@ -353,10 +363,10 @@ ranef.stanjm <- function(object, ...) {
     ans <- object$stan_summary[sel, rstanarm:::select_median(object$algorithm)]
     # avoid returning the extra levels that were included
     ans <- ans[!grepl("_NEW_", names(ans), fixed = TRUE)]
-    fl <- object$glmod_flist[[m]]
+    fl <- as.list(object$y_flist[[m]])
     levs <- lapply(fl, levels)
     asgn <- attr(fl, "assign")
-    cnms <- object$glmod_cnms[[m]]
+    cnms <- object$y_cnms[[m]]
     nc <- vapply(cnms, length, 1L)
     nb <- nc * vapply(levs, length, 1L)[asgn]
     nbseq <- rep.int(seq_along(nb), nb)
@@ -373,7 +383,7 @@ ranef.stanjm <- function(object, ...) {
     structure(ans, class = "ranef.mer")
     ans
   })
-  names(ans_list) <- paste("Long ", 1:M)
+  ans_list <- list_nms(ans_list, M)
   ans_list
 }
 
@@ -386,7 +396,7 @@ ranef.stanjm <- function(object, ...) {
 #'
 sigma.stanjm <- function(object, ...) {
   M <- object$n_markers
-  nms <- grep("^Long\\s[1-9]\\|sigma", rownames(object$stan_summary), value = TRUE)
+  nms <- grep("^Long[1-9]\\|sigma", rownames(object$stan_summary), value = TRUE)
   if (!length(nms)) 
     return(1)
   sigma <- object$stan_summary[nms, rstanarm:::select_median(object$algorithm)]
@@ -406,14 +416,14 @@ sigma.stanjm <- function(object, ...) {
 #' @importFrom lme4 mkVarCorr
 VarCorr.stanjm <- function(x, sigma = 1, ...) {
   cnms <- .cnms(x)
-  means <- rstan:::get_posterior_mean(x$stanfit)
+  means <- rstan::get_posterior_mean(x$stanfit)
   means <- means[, ncol(means)]
   theta <- means[grepl("^theta_L", names(means))]
-  sc <- sigma.stanjm(x)  # !!! scale not used in theta_L for stan_jm?
-  out <- lme4::mkVarCorr(sc = sc, cnms = cnms, 
+  p <- .p(mv1)
+  out <- lme4::mkVarCorr(sc = 1, cnms = cnms, 
                          nc = p,
                          theta = theta, nms = names(cnms))
-  structure(out, useSc = sc != 1, class = "VarCorr.merMod")
+  structure(out, useSc = 0, class = "VarCorr.merMod")
 }
 
 
@@ -425,6 +435,11 @@ VarCorr.stanjm <- function(x, sigma = 1, ...) {
 #' @export
 #' @param object,... See \code{\link[stats]{family}}.
 family.stanjm <- function(object, ...) object$family
+
+
+#----------------------------------------------
+# The following are not yet adapted for stan_jm
+#----------------------------------------------
 
 #' model.frame method for stanjm objects
 #' 

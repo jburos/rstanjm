@@ -35,18 +35,18 @@ is.jm <- function(x) {
 collect_nms <- function(x, M, ...) {
   y <- lapply(1:M, function(m) grep(mod2rx(m), x, ...))
   y_extra <- lapply(1:M, function(m) 
-    c(grep(paste0("^Long\\s", m, "\\|sigma"), x, ...),
-      grep(paste0("^Long\\s", m, "\\|shape"), x, ...),
-      grep(paste0("^Long\\s", m, "\\|lambda"), x, ...),
-      grep(paste0("^Long\\s", m, "\\|overdispersion"), x, ...)))             
+    c(grep(paste0("^Long", m, "\\|sigma"), x, ...),
+      grep(paste0("^Long", m, "\\|shape"), x, ...),
+      grep(paste0("^Long", m, "\\|lambda"), x, ...),
+      grep(paste0("^Long", m, "\\|overdispersion"), x, ...)))             
   y <- lapply(1:M, function(m) setdiff(y[[m]], y_extra[[m]]))
   e <- grep(mod2rx("^Event"), x, ...)     
-  e_extra <- c(grep("^Event\\s\\|weibull shape", x, ...))         
+  e_extra <- c(grep("^Event\\|weibull shape", x, ...))         
   e <- setdiff(e, e_extra)
   a <- grep(mod2rx("^Assoc"), x, ...)
-  b <- b_names(x)
+  b <- b_names(x, ...)
   y_b <- lapply(1:M, function(m) b_names(x, m, ...))
-  alpha <- grep("^.{6}\\|\\(Intercept\\)", x, ...)      
+  alpha <- grep("^.{5}\\|\\(Intercept\\)", x, ...)      
   beta <- setdiff(c(unlist(y), e, a), alpha)  
   rstanarm:::nlist(y, y_extra, y_b, e, e_extra, a, b, alpha, beta) 
 }
@@ -61,7 +61,7 @@ b_names <- function(x, submodel = NULL, ...) {
   if (is.null(submodel)) {
     grep("^b\\[", x, ...)
   } else {
-    grep(paste0("^b\\[Long\\s", submodel, "\\|"), x, ...)
+    grep(paste0("^b\\[Long", submodel, "\\|"), x, ...)
   }
 }
 
@@ -96,19 +96,19 @@ beta_names <- function(x, submodel = NULL, ...) {
 #   a specific longitudinal submodel.
 mod2rx <- function(x) {
   if (x == "^Long") {
-    c("^Long\\s[1-9]\\|")
+    c("^Long[1-9]\\|")
   } else if (x == "^Event") {
-    c("^Event\\s\\|")
+    c("^Event\\|")
   } else if (x == "^Assoc") {
-    c("^Assoc\\s\\|")
+    c("^Assoc\\|")
   } else if (x == "Long") {
-    c("Long\\s[1-9]\\|")
+    c("Long[1-9]\\|")
   } else if (x == "Event") {
-    c("Event\\s\\|")
+    c("Event\\|")
   } else if (x == "Assoc") {
-    c("Assoc\\s\\|")
+    c("Assoc\\|")
   } else {
-    paste0("^Long\\s", x, "\\|")
+    paste0("^Long", x, "\\|")
   }   
 }
 
@@ -118,13 +118,13 @@ mod2rx <- function(x) {
 # @param M The number of longitudinal submodels
 list_nms <- function(object, M) {
   if (!is.list(object)) stop("'object' argument should be a list")
-  nms <- paste0("Long ", 1:M)
+  nms <- paste0("Long", 1:M)
   if (length(object) > M) nms <- c(nms, "Event")
   names(object) <- nms
   object
 }
 
-# Removes the submodel identifying text (e.g. "Long |", "Event |", etc 
+# Removes the submodel identifying text (e.g. "Long1|", "Event|", etc 
 # from variable names
 #
 # @param x Character vector (often rownames(fit$stan_summary)) from which
