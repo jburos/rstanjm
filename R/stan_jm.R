@@ -166,7 +166,7 @@
 #'         dataLong = pbcLong,
 #'         formulaEvent = Surv(futimeYears, death) ~ sex + trt, 
 #'         dataEvent = pbcSurv,
-#'         assoc_type = assoc(list("etavalue", "etavalue")),
+#'         assoc_type = assoc(list("etavalue", "etavalue"), shared_b = c(2,3)),
 #'         time_var = "year", adapt_delta = 0.75,
 #'         chains = 1, iter = 1000, warmup = 500, refresh = 25)
 #' summary(mv1, digits = 3)              
@@ -180,7 +180,7 @@
 #'         dataLong = pbcLong,
 #'         formulaEvent = Surv(futimeYears, death) ~ sex + trt, 
 #'         dataEvent = pbcSurv,
-#'         assoc_type = assoc(list("etavalue", "etavalue")),
+#'         assoc_type = assoc(list("etavalue", "etavalue"), shared_b = c(2,3)),
 #'         time_var = "year",
 #'         chains = 3, iter = 1000, warmup = 500, refresh = 25,
 #'         cores = parallel::detectCores())
@@ -652,7 +652,8 @@ stan_jm <- function(formulaLong, dataLong,
   cnms_nms <- unique(unlist(y_cnms_nms))
   cnms <- lapply(seq_along(cnms_nms), function(i) {
     nm <- cnms_nms[i]
-    unlist(lapply(1:M, function(m) if (nm %in% y_cnms_nms[[m]]) y_cnms[[m]][[nm]]))
+    unlist(lapply(1:M, function(m) 
+      if (nm %in% y_cnms_nms[[m]]) paste0("Long", m, "|", y_cnms[[m]][[nm]])))
   })
   names(cnms) <- cnms_nms
   
@@ -1229,15 +1230,13 @@ stan_jm <- function(formulaLong, dataLong,
   )  
   
   # data for random effects
-  glmod_cnms <- y_cnms
-  glmod_flist <- y_flist
   group <- lapply(1:M, function(x) {
                     pad_reTrms(Z = Z[[x]], 
                                cnms = y_cnms[[x]], 
                                flist = y_flist[[x]])})
   Z     <- lapply(1:M, function(x) group[[x]]$Z)
   y_cnms <- lapply(1:M, function(x) group[[x]]$cnms)
-  y_flist <- lapply(1:M, function(x) group[[x]]$flist)
+  y_flist_padded <- lapply(1:M, function(x) group[[x]]$flist)
   t <- length(cnms_nms) # num. of unique grouping factors
   p <- matrix(0, t, M)
   for (i in 1:t) {
@@ -1249,7 +1248,7 @@ stan_jm <- function(formulaLong, dataLong,
   l <- c()
   for (i in 1:t) {
     for (j in 1:M) {
-      l_tmp[i,j] <- nlevels(y_flist[[j]][[cnms_nms[i]]])
+      l_tmp[i,j] <- nlevels(y_flist_padded[[j]][[cnms_nms[i]]])
     }
     l[i] <- max(l_tmp[i,])
     if (!all(l_tmp[i,] %in% c(0, l[i])))
@@ -1269,12 +1268,12 @@ stan_jm <- function(formulaLong, dataLong,
       nm <- group_nms[[m]][i]
       nms_i <- paste(y_cnms[[m]][[nm]], nm)
       if (length(nms_i) == 1) {
-        b_nms <- c(b_nms, paste0("Long ", m, "|", nms_i, ":", levels(y_flist[[m]][[nm]])))
+        b_nms <- c(b_nms, paste0("Long", m, "|", nms_i, ":", levels(y_flist_padded[[m]][[nm]])))
       } else {
         b_nms <- c(b_nms, c(t(sapply(nms_i, function(x) 
-                          paste0("Long ", m, "|", x, ":", levels(y_flist[[m]][[nm]]))))))
+                          paste0("Long", m, "|", x, ":", levels(y_flist_padded[[m]][[nm]]))))))
       }
-      g_nms <- c(g_nms, paste0("Long ", m, "|", nms_i)) 
+      g_nms <- c(g_nms, paste0("Long", m, "|", nms_i)) 
     }
   }
   standata$t <- t
@@ -1463,32 +1462,32 @@ stan_jm <- function(formulaLong, dataLong,
 
     # Names for coefs from submodel(s)
     int_nms <- unlist(lapply(1:M, function(x) 
-                      if (y_has_intercept[x]) paste0("Long ", x, "|(Intercept)")))
+                      if (y_has_intercept[x]) paste0("Long", x, "|(Intercept)")))
     y_nms   <- unlist(lapply(1:M, function(x) 
-                      paste0("Long ", x, "|", colnames(xtemp[[x]]))))
-    e_nms   <- paste0("Event |", colnames(e_x))    
+                      paste0("Long", x, "|", colnames(xtemp[[x]]))))
+    e_nms   <- paste0("Event|", colnames(e_x))    
     
     # Names for vector of association parameters
     a_nms <- character()  
     for (m in 1:M) {
-      if (has_assoc_ev[m]) a_nms <- c(a_nms, paste0("Assoc |Long ", m,":eta value"))
-      if (has_assoc_es[m]) a_nms <- c(a_nms, paste0("Assoc |Long ", m,":eta slope"))
-      if (has_assoc_cv[m]) a_nms <- c(a_nms, paste0("Assoc |Long ", m,":mu value"))
-      if (has_assoc_cs[m]) a_nms <- c(a_nms, paste0("Assoc |Long ", m,":mu slope"))
+      if (has_assoc_ev[m]) a_nms <- c(a_nms, paste0("Assoc|Long", m,":eta value"))
+      if (has_assoc_es[m]) a_nms <- c(a_nms, paste0("Assoc|Long", m,":eta slope"))
+      if (has_assoc_cv[m]) a_nms <- c(a_nms, paste0("Assoc|Long", m,":mu value"))
+      if (has_assoc_cs[m]) a_nms <- c(a_nms, paste0("Assoc|Long", m,":mu slope"))
     }
     if (length(which_b)) {
       temp_g_nms <- unlist(lapply(1:M, FUN = function(i) {
-                    paste0(paste0("b[Long ", i, ":"), cnms[[i]][[id_var]], "]")}))
-      a_nms <- c(a_nms, paste0("Assoc |", unlist(temp_g_nms)[which_b]))
+                    paste0(paste0("b[Long", i, ":"), cnms[[i]][[id_var]], "]")}))
+      a_nms <- c(a_nms, paste0("Assoc|", unlist(temp_g_nms)[which_b]))
     }
     
     # Names for vector of dispersion parameters
     d_nms <- character()  
     for (m in 1:M) {
-      if (rstanarm:::is.gaussian(famname[[m]]))   d_nms <- c(d_nms, paste0("Long ", m,"|sigma"))
-      else if (rstanarm:::is.gamma(famname[[m]])) d_nms <- c(d_nms, paste0("Long ", m,"|shape"))
-      else if (rstanarm:::is.ig(famname[[m]]))    d_nms <- c(d_nms, paste0("Long ", m,"|lambda"))
-      else if (rstanarm:::is.nb(famname[[m]]))    d_nms <- c(d_nms, paste0("Long ", m,"|overdispersion"))
+      if (rstanarm:::is.gaussian(famname[[m]]))   d_nms <- c(d_nms, paste0("Long", m,"|sigma"))
+      else if (rstanarm:::is.gamma(famname[[m]])) d_nms <- c(d_nms, paste0("Long", m,"|shape"))
+      else if (rstanarm:::is.ig(famname[[m]]))    d_nms <- c(d_nms, paste0("Long", m,"|lambda"))
+      else if (rstanarm:::is.nb(famname[[m]]))    d_nms <- c(d_nms, paste0("Long", m,"|overdispersion"))
     }
                     
     new_names <- c(int_nms,
@@ -1497,7 +1496,7 @@ stan_jm <- function(formulaLong, dataLong,
                    a_nms,                   
                    if (length(group)) c(paste0("b[", b_nms, "]")),
                    d_nms,
-                   if (base_haz_weibull) "Event |weibull shape"    ,               
+                   if (base_haz_weibull) "Event|weibull shape"    ,               
                    #"mean_PPD", 
                    "log-posterior")
     stanfit@sim$fnames_oi <- new_names
@@ -1508,16 +1507,17 @@ stan_jm <- function(formulaLong, dataLong,
   names(p_tmp) <- cnms_nms   # p_tmp is num. of variables within each grouping factor
   
   #colnames(Z) <- b_names(names(stanfit), value = TRUE)
-  fit <- rstanarm:::nlist(stanfit, family, formula = c(formulaLong, formulaEvent), id_var, time_var, offset = NULL,
-                          M, y_N, Npat, n_grps, base_haz, glmod_cnms, glmod_flist, cnms, p_tmp, 
-               x = lapply(1:M, function(i) 
-                 if (getRversion() < "3.2.0") cBind(x[[i]], Z[[i]]) else cbind2(x[[i]], Z[[i]])),
-               xq = lapply(1:M, function(i) 
-                 if (getRversion() < "3.2.0") cBind(xq[[i]], Zq[[i]]) else cbind2(xq[[i]], Zq[[i]])),                 
-               y = y, e_x, eventtime, d,
-               standata, dataLong, dataEvent, call, terms = NULL, model = NULL,                          
-               prior.info = rstanarm:::get_prior_info(call, formals()),
-               na.action, algorithm, init)
+  fit <- rstanarm:::nlist(stanfit, family, formula = c(formulaLong, formulaEvent), 
+                          id_var, time_var, offset = NULL, base_haz, 
+                          M, cnms, y_N, y_cnms, y_flist, Npat, n_grps, 
+                          x = lapply(1:M, function(i) 
+                            if (getRversion() < "3.2.0") cBind(x[[i]], Z[[i]]) else cbind2(x[[i]], Z[[i]])),
+                          xq = lapply(1:M, function(i) 
+                            if (getRversion() < "3.2.0") cBind(xq[[i]], Zq[[i]]) else cbind2(xq[[i]], Zq[[i]])),                 
+                          y = y, e_x, eventtime, d,
+                          standata, dataLong, dataEvent, call, terms = NULL, model = NULL,                          
+                          prior.info = rstanarm:::get_prior_info(call, formals()),
+                          na.action, algorithm, init)
   out <- stanjm(fit)
   
   return(out)

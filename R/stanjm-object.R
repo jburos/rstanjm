@@ -25,9 +25,6 @@ stanjm <- function(object) {
   mer        <- rep(1L, object$M)
   stanfit    <- object$stanfit
   M          <- object$M
-  y_N        <- object$y_N
-  Npat       <- object$Npat
-  n_grps     <- object$n_grps
   family     <- object$family
   y          <- object$y
   x          <- object$x
@@ -36,8 +33,8 @@ stanjm <- function(object) {
   eventtime  <- object$eventtime
   d          <- object$d  
   dimensions <- object$dimensions
-  glmod_cnms <- object$glmod_cnms
-  glmod_flist <- object$glmod_flist
+  y_cnms <- object$y_cnms
+  y_flist <- object$y_flist
   y_nms      <- lapply(y, names)
   if (opt) {
     stop("Optimisation not implemented for stan_jm")
@@ -92,13 +89,15 @@ stanjm <- function(object) {
     df.residual = if (opt) df.residual else NA_integer_, 
     covmat = list_nms(c(y_covmat, list(e_covmat)), M),
     n_markers = M,
-    Npat = Npat,
-    n_grps = n_grps,
-    n_yobs = y_N,
-    glmod_cnms = list_nms(glmod_cnms, M), 
-    glmod_flist = list_nms(glmod_flist, M), 
+    n_subjects = object$Npat,
+    n_grps = object$n_grps,
+    n_events = sum(d > 0),
+    n_yobs = object$y_N,
+    id_var = object$id_var,
+    time_var = object$time_var,
     cnms = object$cnms, 
-    p_tmp = object$p_tmp,
+    y_cnms = list_nms(y_cnms, M), 
+    y_flist = list_nms(y_flist, M), 
     y, 
     x,
     eventtime,
@@ -106,7 +105,7 @@ stanjm <- function(object) {
     model = object$model, 
     dataLong = object$dataLong,
     dataEvent = object$dataEvent,     
-    family, 
+    family = list_nms(family, M), 
     base_haz = object$base_haz,
 #    offset = if (any(object$offset != 0)) object$offset else NULL,
 #    weights = object$weights, 
