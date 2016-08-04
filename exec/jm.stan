@@ -185,6 +185,7 @@ functions {
   *   submodel.
   * @param l An integer array with the number of levels for the factor(s) on 
   *   the RHS of each |
+  * @param M An integer specifying the number of longitudinal submodels
   * @return A vector (containing the group-specific coefficients) whose whose 
   *   elements are ordered in the following nested way: factor level, within
   *   grouping factor, within longitudinal submodel
@@ -539,42 +540,61 @@ functions {
   * structure in the joint model
   *
   * @param b Vector of group-specific coefficients
-  * @param p An integer array with the number variables on the LHS of each |
+  * @param l An integer array with the number of levels for the factor(s) on 
+  *   the RHS of each |
+  * @param p An integer array with the number of variables on the LHS of each |
   * @param Npat Integer specifying number of individuals represented 
   *   in vector b
   * @param quadnodes The number of quadrature nodes
   * @param which_b Integer array specifying the indices
   *   of the random effects to use in the association structure
-  * @param size_which_b Integer specifying total number of 
-  *   random effects which are to be used in the association structure
+  * @param sum_size_which_b Integer specifying total number of 
+  *   random effects that are to be used in the association structure
+  * @param size_which_b Integer array specifying number of random effects from
+  *   each long submodel that are to be used in the association structure
+  * @param t_i Integer specifying the index of the grouping factor that
+  *   corresponds to the patient-level
+  * @param M An integer specifying the number of longitudinal submodels
   * @return A matrix with the desired random effects represented
   *   in columns, and the individuals on the rows; the matrix is
   *   repeated (quadnodes + 1) times (bounded by rows)
-  */
-/*  
-  matrix make_x_assoc_sh(vector b, int[,] p, int Npat, int quadnodes,
-	                  int[] which_b, int size_which_b) {
-    int start_collect;
-    int item_collect;
+  */  
+  matrix make_x_assoc_sh(vector b, int[] l, int[,] p, int Npat, int quadnodes,
+	                  int[] which_b, int sum_size_which_b, int[] size_which_b, 
+                    int t_i, int M) {
+    int prior_shift;    // num. ranefs prior to subject-specific ranefs
     int start_store;
     int end_store;	
-    matrix[Npat,size_which_b] temp;
-    matrix[(Npat*(quadnodes+1)),size_which_b] x_assoc_sh;						  
+    matrix[Npat,sum_size_which_b] temp;
+    matrix[(Npat*(quadnodes+1)),sum_size_which_b] x_assoc_sh;						  
+    if (t_i == 1) prior_shift = 0;
+    else prior_shift = sum(l[1:(t_i-1)]);
     for (i in 1:Npat) {
-      start_collect = (i - 1) * p[1];
-      for (j in 1:size_which_b) {
-      item_collect = start_collect + which_b[j];
-      temp[i,j] = b[item_collect];
-        }
+      int mark;
+      int start_collect;  // index start of subject-specific ranefs for patient
+      mark = 1;
+      start_collect = prior_shift + (i - 1) * sum(p[t_i,]);
+      for (m in 1:M) {
+        if (size_which_b[m] > 0) {
+          int shift;  // num. subject-specific ranefs in prior submodels
+          if (m == 1) shift = 0;
+          else shift = sum(p[t_i, 1:(m-1)]);
+          for (j in 1:size_which_b[m]) {
+            int item_collect;   // subject-specific ranefs to select for current submodel
+            item_collect = start_collect + shift + which_b[j];
+            temp[i,mark] = b[item_collect];
+            mark = mark + 1;
+          }
+        }      
+      }
     }
     for (i in 1:(quadnodes+1)) {
       start_store = (i - 1) * Npat + 1;
-        end_store   = i * Npat;		
+      end_store   = i * Npat;		
       x_assoc_sh[start_store:end_store,] = temp;
     }
   return x_assoc_sh;
   }
-*/  
 }
 data {
   // dimensions
@@ -641,11 +661,13 @@ data {
   int<lower=0,upper=M> sum_has_assoc_es;   // num. long submodels linked via eta slope
   int<lower=0,upper=M> sum_has_assoc_cv;   // num. long submodels linked via mu value
   int<lower=0,upper=M> sum_has_assoc_cs;   // num. long submodels linked via mu slope 
-  int<lower=0> size_which_b;               // num. of shared random effects
-  int<lower=1> which_b[size_which_b];      // which random effects are shared 
+  int<lower=0> sum_size_which_b;           // num. of shared random effects
+  int<lower=0> size_which_b[M];            // num. of shared random effects for each long submodel
+  int<lower=1> which_b[sum_size_which_b];  // which random effects are shared for each long submodel
  
   // data for random effects model
   int<lower=1> t;     	        // num. of grouping factors
+  int<lower=1,upper=t> t_i;     // index of grouping factor corresponding to patient-level
   int<lower=0> p[t,M];          // num. random effects for each grouping factor (t) in each submodel (M)
   int<lower=1> l[t];            // num. levels for each grouping factor
   int<lower=0> q[t,M];          // = l * p --> num. random coefs for each grouping factor in each submodel
@@ -949,7 +971,7 @@ transformed parameters {
 
   // parameters for random effects model
   if (t > 0) {
-    // !!!! Check whether valid to remove dispersion from theta_L function
+    // !!! Check whether valid to remove dispersion from theta_L function
     theta_L = make_theta_L(len_theta_L, p, tau, scale, zeta, rho, z_T);
     b = make_b(z_b, theta_L, p, l);
     if (M > 1) b_by_model = reorder_b(b, p, q, l, M);
@@ -1027,15 +1049,15 @@ transformed parameters {
 	    //e_eta_q = e_eta_q + a_beta[mark] * dydt_q[m];
       }				
     }
-/*	if (size_which_b > 0) {
+	if (sum_size_which_b > 0) {
 	  int mark_end;  // used to define segment of a_beta
-	  matrix[nrow_e_Xq,size_which_b] x_assoc_sh;	  
-	  mark_end = mark + size_which_b;
-      mark = mark + 1;	  
-	  x_assoc_sh = make_x_assoc_sh(b, p, Npat, quadnodes, 
-	                                which_b, size_which_b);
+	  matrix[nrow_e_Xq,sum_size_which_b] x_assoc_sh;	  
+	  mark_end = mark + sum_size_which_b;
+    mark = mark + 1;	  
+	  x_assoc_sh = make_x_assoc_sh(b, l, p, Npat, quadnodes, which_b,  
+	                               sum_size_which_b, size_which_b, t_i, M);
 	  e_eta_q = e_eta_q + x_assoc_sh * a_beta[mark:mark_end];
-    }*/	
+  }	
   }
 
   // Calculate log hazard at event times and unstandardised quadrature points 

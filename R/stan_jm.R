@@ -48,13 +48,24 @@
 #'   in \code{dataLong} which represents time.
 #' @param family The family (and possibly also the link function) for the 
 #'   longitudinal submodel. See \code{\link[lme4]{glmer}} for details.
-#' @param assoc_type A list containing elements which are used to construct 
-#'   the association structure for the joint model. The appropriate
-#'   list can be easily returned via the \code{assoc()} function. See
-#'   \code{\link{assoc}} for details on how to specify the arguments correctly.
-#'   Alternatively, \code{assoc_type} can be set equal to \code{NULL} for 
-#'   fitting a joint model with no association structure (equivalent to 
-#'   fitting separate longitudinal and time-to-event models).
+#' @param assoc A character string or character vector specifying the joint
+#'   model association structure. Possible association structures that can
+#'   be used include: "null"; "etavalue" (the current value of the linear
+#'   predictor for the longitudinal submodel); "etaslope" (the current slope
+#'   of the linear predictor for the longitudinal submodel); "muvalue" (the
+#'   current expected value for the longitudinal submodel); or "shared_b" 
+#'   (to include random effects from the longitudinal submodel directly in
+#'   the linear predictor for the event submodel). By default, "shared_b"
+#'   includes all random effects in the shared random effects association 
+#'   structure, however, a subset of the random effects can be chosen by 
+#'   specifying their indices as a suffix seperated by "-", for example,
+#'   "shared_b-1" or "shared_b-2-3" and so on. For a multivariate joint 
+#'   model, different association structures can be used for each longitudinal
+#'   submodel by specifying a list of character strings or character vectors,
+#'   with each element of the list specifying the desired association structure
+#'   for one of the longitudinal submodels. Setting \code{assoc} equal to 
+#'   \code{NULL} will fit a joint model with no association structure (equivalent  
+#'   to fitting separate longitudinal and time-to-event models).
 #' @param base_haz A character string indicating which baseline hazard to use
 #'   for the time-to-event submodel. Currently the only option allowed is 
 #'   \code{"weibull"} (the default).
@@ -148,7 +159,7 @@
 #'               dataLong = pbcLong,
 #'               formulaEvent = Surv(futimeYears, death) ~ sex + trt, 
 #'               dataEvent = pbcSurv,
-#'               assoc_type = assoc("etavalue", shared_b = 1),
+#'               assoc = c("etavalue", "shared_b"),
 #'               time_var = "year",
 #'               chains = 1, iter = 1000, warmup = 500, refresh = 25)
 #' summary(f2, digits = 3)          
@@ -156,20 +167,26 @@
 #' ######
 #' # Multivariate joint model, with association structure based 
 #' # on the current value of the linear predictor in each longitudinal 
-#' # submodel and shared random intercept and slope from the second 
-#' # longitudinal submodel (which are the second and third random 
-#' # effects in the joint model, and are therefore indexed by the 
-#' # vector c(2,3) in the code below)
+#' # submodel and shared random intercept from the second longitudinal 
+#' # submodel (which is the first random effect in that submodel
+#' # and is therefore indexed the "-1" suffix in the code below)
 #' mv1 <- stan_jm(formulaLong = list(
 #'         logBili ~ year + (1 | id), 
-#'         albumin ~ sex + year + (1 +  year | id)),
+#'         albumin ~ sex + year + (1 + year | id)),
 #'         dataLong = pbcLong,
 #'         formulaEvent = Surv(futimeYears, death) ~ sex + trt, 
 #'         dataEvent = pbcSurv,
-#'         assoc_type = assoc(list("etavalue", "etavalue"), shared_b = c(2,3)),
+#'         assoc = list("etavalue", c("etavalue", "shared_b-1")), 
 #'         time_var = "year", adapt_delta = 0.75,
 #'         chains = 1, iter = 1000, warmup = 500, refresh = 25)
-#' summary(mv1, digits = 3)              
+#' summary(mv1, digits = 3)
+#' 
+#' # To include both the random intercept and random slope in the shared 
+#' # random effects association structure for the second longitudinal 
+#' # submodel, we could specify the following
+#' update(mv1, assoc = list("etavalue", c("etavalue", "shared_b"))
+#' # which would be equivalent to    
+#' update(mv1, assoc = list("etavalue", c("etavalue", "shared_b-1-2"))                         
 #'
 #' ######
 #' # Multivariate joint model, estimated using multiple MCMC chains 
@@ -180,7 +197,7 @@
 #'         dataLong = pbcLong,
 #'         formulaEvent = Surv(futimeYears, death) ~ sex + trt, 
 #'         dataEvent = pbcSurv,
-#'         assoc_type = assoc(list("etavalue", "etavalue"), shared_b = c(2,3)),
+#'         assoc = list("etavalue", c("etavalue", "shared_b-1")),
 #'         time_var = "year",
 #'         chains = 3, iter = 1000, warmup = 500, refresh = 25,
 #'         cores = parallel::detectCores())
@@ -195,7 +212,7 @@
 stan_jm <- function(formulaLong, dataLong, 
                     formulaEvent, dataEvent, 
                     time_var, id_var, family = gaussian,
-                    assoc_type = assoc(),
+                    assoc = "etavalue",
                     base_haz = "weibull", quadnodes = 15, 
                     subsetLong, subsetEvent, 
                     na.action = getOption("na.action", "na.omit"),
@@ -238,7 +255,7 @@ stan_jm <- function(formulaLong, dataLong,
   call <- match.call(expand.dots = TRUE)    
   mc <- match.call(expand.dots = FALSE)
   mc$time_var <- mc$id_var <- 
-    mc$assoc_type <- mc$base_haz <- mc$quadnodes <- 
+    mc$assoc <- mc$base_haz <- mc$quadnodes <- 
     mc$centreLong <- mc$centreEvent <- mc$init <- NULL
   mc$priorLong <- mc$priorLong_intercept <- mc$priorLong_ops <- 
     mc$priorEvent <- mc$priorEvent_intercept <- mc$priorEvent_ops <-
@@ -262,10 +279,10 @@ stan_jm <- function(formulaLong, dataLong,
     M <- length(eval(y_mc$formula))
     if (!all(sapply(eval(y_mc$formula), function(x)
                (is(x, "formula")))))
-      stop("formulaLong should be a formula object or a list of formula ",
+      stop("'formulaLong' should be a formula object or a list of formula ",
            "objects")               
   } else {
-    stop("formulaLong should be a formula object or, for a multivariate ",
+    stop("'formulaLong' should be a formula object or, for a multivariate ",
          "joint model, a list of formula objects with length equal to the ",
          "desired number of longitudinal markers")
   }
@@ -280,7 +297,7 @@ stan_jm <- function(formulaLong, dataLong,
     if (length(eval(y_mc$data)) != M)
       stop("dataLong appears to be a list of the incorrect length")
   } else {
-    stop("dataLong should be a data frame or possibly a list of data ",
+    stop("'dataLong' should be a data frame or possibly a list of data ",
          "frames. The latter is only required when fitting a multivariate ",
          "joint model using different data for each longitudinal submodel.")
   }
@@ -295,7 +312,7 @@ stan_jm <- function(formulaLong, dataLong,
   } else if (is.vector(eval(y_mc$subset))) {
     y_subset_list <- 1L  # FALSE
   } else {
-    stop("subsetLong should be a vector or possibly a list of vectors. ",
+    stop("'subsetLong' should be a vector or possibly a list of vectors. ",
          "The latter is only required if fitting a multivariate joint ",
          "model and using a different subset of data for each ",
          "longitudinal submodel.")
@@ -312,12 +329,28 @@ stan_jm <- function(formulaLong, dataLong,
       stop("family should be a family function or, for a multivariate ",
            "joint model, possibly a list of family functions")
   } else {
-    stop("family should be a family function or, possibly a list of family ",
+    stop("'family' should be a family function or, possibly a list of family ",
          "functions. The latter is only required when fitting a multivariate ",
          "joint model with a different family and/or link function for some ",
          "of the longitudinal submodels.")
   }
-  
+
+  # Is assoc a list? If not, then convert to list
+  if (is.list(assoc)) {  # if list, then check length
+    if (!(length(assoc) %in% c(1,M)))
+      stop("`assoc' should be a list of length 1 or length equal to the ",
+           "number of longitudinal markers")
+  } else if (is.character(assoc)) {  # if not list, then convert to list
+    assoc <- list(assoc)
+  } else {  # else return error
+    stop("'assoc' should be a character string or character vector or, for a ",
+         "multivariate joint model, possibly a list of character strings ",
+         "or character vectors. The latter is only required if using a different ",
+         "association structure for linking each longitudinal submodel to the ",
+         "event outcome.")
+  }
+  if (length(assoc) != M) assoc <- rep(assoc, M)
+
   # Create call for each longitudinal submodel separately
   m_mc <- list()  # list containing matched calls for each marker
   for (m in 1:M) {
@@ -380,6 +413,7 @@ stan_jm <- function(formulaLong, dataLong,
                  family, seq_along(family), SIMPLIFY = TRUE)
   if (any(lapply(link, length) == 0L)) 
     stop("'link' must be one of ", paste(supported_links, collapse = ", "))
+
 
   #####
   #if (binom_y_prop(y, family, weights))
@@ -787,7 +821,46 @@ stan_jm <- function(formulaLong, dataLong,
   if (!identical(id_list, as.factor(sort(unique(flist_event)))))
     stop("The patient IDs (levels of the grouping factor) included ",
          "in the longitudinal and event submodels do not match")
- 
+
+
+  #================================
+  # Data for association structure
+  #================================
+  
+  # Check association structure and return a list which indicator
+  # variables for each possible association type
+  supported_assoc_args <- c("null", "etavalue", "etaslope", "muvalue", "muslope", "shared_b")
+  assoc_main <- lapply(assoc, function(x) gsub("^shared_b.*", "shared_b", x))
+  assoc_main <- lapply(assoc_main, check_assoc_args, supported_assoc_args)
+  
+  # Identify which shared random effects were specified (if any)
+  which_b <- lapply(assoc, function(x) {
+    val <- grep("^shared_b.*", x, value = TRUE)
+    val <- strsplit(val, "-")
+    as.numeric(unlist(val)[-1])                                                                       
+  })
+  
+  # Indicator of each association type, for each longitudinal submodel
+  has_assoc <- sapply(supported_assoc_args, function(x) 
+    sapply(assoc_main, function(y) as.integer(y[[x]])), simplify = FALSE)
+  
+  # Shared random effects
+  if (any(has_assoc$shared_b)) {
+    max_which_b <- sapply(y_cnms, function(x) length(x[[id_var]]))
+    for (m in 1:m) {
+      if ((has_assoc$shared_b[m]) && (!length(which_b[[m]]))) 
+        which_b[[m]] <- seq_len(max_which_b[m])
+      if (any(which_b[[m]] > max_which_b[m]))
+        stop(paste0("The indices specified for the shared random effects (to be used ",
+                    "in forming the association structure for longitudinal submodel ", m, 
+                    ") are greater than the number of subject-specific random effects ",
+                    "present in that submodel."))
+    }
+  }
+  size_which_b <- sapply(which_b, length)
+  a_K <- get_num_assoc_pars(has_assoc, which_b)
+
+
   #====================================================================
   # Longitudinal submodel: calculate design matrices, and id vector 
   # at the event times and quadrature points
@@ -857,47 +930,10 @@ stan_jm <- function(formulaLong, dataLong,
     # and quadrature times 
     if (centreLong) xqtemp[[m]] <- sweep(xqtemp[[m]], 2, xbar[[m]], FUN = "-")
     
-    if (any(c("currentslope", "etaslope") %in% assoc_type)) {
+    if (has_assoc$etaslope[m]) {
       #need to contruct derivative of design matrix
     } else dxdt_quadtime[[m]] <- NULL
    
-  }
-   
-  #================================
-  # Data for association structure
-  #================================
-  
-  if (is.null(assoc_type)) {
-    has_assoc_null <- rep(1L, M)
-    a_K <- sum_has_assoc_ev <- sum_has_assoc_es <-
-      sum_has_assoc_cv <- sum_has_assoc_cs <- 
-      size_which_b <- 0L
-    has_assoc_ev <- has_assoc_es <- has_assoc_cv <- 
-      has_assoc_cs <- rep(0L, M)
-    which_b <- double(0)  
-  } else {
-    has_assoc_null <- assoc_type$has_assoc_null
-    has_assoc_ev <- assoc_type$has_assoc_ev
-    has_assoc_es <- assoc_type$has_assoc_es
-    has_assoc_cv <- assoc_type$has_assoc_cv
-    has_assoc_cs <- assoc_type$has_assoc_cs
-    which_b      <- assoc_type$which_b
-    size_which_b <- assoc_type$size_which_b    
-    check <- sapply(assoc_type[1:5], function(x) (length(x) != M))
-    if (any(check))
-      stop("The association type returned by the assoc_type argument ",
-           "doesn't appear to be the correct length for the number of ",
-           "longitudinal submodels. Check help(assoc) for details on how ",
-           "to specify the assoc_type argument correctly.")
-    if ((length(which_b)) && (max(which_b) > length(ref_nms)))
-      stop("The association structure specified includes shared random ",
-           "effects, but the indices for those shared random effects are ",
-           "greater than the number of random effects included in the model")           
-    a_K <- sum(unlist(assoc_type[c(2:5,7)]))
-    sum_has_assoc_ev <- sum(has_assoc_ev)
-    sum_has_assoc_es <- sum(has_assoc_es)
-    sum_has_assoc_cv <- sum(has_assoc_cv)
-    sum_has_assoc_cs <- sum(has_assoc_cs)
   }
   
    
@@ -1189,16 +1225,17 @@ stan_jm <- function(formulaLong, dataLong,
     
     # data for association structure
     assoc = as.integer(a_K > 0L),
-    has_assoc_ev = as.array(as.integer(has_assoc_ev)),
-    has_assoc_es = as.array(as.integer(has_assoc_es)),
-    has_assoc_cv = as.array(as.integer(has_assoc_cv)),
-    has_assoc_cs = as.array(as.integer(has_assoc_cs)),
-    sum_has_assoc_ev = as.integer(sum(has_assoc_ev)),
-    sum_has_assoc_es = as.integer(sum(has_assoc_es)),
-    sum_has_assoc_cv = as.integer(sum(has_assoc_cv)),
-    sum_has_assoc_cs = as.integer(sum(has_assoc_cs)),
-    which_b = as.array(which_b),
-    size_which_b = as.integer(size_which_b),
+    has_assoc_ev = as.array(as.integer(has_assoc$etavalue)),
+    has_assoc_es = as.array(as.integer(has_assoc$etaslope)),
+    has_assoc_cv = as.array(as.integer(has_assoc$muvalue)),
+    has_assoc_cs = as.array(as.integer(has_assoc$muslope)),
+    sum_has_assoc_ev = as.integer(sum(has_assoc$etavalue)),
+    sum_has_assoc_es = as.integer(sum(has_assoc$etaslope)),
+    sum_has_assoc_cv = as.integer(sum(has_assoc$muvalue)),
+    sum_has_assoc_cs = as.integer(sum(has_assoc$muslope)),
+    sum_size_which_b = as.integer(sum(size_which_b)),
+    size_which_b = as.array(size_which_b),
+    which_b = as.array(unlist(which_b)),
     
     # priors
     priorLong_dist = priorLong_dist, 
@@ -1238,6 +1275,7 @@ stan_jm <- function(formulaLong, dataLong,
   y_cnms <- lapply(1:M, function(x) group[[x]]$cnms)
   y_flist_padded <- lapply(1:M, function(x) group[[x]]$flist)
   t <- length(cnms_nms) # num. of unique grouping factors
+  t_i <- which(cnms_nms == id_var) # index of patient-level grouping factor
   p <- matrix(0, t, M)
   for (i in 1:t) {
     for (j in 1:M) {
@@ -1277,6 +1315,7 @@ stan_jm <- function(formulaLong, dataLong,
     }
   }
   standata$t <- t
+  standata$t_i <- as.integer(t_i)
   standata$p <- as.array(p)
   standata$l <- as.array(l)
   standata$q <- as.array(q)
@@ -1470,15 +1509,16 @@ stan_jm <- function(formulaLong, dataLong,
     # Names for vector of association parameters
     a_nms <- character()  
     for (m in 1:M) {
-      if (has_assoc_ev[m]) a_nms <- c(a_nms, paste0("Assoc|Long", m,":eta value"))
-      if (has_assoc_es[m]) a_nms <- c(a_nms, paste0("Assoc|Long", m,":eta slope"))
-      if (has_assoc_cv[m]) a_nms <- c(a_nms, paste0("Assoc|Long", m,":mu value"))
-      if (has_assoc_cs[m]) a_nms <- c(a_nms, paste0("Assoc|Long", m,":mu slope"))
+      if (has_assoc$etavalue[m]) a_nms <- c(a_nms, paste0("Assoc|Long", m,":eta value"))
+      if (has_assoc$etaslope[m]) a_nms <- c(a_nms, paste0("Assoc|Long", m,":eta slope"))
+      if (has_assoc$muvalue[m]) a_nms <- c(a_nms, paste0("Assoc|Long", m,":mu value"))
+      if (has_assoc$muslope[m]) a_nms <- c(a_nms, paste0("Assoc|Long", m,":mu slope"))
     }
-    if (length(which_b)) {
-      temp_g_nms <- unlist(lapply(1:M, FUN = function(i) {
-                    paste0(paste0("b[Long", i, ":"), cnms[[i]][[id_var]], "]")}))
-      a_nms <- c(a_nms, paste0("Assoc|", unlist(temp_g_nms)[which_b]))
+    if (sum(size_which_b)) {
+      temp_g_nms <- lapply(1:M, FUN = function(m) {
+                      all_nms <- paste0(paste0("Long", m, ":b["), y_cnms[[m]][[id_var]], "]")
+                      all_nms[which_b[[m]]]})
+      a_nms <- c(a_nms, paste0("Assoc|", unlist(temp_g_nms)))
     }
     
     # Names for vector of dispersion parameters
@@ -1524,76 +1564,47 @@ stan_jm <- function(formulaLong, dataLong,
 }
 
 
-# Function which returns a named list with details regarding the
-# association structure, for either a univariate or multivariate
-# joint model 
-#
-# @param assoc_type A character vector, or a list of character 
-#   vectors indicating the desired association structure
-# @param shared_b A numeric vector indicating the indices of any 
-#   random effects which should be included in the linear 
-#   predictor of the survival submodel
-#' @export
-assoc <- function(assoc_type = "etavalue", shared_b = NULL) {
-  if (is.null(shared_b)) {
-    which_b      <- double(0)
-    size_which_b <- 0L
-  } else {
-    if (!(is.numeric(shared_b) && is.vector(shared_b)))
-      stop("The second argument of the assoc function appears to be ",
-           "incorrectly specified. It should be NULL or a numeric vector.")
-    which_b <- shared_b
-    size_which_b <- length(shared_b)    
+# Function to check that the assoc argument only includes supported association
+# types. The function returns a list with logicals specifying which association
+# type have been requested.
+# 
+# @param x The input from the user -- should be a character vector or NULL
+# @param supported_assoc_args A character vector showing the supported
+#   association types
+# @return A list of logicals indicating the desired association types
+check_assoc_args <- function(x, supported_assoc_args) {
+  assoc <- sapply(supported_assoc_args, function(y) y %in% x, simplify = FALSE)
+  if (is.null(x)) {
+    assoc$null <- TRUE
+    return(assoc)   
+  } else if (is.character(x)) {
+    if (!all(x %in% supported_assoc_args))
+      stop("An unsupported association type has been specified. The ",
+           "'assoc' argument can only include the following association ", 
+           "types: ", paste(supported_assoc_args, collapse = ", "), call. = FALSE)
+    if ((assoc$null) && (length(assoc) > 1L))
+      stop("In 'assoc' argument, 'null' cannot be specified in ",
+           "conjuction with another association type", call. = FALSE)
+    return(assoc)
+  } else { 
+    stop("'assoc' argument should be a character vector or, for a multivariate ",
+         "joint model, possibly a list of character vectors.", call. = FALSE)
   }
-  if (!all(unlist(assoc_type) %in% 
-             c("null", "etavalue", "etaslope", "muvalue", "muslope")))
-    stop("Association type incorrectly specified. Should be ",
-         "one of: etavalue, etaslope, muvalue, muslope.")
-  
-  if (is.null(assoc_type)) {
-    has_assoc_null <- TRUE
-    has_assoc_ev <- FALSE
-    has_assoc_es <- FALSE
-    has_assoc_cv <- FALSE
-    has_assoc_cs <- FALSE
-  } else if (is.list(assoc_type)) {
-    has_assoc_null <- sapply(assoc_type, function(x) ("null" %in% x))
-    has_assoc_ev <- sapply(assoc_type, function(x) ("etavalue" %in% x))
-    has_assoc_es <- sapply(assoc_type, function(x) ("etaslope" %in% x))
-    has_assoc_cv <- sapply(assoc_type, function(x) ("muvalue" %in% x))
-    has_assoc_cs <- sapply(assoc_type, function(x) ("muslope" %in% x))
-  } else if (is.vector(assoc_type)) {
-    has_assoc_null <- ("null" %in% assoc_type)
-    has_assoc_ev <- ("etavalue" %in% assoc_type)
-    has_assoc_es <- ("etaslope" %in% assoc_type)
-    has_assoc_cv <- ("muvalue" %in% assoc_type)
-    has_assoc_cs <- ("muslope" %in% assoc_type)
-  } else {
-    stop("The first argument of the assoc function appears to be ",
-         "incorrectly specified. For a univariate joint model the argument ", 
-         "should be either a character string or character vector. ",
-         "For a multivariate joint model the argument should be a list, ",
-         "with length equal to the number of longitudinal markers, and where ",
-         "each element of the list should be either a character ",
-         "string or character vector. See help(assoc) for details.")
-  }
-  
-  sapply(seq_along(has_assoc_null), function(x) {
-    if (has_assoc_null[x] && any(has_assoc_ev[x],
-                                 has_assoc_es[x],
-                                 has_assoc_cv[x],
-                                 has_assoc_cs[x]))
-    stop("Cannot specify a null association structure in conjunction with ",
-         "any other association structure")    
-    }
-  )
-  
-  list(has_assoc_null = has_assoc_null, 
-       has_assoc_ev = has_assoc_ev, has_assoc_es = has_assoc_es,
-       has_assoc_cv = has_assoc_cv, has_assoc_cs = has_assoc_cs,
-       which_b = which_b, size_which_b = size_which_b)
 }
 
+# Function to calculate the number of association parameters in the model
+#
+# @param has_assoc A named list specifying whether each longitudinal submodel 
+#   is linked to the event outcome using each potential type of association structure
+# @param which_b A list of numeric vectors indicating the random effects from each
+#   longitudinal submodel that are to be used in the shared_b association structure
+# @return Integer indicating the number of association parameters in the model 
+get_num_assoc_pars <- function(has_assoc, which_b) {
+  sel <- c("etavalue", "etaslope", "muvalue", "muslope")
+  a_K <- sum(unlist(has_assoc[sel]))
+  a_K <- a_K + length(unlist(which_b))
+  return(a_K)
+}
 
 # Add extra level _NEW_ to each group
 # 
