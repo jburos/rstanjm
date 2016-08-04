@@ -50,22 +50,19 @@
 #'   longitudinal submodel. See \code{\link[lme4]{glmer}} for details.
 #' @param assoc A character string or character vector specifying the joint
 #'   model association structure. Possible association structures that can
-#'   be used include: "null"; "etavalue" (the current value of the linear
-#'   predictor for the longitudinal submodel); "etaslope" (the current slope
-#'   of the linear predictor for the longitudinal submodel); "muvalue" (the
-#'   current expected value for the longitudinal submodel); or "shared_b" 
-#'   (to include random effects from the longitudinal submodel directly in
-#'   the linear predictor for the event submodel). By default, "shared_b"
-#'   includes all random effects in the shared random effects association 
-#'   structure, however, a subset of the random effects can be chosen by 
-#'   specifying their indices as a suffix seperated by "-", for example,
-#'   "shared_b-1" or "shared_b-2-3" and so on. For a multivariate joint 
+#'   be used (described in the \strong{Details} section below) include: "null"; 
+#'   "etavalue" (the default); "etaslope"; "muvalue"; or "shared_b". 
+#'   By default, "shared_b" includes all random effects in the shared random 
+#'   effects association structure, however, a subset of the random effects can 
+#'   be chosen by specifying their indices as a suffix seperated by "-", for 
+#'   example, "shared_b-1" or "shared_b-2-3" and so on. For a multivariate joint 
 #'   model, different association structures can be used for each longitudinal
 #'   submodel by specifying a list of character strings or character vectors,
 #'   with each element of the list specifying the desired association structure
 #'   for one of the longitudinal submodels. Setting \code{assoc} equal to 
 #'   \code{NULL} will fit a joint model with no association structure (equivalent  
-#'   to fitting separate longitudinal and time-to-event models).
+#'   to fitting separate longitudinal and time-to-event models). See the
+#'   \strong{Examples} section below for some examples.
 #' @param base_haz A character string indicating which baseline hazard to use
 #'   for the time-to-event submodel. Currently the only option allowed is 
 #'   \code{"weibull"} (the default).
@@ -603,20 +600,15 @@ stan_jm <- function(formulaLong, dataLong,
     y_K[m] <- NCOL(xtemp[[m]])
 
     # Update formula if using splines or other data dependent predictors
-    formtemp <- formula(y_mod[[m]])
     formvars <- grep("", attr(terms(y_mod[[m]]), "variables"), value = TRUE)
     predvars <- grep("", attr(terms(y_mod[[m]]), "predvars"), value = TRUE)
     if (!identical(formvars, predvars)) {
-      for (j in 2:length(formvars)) {
-        m_mc[[m]]$formula <- 
-          reformulate(gsub(formvars[[j]], 
-                           predvars[[j]], 
-                           deparse(eval(m_mc[[m]]$formula)[[3]]), 
-                           fixed = TRUE), 
-                      response = eval(m_mc[[m]]$formula)[[2]])
-      }
+      formtemp <- formula(y_mod[[m]])
+      for (j in 2:length(formvars))
+        formtemp <- gsub(formvars[[j]], predvars[[j]], formtemp, fixed = TRUE)
+      m_mc[[m]]$formula <- reformulate(formtemp[[3]], response = formtemp[[2]])
     }
-  
+    
     # Model based initial values
     if (init == "model_based") {
       if (y_has_intercept_unbound[m]) {
