@@ -146,7 +146,7 @@
 #'               formulaEvent = Surv(futimeYears, death) ~ sex + trt, 
 #'               dataEvent = pbcSurv,
 #'               time_var = "year",
-#'               chains = 1, iter = 1000, warmup = 500, refresh = 25)
+#'               chains = 1, iter = 1000, warmup = 500)
 #' summary(f1, digits = 3) 
 #'         
 #' #####
@@ -158,7 +158,7 @@
 #'               dataEvent = pbcSurv,
 #'               assoc = c("etavalue", "shared_b"),
 #'               time_var = "year",
-#'               chains = 1, iter = 1000, warmup = 500, refresh = 25)
+#'               chains = 1, iter = 1000, warmup = 500)
 #' summary(f2, digits = 3)          
 #' 
 #' ######
@@ -206,6 +206,7 @@
 #' @importFrom lme4 lmer glmer glFormula lmerControl glmerControl 
 #'                  fixef getME sigma VarCorr
 #' @importFrom Matrix Matrix t cBind bdiag
+#' @importFrom JMbayes dns
 stan_jm <- function(formulaLong, dataLong, 
                     formulaEvent, dataEvent, 
                     time_var, id_var, family = gaussian,
@@ -600,12 +601,16 @@ stan_jm <- function(formulaLong, dataLong,
     y_K[m] <- NCOL(xtemp[[m]])
 
     # Update formula if using splines or other data dependent predictors
-    formvars <- grep("", attr(terms(y_mod[[m]]), "variables"), value = TRUE)
-    predvars <- grep("", attr(terms(y_mod[[m]]), "predvars"), value = TRUE)
-    if (!identical(formvars, predvars)) {
+    formvars.fixed <- grep("", attr(terms(y_mod[[m]], fixed = TRUE), "variables"), value = TRUE)
+    formvars.random <- grep("", attr(terms(y_mod[[m]], random = TRUE), "variables"), value = TRUE)
+    predvars.fixed <- grep("", attr(terms(y_mod[[m]], fixed = TRUE), "predvars"), value = TRUE)
+    predvars.random <- grep("", attr(terms(y_mod[[m]], random = TRUE), "predvars"), value = TRUE)
+    if ((!identical(formvars.fixed, predvars.fixed)) || (!identical(formvars.random, predvars.random))) {
       formtemp <- formula(y_mod[[m]])
-      for (j in 2:length(formvars))
-        formtemp <- gsub(formvars[[j]], predvars[[j]], formtemp, fixed = TRUE)
+      for (j in 2:length(formvars.fixed))
+        formtemp <- gsub(formvars.fixed[[j]], predvars.fixed[[j]], formtemp, fixed = TRUE)
+      for (j in 2:length(formvars.random))
+        formtemp <- gsub(formvars.random[[j]], predvars.random[[j]], formtemp, fixed = TRUE)      
       m_mc[[m]]$formula <- reformulate(formtemp[[3]], response = formtemp[[2]])
     }
     
@@ -859,12 +864,16 @@ stan_jm <- function(formulaLong, dataLong,
   #====================================================================
     
   # Items to store for each longitudinal submodel
-  xq              <- list()
+  xq              <- list()   # design matrix before removing intercept 
+                              # and centering
   xqtemp          <- list()   # design matrix (without intercept) for 
                               # longitudinal submodel calculated at event 
                               # and quad times, possibly centred
-  dxdt_quadtime   <- list()   # first derivative of design matrix
-  Zq              <- list()
+  dxdtq           <- list()   # first derivative of design matrix
+  dxdtqtemp       <- list()   # first derivative of design matrix (intercept 
+                              # term removed)
+  Zq              <- list()   # random effects matrix
+  dZdtq           <- list()   # first derivative of random effects matrix
 
   # Set up a second longitudinal model frame which includes the time variable
   for (m in 1:M) {
@@ -921,14 +930,80 @@ stan_jm <- function(formulaLong, dataLong,
     # Centering of design matrix for longitudinal model at event times
     # and quadrature times 
     if (centreLong) xqtemp[[m]] <- sweep(xqtemp[[m]], 2, xbar[[m]], FUN = "-")
-    
-    if (has_assoc$etaslope[m]) {
-      #need to contruct derivative of design matrix
-    } else dxdt_quadtime[[m]] <- NULL
-   
   }
-  
-   
+
+  if(sum(has_assoc$etaslope))
+    cat("\nSlope association structure based on the following first derivatives:")
+  for (m in 1:M) {
+    if (has_assoc$etaslope[m]) {
+      # Get the names of variables used in the model      
+      formvars.fixed <- grep("", attr(terms(y_mod[[m]], fixed = TRUE), "variables"), value = TRUE)
+      formvars.random <- grep("", attr(terms(y_mod[[m]], random = TRUE), "variables"), value = TRUE)
+      predvars.fixed <- grep("", attr(terms(y_mod[[m]], fixed = TRUE), "predvars"), value = TRUE)
+      predvars.random <- grep("", attr(terms(y_mod[[m]], random = TRUE), "predvars"), value = TRUE)
+      # Record indices of variables with a non-zero derivative (ie, involve time_var)      
+      sel.fixed <- grep(paste0("^ns\\(.*", time_var, ".*\\)"), predvars.fixed, value = FALSE)
+      sel.random <- grep(paste0("^ns\\(.*", time_var, ".*\\)"), predvars.random, value = FALSE)
+      # Replace those variables with their first derivative
+      formvars_deriv.fixed <- formvars.fixed      
+      predvars_deriv.fixed <- predvars.fixed
+      formvars_deriv.random <- formvars.random      
+      predvars_deriv.random <- predvars.random
+      for (i in 1:length(sel.fixed)) {
+        formvars_deriv.fixed[sel.fixed] <- gsub("^ns\\(", "dns(", formvars_deriv.fixed[sel.fixed])
+        predvars_deriv.fixed[sel.fixed] <- gsub("^ns\\(", "dns(", predvars_deriv.fixed[sel.fixed])        
+      }
+      for (i in 1:length(sel.random)) {
+        formvars_deriv.random[sel.random] <- gsub("^ns\\(", "dns(", formvars_deriv.random[sel.random])
+        predvars_deriv.random[sel.random] <- gsub("^ns\\(", "dns(", predvars_deriv.random[sel.random])        
+      }      
+      # Tell user which variables have been replaced
+      cat(paste0("\n  Submodel ", m, ": "), 
+          paste0(formvars.fixed[sel.fixed], " -> ", formvars_deriv.fixed[sel.fixed], collapse = "; "),
+          paste0(formvars.random[sel.random], " -> ", formvars_deriv.random[sel.random], collapse = "; "))
+      # Obtain model formula
+      formtemp <- formula(y_mod_q)
+      # Replace variables in model formula
+      for (j in 2:length(predvars.fixed))
+        formtemp <- gsub(predvars.fixed[[j]], predvars_deriv.fixed[[j]], formtemp, fixed = TRUE)
+      for (j in 2:length(predvars.random))
+        formtemp <- gsub(predvars.random[[j]], predvars_deriv.random[[j]], formtemp, fixed = TRUE)
+      # Insert new model formula into matched call
+      m_mc_temp$formula <- reformulate(formtemp[[3]], response = formtemp[[2]])
+      if ((family[[m]]$family == "gaussian") && (family[[m]]$link == "identity")) {
+        m_mc_temp$control <- y_lmerControl_noRankX
+      } else {
+        m_mc_temp$control <- y_glmerControl_noRankX      
+      }
+      # Evaluate X and Z using derivatives
+      y_mod_q_dxdt <- eval(m_mc_temp, parent.frame())
+      # Obtain new X matrix
+      dxdtq[[m]] <- as.matrix(y_mod_q_dxdt$X)
+      dxdtqtemp[[m]] <- if (y_has_intercept[m]) dxdtq[[m]][, -1L, drop=FALSE] else dxdtq[[m]]
+      # Identify columns in X which have a non-zero derivative and replace all
+      # other columns with a value of zero
+      sel <- grepl(paste0("dns\\(.*", time_var, ".*\\)"), colnames(dxdtqtemp[[m]]))
+      dxdtqtemp[[m]][, !sel] <- 0
+      # Obtain new Z matrix
+      dZdtq[[m]] <- t(y_mod_q_dxdt$reTrms$Zt)
+      # For each grouping factor, identify which terms involve a non-zero derivative
+      sel <- lapply(y_mod_q_dxdt$reTrms$cnms, function(x) grepl(paste0("dns\\(.*", time_var, ".*\\)"), x))
+      # Calculate number of factor levels for each grouping factor
+      len_flist <- sapply(y_mod_q_dxdt$reTrms$flist, function(x) length(unique(x)))
+      # Using the selection of terms, and the number of factor levels, create a 
+      # vector indicating which columns of Z have a non-zero derivative and 
+      # replace all other columns with a value of zero
+      sel_vec <- unlist(lapply(seq_along(sel), function(x) rep(sel[[x]], len_flist[x])))
+      dZdtq[[m]][, !sel_vec] <- 0 
+    } else {
+      dxdtqtemp[[m]] <- matrix(0, ncol = ncol(xqtemp[[m]]), nrow = nrow(xqtemp[[m]]))
+      dZdtq[[m]] <- Matrix::sparseMatrix(dims = c(nrow(Zq[[m]]),ncol(Zq[[m]])), i={}, j={}, x = 0)
+    }
+  }
+  if(sum(has_assoc$etaslope))
+    cat("\nAny interactions involving these variables will also be preserved.")
+
+
   #=====================
   # Prior distributions
   #=====================
@@ -1228,7 +1303,7 @@ stan_jm <- function(formulaLong, dataLong,
     sum_size_which_b = as.integer(sum(size_which_b)),
     size_which_b = as.array(size_which_b),
     which_b = as.array(unlist(which_b)),
-    
+
     # priors
     priorLong_dist = priorLong_dist, 
     priorLong_dist_for_intercept = priorLong_dist_for_intercept,  
@@ -1329,6 +1404,15 @@ stan_jm <- function(formulaLong, dataLong,
   standata$v_Zq <- parts_Zq$v
   standata$u_Zq <- parts_Zq$u
 
+  # data for calculating eta slope in GK quadrature 
+  standata$y_dXdtq = as.array(as.matrix(Matrix::bdiag(dxdtqtemp)))
+  dZdtqmerge <- Matrix::bdiag(dZdtq)
+  parts_dZdtq <- rstan::extract_sparse_parts(dZdtqmerge)
+  standata$num_non_zero_dZdtq <- as.integer(length(parts_dZdtq$w))
+  standata$w_dZdtq <- parts_dZdtq$w
+  standata$v_dZdtq <- parts_dZdtq$v
+  standata$u_dZdtq <- parts_dZdtq$u    
+  
   # hyperparameters for random effects model
   decov_args <- prior_covariance
   standata$shape <- as.array(rstanarm:::maybe_broadcast(decov_args$shape, t))
@@ -1350,6 +1434,7 @@ stan_jm <- function(formulaLong, dataLong,
                             "neg_binomial_2" = 6L)}))     
   standata$any_fam_3 <- as.integer(any(standata$family == 3L))
   
+  # !!! REMOVE
   standata <<- standata
   
   #================
@@ -1541,12 +1626,14 @@ stan_jm <- function(formulaLong, dataLong,
   #colnames(Z) <- b_names(names(stanfit), value = TRUE)
   fit <- rstanarm:::nlist(stanfit, family, formula = c(formulaLong, formulaEvent), 
                           id_var, time_var, offset = NULL, base_haz, 
-                          M, cnms, y_N, y_cnms, y_flist, Npat, n_grps, 
+                          M, cnms, y_N, y_cnms, y_flist, Npat, n_grps, assoc = has_assoc,
                           x = lapply(1:M, function(i) 
                             if (getRversion() < "3.2.0") cBind(x[[i]], Z[[i]]) else cbind2(x[[i]], Z[[i]])),
                           xq = lapply(1:M, function(i) 
                             if (getRversion() < "3.2.0") cBind(xq[[i]], Zq[[i]]) else cbind2(xq[[i]], Zq[[i]])),                 
-                          y = y, e_x, eventtime, d,
+                          dxdtq = lapply(1:M, function(i) 
+                            if (getRversion() < "3.2.0") 
+                              cBind(dxdtqtemp[[i]], dZdtq[[i]]) else cbind2(dxdtqtemp[[i]], dZdtq[[i]])),                          y = y, e_x, eventtime, d,
                           standata, dataLong, dataEvent, call, terms = NULL, model = NULL,                          
                           prior.info = rstanarm:::get_prior_info(call, formals()),
                           na.action, algorithm, init)

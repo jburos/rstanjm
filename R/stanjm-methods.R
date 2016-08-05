@@ -419,7 +419,7 @@ VarCorr.stanjm <- function(x, sigma = 1, ...) {
   means <- rstan::get_posterior_mean(x$stanfit)
   means <- means[, ncol(means)]
   theta <- means[grepl("^theta_L", names(means))]
-  p <- .p(mv1)
+  p <- .p(x)
   out <- lme4::mkVarCorr(sc = 1, cnms = cnms, 
                          nc = p,
                          theta = theta, nms = names(cnms))
