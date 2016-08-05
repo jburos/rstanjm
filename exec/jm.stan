@@ -664,7 +664,13 @@ data {
   int<lower=0> sum_size_which_b;           // num. of shared random effects
   int<lower=0> size_which_b[M];            // num. of shared random effects for each long submodel
   int<lower=1> which_b[sum_size_which_b];  // which random effects are shared for each long submodel
- 
+
+  matrix[(M*nrow_y_Xq),sum_y_K] y_dXdtq; // derivative of predictor matrix (long submodel) at quadpoints              
+  int<lower=0> num_non_zero_dZdtq;       // number of non-zero elements in the dZdt matrix (at quadpoints)
+  vector[num_non_zero_dZdtq] w_dZdtq;    // non-zero elements in the implicit dZdt matrix (at quadpoints)
+  int<lower=0> v_dZdtq[num_non_zero_dZdtq]; // column indices for w (at quadpoints)
+  int<lower=0> u_dZdtq[(M*nrow_y_Xq+1)];    // where the non-zeros start in each row (at quadpoints)
+
   // data for random effects model
   int<lower=1> t;     	        // num. of grouping factors
   int<lower=1,upper=t> t_i;     // index of grouping factor corresponding to patient-level
@@ -860,7 +866,11 @@ transformed parameters {
   real weibull_shape[basehaz_weibull]; 
   // parameters for GK quadrature  
   vector[(M*nrow_y_Xq)] y_eta_q;          // linear predictor (all long submodels) evaluated at quadpoints
-  vector[nrow_y_Xq] ysep_eta_q[M];          // linear predictor (each long submodel) evaluated at quadpoints
+  vector[nrow_y_Xq] ysep_eta_q[M];        // linear predictor (each long submodel) evaluated at quadpoints
+  vector[(M*nrow_y_Xq)*(sum_has_assoc_es > 0)] 
+    dydt_eta_q;       // slope of linear predictor (all long submodels) evaluated at quadpoints
+  vector[nrow_y_Xq*(sum_has_assoc_es > 0)] 
+    dydtsep_eta_q[M];     // slope of linear predictor (each long submodel) evaluated at quadpoints
   vector[nrow_e_Xq] e_eta_q;      // linear predictor (event submodel) evaluated at quadpoints
   vector[nrow_e_Xq] ll_haz_q;     // log hazard contribution to the log likelihood for the event model at event time and quad points
   vector[Npat] ll_haz_eventtime;  // log hazard contribution to the log likelihood for the event model AT the event time only
@@ -1008,7 +1018,14 @@ transformed parameters {
             dot_product(y_xbar[mark_beg:mark_end], y_beta[mark_beg:mark_end]); 
     }
   }
-
+  // Longitudinal submodel(s): slope of linear predictor at event and quad times
+  if (sum_has_assoc_es > 0) {
+    if (sum_y_K > 0) dydt_eta_q = y_dXdtq * y_beta;
+    else dydt_eta_q = rep_vector(0.0, (M*nrow_y_Xq));
+    // !!! if (y_has_offset == 1) y_eta_q = y_eta_q + y_offset; # ignore offset in derivative?
+    dydt_eta_q = dydt_eta_q + csr_matrix_times_vector((M*nrow_y_Xq), len_b, w_dZdtq, v_dZdtq, u_dZdtq, b_by_model);
+    for (m in 1:M) dydtsep_eta_q[m] = segment(dydt_eta_q, ((m-1) * nrow_y_Xq) + 1, nrow_y_Xq);
+  }
   // Event submodel: linear predictor at event and quad times
   if (e_K > 0) e_eta_q = e_Xq * e_beta;
   else e_eta_q = rep_vector(0.0, nrow_e_Xq);
@@ -1025,13 +1042,12 @@ transformed parameters {
     for (m in 1:M) {
       if (has_assoc_ev[m] == 1) {
         mark = mark + 1;
-	    e_eta_q = e_eta_q + a_beta[mark] * ysep_eta_q[m];
-      }		
+	      e_eta_q = e_eta_q + a_beta[mark] * ysep_eta_q[m];
+      }	
       if (has_assoc_es[m] == 1) {
         mark = mark + 1;
-	    // NEED TO CALCULATE SLOPE
-	    //e_eta_q = e_eta_q + a_beta[mark] * dydt_eta_q[m]; 
-      }				
+	      e_eta_q = e_eta_q + a_beta[mark] * dydtsep_eta_q[m]; 
+      }	
       if (has_assoc_cv[m] == 1) {
         vector[nrow_y_Xq] y_q;  // expected long. outcome at event and quad times   
         mark = mark + 1;
@@ -1045,19 +1061,19 @@ transformed parameters {
       }				
       if (has_assoc_cs[m] == 1) {
         mark = mark + 1;
-	    // NEED TO CALCULATE SLOPE
-	    //e_eta_q = e_eta_q + a_beta[mark] * dydt_q[m];
+	      // NEED TO CALCULATE SLOPE
+	      //e_eta_q = e_eta_q + a_beta[mark] * dydtsep_q[m];
       }				
     }
-	if (sum_size_which_b > 0) {
-	  int mark_end;  // used to define segment of a_beta
-	  matrix[nrow_e_Xq,sum_size_which_b] x_assoc_sh;	  
-	  mark_end = mark + sum_size_which_b;
-    mark = mark + 1;	  
-	  x_assoc_sh = make_x_assoc_sh(b, l, p, Npat, quadnodes, which_b,  
-	                               sum_size_which_b, size_which_b, t_i, M);
-	  e_eta_q = e_eta_q + x_assoc_sh * a_beta[mark:mark_end];
-  }	
+  	if (sum_size_which_b > 0) {
+  	  int mark_end;  // used to define segment of a_beta
+  	  matrix[nrow_e_Xq,sum_size_which_b] x_assoc_sh;	  
+  	  mark_end = mark + sum_size_which_b;
+      mark = mark + 1;	  
+  	  x_assoc_sh = make_x_assoc_sh(b, l, p, Npat, quadnodes, which_b,  
+  	                               sum_size_which_b, size_which_b, t_i, M);
+  	  e_eta_q = e_eta_q + x_assoc_sh * a_beta[mark:mark_end];
+    }	
   }
 
   // Calculate log hazard at event times and unstandardised quadrature points 

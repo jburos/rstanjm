@@ -26,9 +26,11 @@ stanjm <- function(object) {
   stanfit    <- object$stanfit
   M          <- object$M
   family     <- object$family
+  assoc      <- object$assoc
   y          <- object$y
   x          <- object$x
-  xq         <- object$x
+  xq         <- object$xq
+  dxdtq      <- object$dxdtq  
   e_x        <- object$e_x
   eventtime  <- object$eventtime
   d          <- object$d  
@@ -97,11 +99,13 @@ stanjm <- function(object) {
     time_var = object$time_var,
     cnms = object$cnms, 
     y_cnms = list_nms(y_cnms, M), 
-    y_flist = list_nms(y_flist, M), 
-    y, 
-    x,
-    eventtime,
-    d,     
+    y_flist = list_nms(y_flist, M),
+    assoc,
+    y = list_nms(y, M), 
+    x = list_nms(x, M), 
+    xq = list_nms(xq, M), 
+    dxdtq = if (sum(assoc$etaslope)) list_nms(dxdtq, M) else NULL,
+    eventtime, d,     
     model = object$model, 
     dataLong = object$dataLong,
     dataEvent = object$dataEvent,     
