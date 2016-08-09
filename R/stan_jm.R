@@ -225,7 +225,7 @@ stan_jm <- function(formulaLong, dataLong,
 					          priorAssoc_ops = priorAssoc_options(),
                     prior_covariance = decov(), prior_PD = FALSE, 
                     algorithm = c("sampling", "meanfield", "fullrank"),
-                    adapt_delta = 0.65, QR = FALSE) {
+                    adapt_delta = 0.75, QR = FALSE) {
 
 
   #=============================
@@ -246,8 +246,8 @@ stan_jm <- function(formulaLong, dataLong,
 #  if ((init == "model_based") && any(unlist(c(centreLong, centreEvent)))) 
 #    stop("Cannot use model based initial values when 'centreLong = TRUE'",
 #         " or 'centreEvent = TRUE'.")  
-  if (missing(id_var)) 
-    id_var <- NULL
+  if (missing(id_var)) id_var <- NULL
+  if (missing(subsetLong)) subsetLong <- NULL
 
   # Matched call
   call <- match.call(expand.dots = TRUE)    
@@ -264,130 +264,31 @@ stan_jm <- function(formulaLong, dataLong,
   
   # Create call for longitudinal submodel  
   y_mc <- mc
-  names(y_mc) <- gsub("Long", "", names(y_mc)) 
-  y_mc$formulaEvent <- y_mc$dataEvent <- 
-    y_mc$subsetEvent <- NULL
-  
-  # Is formulaLong a list?
-  if (is(eval(y_mc$formula), "formula")) { # number of long. markers
-    formula_list <- FALSE
-    M <- 1L
-  } else if (is.list(eval(y_mc$formula))) {
-    formula_list <- TRUE
-    M <- length(eval(y_mc$formula))
-    if (!all(sapply(eval(y_mc$formula), function(x)
-               (is(x, "formula")))))
-      stop("'formulaLong' should be a formula object or a list of formula ",
-           "objects")               
-  } else {
-    stop("'formulaLong' should be a formula object or, for a multivariate ",
-         "joint model, a list of formula objects with length equal to the ",
-         "desired number of longitudinal markers")
-  }
+  y_mc <- strip_nms(y_mc, "Long") 
+  y_mc$formulaEvent <- y_mc$dataEvent <- y_mc$subsetEvent <- NULL
+
+
+
+  # Identify whether each argument was specified as a list
+  formula_list <- check_arg_yform(y_mc$formula)
+  M <- attr(formula_list, "M")
   if (M == 1L) cat("Univariate joint model specified")
   if (M > 1L)  cat("Multivariate joint model specified")
+  data_list <- check_arg_ydata(y_mc$data, M)
+  subset_list <- check_arg_ysubset(y_mc$subset, M)
+  family_list <- check_arg_family(y_mc$family, M)
 
-  # Is dataLong a list?
-  if (is.data.frame(eval(y_mc$data))) {
-    data_list <- FALSE
-  } else if (is.list(eval(y_mc$data))) {
-    data_list <- TRUE
-    if (length(eval(y_mc$data)) != M)
-      stop("dataLong appears to be a list of the incorrect length")
-  } else {
-    stop("'dataLong' should be a data frame or possibly a list of data ",
-         "frames. The latter is only required when fitting a multivariate ",
-         "joint model using different data for each longitudinal submodel.")
-  }
-
-  # Is subset a list?
-  if (is.null(y_mc$subset)) {
-    y_subset_list <- 0L  # NULL
-  } else if (is.list(eval(y_mc$subset))) {
-    y_subset_list <- 2L  # TRUE
-    if (length(eval(y_mc$subset)) != M)
-      stop("subsetLong appears to be a list of the incorrect length")
-  } else if (is.vector(eval(y_mc$subset))) {
-    y_subset_list <- 1L  # FALSE
-  } else {
-    stop("'subsetLong' should be a vector or possibly a list of vectors. ",
-         "The latter is only required if fitting a multivariate joint ",
-         "model and using a different subset of data for each ",
-         "longitudinal submodel.")
-  }
-
-  # Is family a list?
-  if (is.null(y_mc$family)) {
-    family_list <- 0L  # NULL
-  } else if (is(eval(y_mc$family), "family")) {
-    family_list <- 1L  # FALSE
-  } else if (is.list(eval(y_mc$family))) {
-    family_list <- 2L  # TRUE
-    if (length(eval(y_mc$family)) != M)
-      stop("family should be a family function or, for a multivariate ",
-           "joint model, possibly a list of family functions")
-  } else {
-    stop("'family' should be a family function or, possibly a list of family ",
-         "functions. The latter is only required when fitting a multivariate ",
-         "joint model with a different family and/or link function for some ",
-         "of the longitudinal submodels.")
-  }
-
-  # Is assoc a list? If not, then convert to list
-  if (is.list(assoc)) {  # if list, then check length
-    if (!(length(assoc) %in% c(1,M)))
-      stop("`assoc' should be a list of length 1 or length equal to the ",
-           "number of longitudinal markers")
-  } else if (is.character(assoc)) {  # if not list, then convert to list
-    assoc <- list(assoc)
-  } else {  # else return error
-    stop("'assoc' should be a character string or character vector or, for a ",
-         "multivariate joint model, possibly a list of character strings ",
-         "or character vectors. The latter is only required if using a different ",
-         "association structure for linking each longitudinal submodel to the ",
-         "event outcome.")
-  }
-  if (length(assoc) != M) assoc <- rep(assoc, M)
-
-  # Create call for each longitudinal submodel separately
-  m_mc <- list()  # list containing matched calls for each marker
-  for (m in 1:M) {
-    m_mc[[m]] <- y_mc
-    m_mc[[m]]$formula <- if (formula_list) y_mc$formula[[(1+m)]] else y_mc$formula
-    m_mc[[m]]$data    <- if (data_list)    y_mc$data[[(1+m)]]    else y_mc$data
-    if (!is.null(y_subset_list))   
-    m_mc[[m]]$subset  <- if (y_subset_list) y_mc$subset[[(1+m)]]  else y_mc$subset
-    if (!is.null(family_list))   
-    m_mc[[m]]$family  <- if (family_list)   y_mc$family[[(1+m)]]  else y_mc$family    
-  }
+  # Check family arg
+  if (!family_list) family <- list(family)
+  if (length(family) < M) family <- rep(family, M)
   
-  # Set control arguments for longitudinal submodels
-  y_lmerControl <- lme4::lmerControl(check.nlev.gtreq.5 = "ignore",
-                              check.nlev.gtr.1 = "stop",
-                              check.nobs.vs.rankZ = "ignore",
-                              check.nobs.vs.nlev = "ignore",
-                              check.nobs.vs.nRE = "ignore")
-  y_lmerControl_noRankX <- lme4::lmerControl(check.nlev.gtreq.5 = "ignore",
-                              check.nlev.gtr.1 = "stop",
-                              check.nobs.vs.rankZ = "ignore",
-                              check.nobs.vs.nlev = "ignore",
-                              check.nobs.vs.nRE = "ignore",
-                              check.rankX = "ignore")
-  y_glmerControl <- lme4::glmerControl(check.nlev.gtreq.5 = "ignore",
-                              check.nlev.gtr.1 = "stop",
-                              check.nobs.vs.rankZ = "ignore",
-                              check.nobs.vs.nlev = "ignore",
-                              check.nobs.vs.nRE = "ignore") 
-  y_glmerControl_noRankX <- lme4::glmerControl(check.nlev.gtreq.5 = "ignore",
-                              check.nlev.gtr.1 = "stop",
-                              check.nobs.vs.rankZ = "ignore",
-                              check.nobs.vs.nlev = "ignore",
-                              check.nobs.vs.nRE = "ignore",
-                              check.rankX = "ignore")
+  # Check the assoc argument
+  assoc <- check_arg_assoc(assoc)
+
+  # Create a call for each longitudinal submodel separately
+  m_mc <- lapply(1:M, create_m_mc, y_mc, is_a_list)
 
   # Check family and link
-  if (family_list %in% c(0L,1L)) family <- list(family)  # convert to list
-  if (length(family) < M) family <- rep(family, M)  # repeat family if necessary
   supported_families <- c("binomial", "gaussian", "Gamma", "inverse.gaussian",
                           "poisson", "neg_binomial_2")
   family <- lapply(family, rstanarm:::validate_family)
@@ -438,89 +339,13 @@ stan_jm <- function(formulaLong, dataLong,
    
   # Create call for event submodel
   e_mc <- mc
-  names(e_mc) <- gsub("Event", "", names(e_mc)) 
+  e_mc <- strip_nms(e_mc, "Event")
   e_mc$formulaLong <- e_mc$dataLong <- e_mc$family <-
     e_mc$subsetLong <- NULL
                           
   # Standardised GK quadrature points and weights
-  if (quadnodes == 15) {
-    quadpoint.stand <- c(
-      -0.991455371120812639207,
-      -0.949107912342758524526,
-      -0.86486442335976907279,
-      -0.7415311855993944398639,
-      -0.5860872354676911302941,
-      -0.4058451513773971669066,
-      -0.2077849550078984676007,
-      0,
-      0.2077849550078984676007,
-      0.405845151377397166907,
-      0.5860872354676911302941,
-      0.741531185599394439864,
-      0.86486442335976907279,
-      0.9491079123427585245262,
-      0.991455371120812639207) 
-    quadweight <- c(
-      0.0229353220105292249637,
-      0.063092092629978553291,
-      0.10479001032225018384,
-      0.140653259715525918745,
-      0.1690047266392679028266,
-      0.1903505780647854099133,
-      0.204432940075298892414,
-      0.209482141084727828013,
-      0.204432940075298892414,
-      0.1903505780647854099133,
-      0.169004726639267902827,
-      0.140653259715525918745,
-      0.1047900103222501838399,
-      0.063092092629978553291,
-      0.0229353220105292249637)      
-  } else if (quadnodes == 11) {
-    quadpoint.stand <- c(
-      -0.984085360094842464496,
-      -0.906179845938663992798,
-      -0.754166726570849220441,
-      -0.5384693101056830910363,
-      -0.2796304131617831934135,
-      0,
-      0.2796304131617831934135,
-      0.5384693101056830910363,
-      0.754166726570849220441,
-      0.906179845938663992798,
-      0.984085360094842464496)
-    quadweight <- c(
-      0.042582036751081832865,
-      0.1152333166224733940246,
-      0.186800796556492657468,
-      0.2410403392286475866999,
-      0.272849801912558922341,
-      0.2829874178574912132043,
-      0.272849801912558922341,
-      0.241040339228647586701,
-      0.186800796556492657467,
-      0.115233316622473394025,
-      0.042582036751081832865)      
-  } else if (quadnodes == 7) {
-    quadpoint.stand <- c(
-      -0.9604912687080202834235,
-      -0.7745966692414833770359,
-      -0.4342437493468025580021,
-      0,
-      0.4342437493468025580021,
-      0.7745966692414833770359,
-      0.9604912687080202834235)
-    quadweight <- c(
-      0.1046562260264672651938,
-      0.268488089868333440729,
-      0.401397414775962222905,
-      0.450916538658474142345,
-      0.401397414775962222905,
-      0.268488089868333440729,
-      0.104656226026467265194)      
-  } else stop("The specified number of Gauss-Kronrod quadrature points 
-              ('quadnodes') must be either 7, 11 or 15.")
-              
+  quadpoints <- get_quadpoints(quadnodes)
+            
      
   #================================
   # Data for longitudinal submodel
@@ -528,6 +353,7 @@ stan_jm <- function(formulaLong, dataLong,
   
   # Items to store for each longitudinal submodel
   y_mod         <- list()     # fitted long. submodels
+  y_vars        <- list()     # the variables used in fitting the model
   y             <- list()     # response vector
   x             <- list()     # design matrix with intercept
   xtemp         <- list()     # design matrix without intercept, possibly centred
@@ -561,10 +387,10 @@ stan_jm <- function(formulaLong, dataLong,
     if ((family[[m]]$family == "gaussian") && (family[[m]]$link == "identity")) {
       m_mc[[m]][[1]] <- quote(lme4::lmer)
       m_mc[[m]]$family <- NULL
-      m_mc[[m]]$control <- y_lmerControl
+      m_mc[[m]]$control <- get_control_args()
     } else {
       m_mc[[m]][[1]] <- quote(lme4::glmer)
-      m_mc[[m]]$control <- y_glmerControl                  
+      m_mc[[m]]$control <- get_control_args(glmer = TRUE)               
     }
     y_mod[[m]] <- eval(m_mc[[m]], parent.frame())      
     
@@ -601,18 +427,8 @@ stan_jm <- function(formulaLong, dataLong,
     y_K[m] <- NCOL(xtemp[[m]])
 
     # Update formula if using splines or other data dependent predictors
-    formvars.fixed <- grep("", attr(terms(y_mod[[m]], fixed = TRUE), "variables"), value = TRUE)
-    formvars.random <- grep("", attr(terms(y_mod[[m]], random = TRUE), "variables"), value = TRUE)
-    predvars.fixed <- grep("", attr(terms(y_mod[[m]], fixed = TRUE), "predvars"), value = TRUE)
-    predvars.random <- grep("", attr(terms(y_mod[[m]], random = TRUE), "predvars"), value = TRUE)
-    if ((!identical(formvars.fixed, predvars.fixed)) || (!identical(formvars.random, predvars.random))) {
-      formtemp <- formula(y_mod[[m]])
-      for (j in 2:length(formvars.fixed))
-        formtemp <- gsub(formvars.fixed[[j]], predvars.fixed[[j]], formtemp, fixed = TRUE)
-      for (j in 2:length(formvars.random))
-        formtemp <- gsub(formvars.random[[j]], predvars.random[[j]], formtemp, fixed = TRUE)      
-      m_mc[[m]]$formula <- reformulate(formtemp[[3]], response = formtemp[[2]])
-    }
+    y_vars[[m]] <- get_formvars(y_mod[[m]])
+    m_mc[[m]]$formula <- substitute_formvars(y_mod[[m]], y_vars[[m]])
     
     # Model based initial values
     if (init == "model_based") {
@@ -651,42 +467,11 @@ stan_jm <- function(formulaLong, dataLong,
   y_end <- sapply(1:M, function(i) sum(y_N[0:i]))  
 
   # Additional error checks
-  len_cnms <- sapply(y_cnms, length)
-  if (any(len_cnms > 1L)) {  # more than one grouping factor
-    if (is.null(id_var)) {
-      stop("'id_var' must be specified when using more than one grouping factor")
-    } else {
-      for (m in 1:M) {
-        if (!(id_var %in% names(y_cnms[[m]]))) 
-          stop("`id_var' must be included as a grouping factor in each ",
-               "of the longitudinal submodels")
-      }
-    }      
-  } else {  # only one grouping factor (assumed to be subject ID)
-    id_var <- unique(sapply(y_cnms, names))
-    if (length(id_var) > 1L)
-      stop("The grouping factor (ie, subject ID variable) is not the ",
-           "same in all longitudinal submodels")
-    if (!is.null(y_mc$id_var))
-      if (!identical(y_mc$id_var, id_var))
-      warning("Note the specified 'id_var' and the assumed ID variable ",
-              "based on the single grouping factor are not the same; ", 
-              "`id_var' will be ignored", .call = FALSE, .immediate = TRUE)    
-  }
-  id_list <- unique(lapply(y_flist, function(x) unique(x[[id_var]])))
-  if (length(id_list) > 1L)
-    stop("The subject IDs are not the same in all longitudinal submodels.")
-  id_list <- unlist(id_list) 
+  id_var <- check_id_var(id_var, y_cnms)
+  id_list <- check_id_list(id_var, y_flist)
   
   # Construct single cnms list for all longitudinal submodels
-  y_cnms_nms <- lapply(y_cnms, names)
-  cnms_nms <- unique(unlist(y_cnms_nms))
-  cnms <- lapply(seq_along(cnms_nms), function(i) {
-    nm <- cnms_nms[i]
-    unlist(lapply(1:M, function(m) 
-      if (nm %in% y_cnms_nms[[m]]) paste0("Long", m, "|", y_cnms[[m]][[nm]])))
-  })
-  names(cnms) <- cnms_nms
+  cnms <- get_common_cnms(y_cnms)
   
   # Family indicators
   famname <- lapply(fam, function(x) supported_families[x])
@@ -744,7 +529,8 @@ stan_jm <- function(formulaLong, dataLong,
   # Check ID sorting
   e_id_list <- factor(unique(e_mf[, cluster_term]))
   if (!identical(id_list, e_id_list))
-    stop("'dataEvent' needs to be sorted by the subject ID/grouping variable")
+    stop("'dataEvent' needs to be sorted by the subject ",
+         "ID/grouping variable", call. = FALSE)
 
   e_y <- e_mod$y
   
@@ -761,7 +547,7 @@ stan_jm <- function(formulaLong, dataLong,
     e_mf           <- data.table(cbind(e_y, e_mf), key = c(cluster_term, "start"))
     e_mf_eventtime <- e_mf[, .SD[.N], by = e_mf[, cluster_term]]
     # Unstandardised quadrature points
-    quadpoint <- lapply(quadpoint.stand, FUN = function(x) 
+    quadpoint <- lapply(quadpoints$points, FUN = function(x) 
                           (eventtime/2) * x + (eventtime/2))
     # Model frame corresponding to observation times which are 
     #   as close as possible to the unstandardised quadrature points                      
@@ -781,7 +567,7 @@ stan_jm <- function(formulaLong, dataLong,
     eventtime   <- mf_event$time
     d           <- mf_event$status
     # Unstandardised quadrature points
-    quadpoint <- lapply(quadpoint.stand, FUN = function(x) 
+    quadpoint <- lapply(quadpoints$points, FUN = function(x) 
                           (eventtime/2) * x + (eventtime/2))    
     # Design matrix evaluated at event times and quadrature points
     #   NB Here there are no time varying covariates in the event submodel and
@@ -805,9 +591,9 @@ stan_jm <- function(formulaLong, dataLong,
   }
   e_K <- NCOL(e_xtemp)
   Npat <- length(eventtime)
-  quadweight_rep <- rep(quadweight, each = Npat)  
+  quadpoints$weights_rep <- rep(quadpoints$weights, each = Npat)  
   eventtime_rep <- rep(eventtime, times = quadnodes)  
-  quadweight_times_half_eventtime <- 0.5 * quadweight_rep * eventtime_rep   
+  quadpoints$weights_times_half_eventtime <- 0.5 * quadpoints$weights_rep * eventtime_rep   
   
   # Model based initial values
   if (init == "model_based") {  
@@ -833,8 +619,11 @@ stan_jm <- function(formulaLong, dataLong,
   # Identify which shared random effects were specified (if any)
   which_b <- lapply(assoc, function(x) {
     val <- grep("^shared_b.*", x, value = TRUE)
-    val <- strsplit(val, "-")
-    as.numeric(unlist(val)[-1])                                                                       
+    if length(val) {
+      val <- strsplit(val, "shared_b")
+      vec <- unlist(val)[-1])
+      eval(parse(text = paste0("c", vec)))      
+    } else as.numeric(0)
   })
   
   # Indicator of each association type, for each longitudinal submodel
@@ -883,9 +672,9 @@ stan_jm <- function(formulaLong, dataLong,
                                     m_mc[[m]]$formula, 
                                     paste0("~ . +", time_var))) 
     if ((family[[m]]$family == "gaussian") && (family[[m]]$link == "identity")) {
-      m_mc_temp$control <- y_lmerControl_noRankX
+      m_mc_temp$control <- get_control_args(norank = TRUE)
     } else {
-      m_mc_temp$control <- y_glmerControl_noRankX      
+      m_mc_temp$control <- get_control_args(glmer = TRUE, norank = TRUE)
     }      
       
     y_mod_wtime <- eval(m_mc_temp, parent.frame())      
@@ -971,9 +760,9 @@ stan_jm <- function(formulaLong, dataLong,
       # Insert new model formula into matched call
       m_mc_temp$formula <- reformulate(formtemp[[3]], response = formtemp[[2]])
       if ((family[[m]]$family == "gaussian") && (family[[m]]$link == "identity")) {
-        m_mc_temp$control <- y_lmerControl_noRankX
+        m_mc_temp$control <- get_control_args(norank = TRUE)
       } else {
-        m_mc_temp$control <- y_glmerControl_noRankX      
+        m_mc_temp$control <- get_control_args(glmer = TRUE, norank = TRUE)      
       }
       # Evaluate X and Z using derivatives
       y_mod_q_dxdt <- eval(m_mc_temp, parent.frame())
@@ -1288,7 +1077,7 @@ stan_jm <- function(formulaLong, dataLong,
     e_times = c(eventtime, unlist(quadpoint)),
     e_d = c(d, rep(1, length(unlist(quadpoint)))),
     e_xbar = if (centreEvent) as.array(e_xbar) else double(0),
-    quadweight_times_half_eventtime = quadweight_times_half_eventtime,
+    quadpoints$weights_times_half_eventtime = quadpoints$weights_times_half_eventtime,
     
     # data for association structure
     assoc = as.integer(a_K > 0L),
@@ -1642,16 +1431,224 @@ stan_jm <- function(formulaLong, dataLong,
   return(out)
 }
 
+# Return the number of longitudinal markers
+#
+# @param x A stanjm fitted model object, a formula object 
+#   or list of formula objects
+get_M <- function(x) {
+  if (is.call(x)) x <- eval(x)
+  if (is(x, "stanjm")) {
+    x$n_markers
+  } else if (is(x, "formula")) {
+    1L
+  } else if (is.list(x)) {
+    if (!all(sapply(x, function(y) (is(y, "formula")))))
+      stop("Argument should be a fitted model of stanjm class, ", 
+           "a formula object or a list of formula objects", call. = FALSE)
+    length(x)
+  } else {
+    stop("Argument should be a fitted model of stanjm class, ", 
+         "a formula object or a list of formula objects", call. = FALSE)
+  }
+}
+
+# Check the user input to the formulaLong argument
+#
+# @param x The formulaLong argument of the matched call
+# @return A logical indicating whether the user inputted a list 
+#   of formula objects
+check_arg_yform <- function(x) {
+  if (is.call(x)) x <- eval(x)
+  if (is(x, "formula")) {
+    structure(FALSE, M = 1L)
+  } else if (is.list(x)) {
+    if (!all(sapply(x, function(y) (is(y, "formula")))))
+      stop("'formulaLong' should be a formula object or a list of formula ",
+           "objects", call. = FALSE)
+    structure(TRUE, M = length(x))
+  } else {
+    stop("'formulaLong' should be a formula object or, for a multivariate ",
+         "joint model, a list of formula objects with length equal to the ",
+         "desired number of longitudinal markers", call. = FALSE)
+  }
+}
+
+# Check the user input to the dataLong argument
+#
+# @param x The dataLong argument of the matched call
+# @param M The number of longitudinal markers in the joint model
+# @return A logical indicating whether the user inputted a list 
+#   of data frames
+check_arg_ydata <- function(x, M) {
+  if (is.call(x)) x <- eval(x)
+  if (is.data.frame(x)) {
+    FALSE
+  } else if (is.list(x)) {
+    if (length(x) != M)
+      stop("dataLong appears to be a list of the incorrect length",
+           call. = FALSE)
+    TRUE
+  } else {
+    stop("'dataLong' should be a data frame or possibly a list of data ",
+         "frames. The latter is only required when fitting a multivariate ",
+         "joint model using different data for each longitudinal submodel.",
+         call. = FALSE)
+  }
+}
+
+# Check the user input to the subsetLong argument
+#
+# @param x The subsetLong argument of the matched call
+# @param M The number of longitudinal markers in the joint model
+# @return An integer indicating whether the user inputted a list 
+#   of subsets
+check_arg_ysubset <- function(x, M) {
+  if (is.call(x)) x <- eval(x)
+  if (is.null(x)) {
+    NULL   # no subset entered
+  } else if (is.list(x)) {
+    if (length(x) != M)
+      stop("'subsetLong' appears to be a list of the incorrect length",
+           call. = FALSE)
+    TRUE   # is a list
+  } else if (is.vector(x)) {
+    FALSE  # not a list, but valid
+  } else {
+    stop("'subsetLong' should be a vector or possibly a list of vectors. ",
+         "The latter is only required if fitting a multivariate joint ",
+         "model and using a different subset of data for each ",
+         "longitudinal submodel.", call. = FALSE)
+  }
+}  
+
+# Check the user input to the family argument
+#
+# @param x The family argument of the matched call
+# @param M The number of longitudinal markers in the joint model
+# @return An integer indicating whether the user inputted a list 
+#   of families
+check_arg_family <- function(x, M) {
+  if (is.call(x)) x <- eval(x)
+  if (is.null(x)) {
+    NULL
+  } else if (is(x, "family")) {
+    FALSE  # not a list, but valid, so convert to list
+  } else if (is.list(x)) {
+    if (length(x) != M)
+      stop("'family' should be a family function or, for a multivariate ",
+           "joint model, possibly a list of family functions", call. = FALSE)
+    TRUE  # is a list
+  } else {
+    stop("'family' should be a family function or, possibly a list of family ",
+         "functions. The latter is only required when fitting a multivariate ",
+         "joint model with a different family and/or link function for some ",
+         "of the longitudinal submodels.", call. = FALSE)
+  }
+}  
+
+
+# Check if object is a list, and if not, then convert it to a
+# list and possibly repeat it 'len' times
+#
+# @param x The object to be checked and possible converted to a list
+# @param len The length of the list that is to be returned
+to_list <- function(x, len = 1) {
+  if (is.list(x)) {
+    if (length(x) == len) {
+      x
+    } else if (length(x) == 1L) {
+      rep(x, len)
+    } else {
+      stop("To be broadcast, 'x' must be a list of length 1")
+    }
+  } else {
+    rep(list(x), len)
+  }
+}
+
+# Check the user input to the assoc argument and, if necessary, convert it 
+# to a list of length equal to the number of longitudinal submodels
+#
+# @param x The user input to the assoc argument
+# @param M Integer specifying the number of longitudinal markers
+# @return A list with the assoc argument for each longitudinal submodel
+check_arg_assoc <- function(x, M) { 
+  if (is.list(x)) {  # if list, then check length
+    if (!(length(x) %in% c(1,M)))
+      stop("`assoc' should be a list of length 1 or length equal to the ",
+           "number of longitudinal markers", call. = FALSE)
+  } else if (is.character(x)) {  # if not list, then convert to list
+    x <- list(x)
+  } else {  # else return error
+    stop("'assoc' should be a character string or character vector or, for a ",
+         "multivariate joint model, possibly a list of character strings ",
+         "or character vectors. The latter is only required if using a different ",
+         "association structure for linking each longitudinal submodel to the ",
+         "event outcome.", call. = FALSE)
+  }
+  if (length(x) != M) x <- rep(x, M)
+  x
+} 
+
+
+# Check the id_var argument is valid and is included appropriately in the
+# formulas for each of the longitudinal submodels
+#
+# @param id_var The character string that the user specified for the id_var
+#   argument -- will have been set to NULL if the argument was missing.
+# @param y_cnms A list of length M with the cnms for each longitudinal submodel
+# @return Returns the character string corresponding to the appropriate id_var.
+#   This will either be the user specified id_var argument or the only grouping
+#   factor.
+check_id_var <- function(id_var, y_cnms) {
+  len_cnms <- sapply(y_cnms, length)
+  if (any(len_cnms > 1L)) {  # more than one grouping factor
+    if (is.null(id_var)) {
+      stop("'id_var' must be specified when using more than one grouping factor",
+           call. = FALSE)
+    } else {
+      lapply(y_cnms, function(x)  if (!(id_var %in% names(x)))
+        stop("`id_var' must be included as a grouping factor in each ",
+             "of the longitudinal submodels", call. = FALSE)) 
+      return(id_var)
+    }      
+  } else {  # only one grouping factor (assumed to be subject ID)
+    only_cnm <- unique(sapply(y_cnms, names))
+    if (length(only_cnm) > 1L)
+      stop("The grouping factor (ie, subject ID variable) is not the ",
+           "same in all longitudinal submodels", call. = FALSE)
+    if ((!is.null(id_var)) && (!identical(id_var, only_cnm)))
+        warning("The user specified 'id_var' (", paste(id_var), 
+                ") and the assumed ID variable based on the single ",
+                "grouping factor (", paste(only_cnm), ") are not the same; ", 
+                "`id_var' will be ignored", call. = FALSE, immediate. = TRUE)
+    return(only_cnm)
+  }
+}
+
+
+# Check the factor list corresponding to subject ID is the same in each 
+# of the longitudinal submodels
+#
+check_id_list <- function(id_var, y_flist) {
+  id_list <- unique(lapply(y_flist, function(x) unique(x[[id_var]])))
+  if (length(id_list) > 1L)
+    stop("The subject IDs are not the same in all longitudinal submodels.",
+         call. = FALSE)
+  unlist(id_list)  
+}
+
 
 # Function to check that the assoc argument only includes supported association
 # types. The function returns a list with logicals specifying which association
 # type have been requested.
 # 
-# @param x The input from the user -- should be a character vector or NULL
+# @param assoc The input from the user -- should be a character vector or NULL
 # @param supported_assoc_args A character vector showing the supported
 #   association types
 # @return A list of logicals indicating the desired association types
-check_assoc_args <- function(x, supported_assoc_args) {
+check_assoc_args <- function(assoc, supported_assoc_args) {
+  assoc <- gsub("^shared_b.*", "shared_b", x)
   assoc <- sapply(supported_assoc_args, function(y) y %in% x, simplify = FALSE)
   if (is.null(x)) {
     assoc$null <- TRUE
@@ -1670,6 +1667,183 @@ check_assoc_args <- function(x, supported_assoc_args) {
          "joint model, possibly a list of character vectors.", call. = FALSE)
   }
 }
+
+
+
+# Function to return the variables used in fitting a model, as well as the
+# predvars, for both the fixed and random parts of a (g)lmer fit
+#
+# @param mod A (g)lmer model object
+# @return A named list of lists
+get_formvars <- function(mod) {
+  vars_f <- grep("", attr(terms(mod, fixed.only = TRUE), "variables"), value = TRUE)
+  vars_r <- grep("", attr(terms(modx, random.only = TRUE), "variables"), value = TRUE)
+  predvars_f <- grep("", attr(terms(mod, fixed.only = TRUE), "predvars"), value = TRUE)
+  predvars_r <- grep("", attr(terms(mod, random.only = TRUE), "predvars"), value = TRUE)
+  list(formvars = list(fixed = vars_f, random = vars_r),
+       predvars = list(fixed = predvars_f, random = predvars_r))
+}
+
+
+# Function to replace the variables in the model formula with the prediction variables
+#
+# @param mod A (g)lmer model object from which to extract the model formula
+# @param vars A list of lists returned by a call to the function 'get_formvars'
+# @return The reformulated model formula with the variables replaced by predvars
+substitute_formvars <- function(mod, vars) {
+  fm <- formula(mod)
+  if (!identical(vars$formvars, vars$predvars)) {
+    for (j in 2:length(vars$formvars$fixed))
+      fm <- gsub(vars$formvars$fixed[[j]], vars$predvars$fixed[[j]], fm, fixed = TRUE)    
+    for (j in 2:length(vars$formvars$random))
+      fm <- gsub(vars$formvars$random[[j]], vars$predvars$random[[j]], fm, fixed = TRUE)    
+    fm <- reformulate(fm[[3]], response = fm[[2]])
+  }
+  fm
+}
+
+# Function to create cnms object which specifies the unique cnms across
+# all longitudinal submodels, rather than each submodel separately
+#
+# @param y_cnms A list of length M with each element corresponding to the 
+#   cnms object for just one of the longitudinal submodels
+get_common_cnms <- function(y_cnms) {
+  y_cnms_nms <- lapply(y_cnms, names)
+  cnms_nms <- unique(unlist(y_cnms_nms))
+  cnms <- lapply(seq_along(cnms_nms), function(i) {
+    nm <- cnms_nms[i]
+    unlist(lapply(1:length(y_cnms), function(m) 
+      if (nm %in% y_cnms_nms[[m]]) paste0("Long", m, "|", y_cnms[[m]][[nm]])))
+  })
+  names(cnms) <- cnms_nms
+  return(cnms)
+}
+
+
+# Function to return control arguments for lmer or glmer call
+#
+get_control_args <- function(glmer = FALSE, norank = FALSE) {
+  if (glmer) {
+    if (norank) {
+      lme4::glmerControl(check.nlev.gtreq.5 = "ignore",
+                         check.nlev.gtr.1 = "stop",
+                         check.nobs.vs.rankZ = "ignore",
+                         check.nobs.vs.nlev = "ignore",
+                         check.nobs.vs.nRE = "ignore",
+                         check.rankX = "ignore")      
+    } else {
+      lme4::glmerControl(check.nlev.gtreq.5 = "ignore",
+                         check.nlev.gtr.1 = "stop",
+                         check.nobs.vs.rankZ = "ignore",
+                         check.nobs.vs.nlev = "ignore",
+                         check.nobs.vs.nRE = "ignore")      
+    }    
+  } else {
+    if (norank) {
+      lme4::lmerControl(check.nlev.gtreq.5 = "ignore",
+                        check.nlev.gtr.1 = "stop",
+                        check.nobs.vs.rankZ = "ignore",
+                        check.nobs.vs.nlev = "ignore",
+                        check.nobs.vs.nRE = "ignore",
+                        check.rankX = "ignore")       
+    } else {
+      lme4::lmerControl(check.nlev.gtreq.5 = "ignore",
+                        check.nlev.gtr.1 = "stop",
+                        check.nobs.vs.rankZ = "ignore",
+                        check.nobs.vs.nlev = "ignore",
+                        check.nobs.vs.nRE = "ignore")      
+    }
+  }
+}
+
+# Function to return standardised GK quadrature points and weights
+#
+# @return A list with two named elements (points and weights) each
+#   of which is a numeric vector with length equal to the number of
+#   quadrature nodes
+get_quadpoints <- function(nodes = 15) {
+  if (nodes == 15) {
+    list(
+      points = c(
+        -0.991455371120812639207,
+        -0.949107912342758524526,
+        -0.86486442335976907279,
+        -0.7415311855993944398639,
+        -0.5860872354676911302941,
+        -0.4058451513773971669066,
+        -0.2077849550078984676007,
+        0,
+        0.2077849550078984676007,
+        0.405845151377397166907,
+        0.5860872354676911302941,
+        0.741531185599394439864,
+        0.86486442335976907279,
+        0.9491079123427585245262,
+        0.991455371120812639207),
+      weights = c(
+        0.0229353220105292249637,
+        0.063092092629978553291,
+        0.10479001032225018384,
+        0.140653259715525918745,
+        0.1690047266392679028266,
+        0.1903505780647854099133,
+        0.204432940075298892414,
+        0.209482141084727828013,
+        0.204432940075298892414,
+        0.1903505780647854099133,
+        0.169004726639267902827,
+        0.140653259715525918745,
+        0.1047900103222501838399,
+        0.063092092629978553291,
+        0.0229353220105292249637))      
+  } else if (nodes == 11) {
+    list(
+      points = c(
+        -0.984085360094842464496,
+        -0.906179845938663992798,
+        -0.754166726570849220441,
+        -0.5384693101056830910363,
+        -0.2796304131617831934135,
+        0,
+        0.2796304131617831934135,
+        0.5384693101056830910363,
+        0.754166726570849220441,
+        0.906179845938663992798,
+        0.984085360094842464496),
+      weights = c(
+        0.042582036751081832865,
+        0.1152333166224733940246,
+        0.186800796556492657468,
+        0.2410403392286475866999,
+        0.272849801912558922341,
+        0.2829874178574912132043,
+        0.272849801912558922341,
+        0.241040339228647586701,
+        0.186800796556492657467,
+        0.115233316622473394025,
+        0.042582036751081832865))     
+  } else if (nodes == 7) {
+    list(
+      points = c(
+        -0.9604912687080202834235,
+        -0.7745966692414833770359,
+        -0.4342437493468025580021,
+        0,
+        0.4342437493468025580021,
+        0.7745966692414833770359,
+        0.9604912687080202834235),
+      weights = c(
+        0.1046562260264672651938,
+        0.268488089868333440729,
+        0.401397414775962222905,
+        0.450916538658474142345,
+        0.401397414775962222905,
+        0.268488089868333440729,
+        0.104656226026467265194))      
+  } else stop("The specified number of Gauss-Kronrod quadrature points 
+              ('quadnodes') must be either 7, 11 or 15.")  
+}
+
 
 # Function to calculate the number of association parameters in the model
 #
@@ -1738,5 +1912,31 @@ unpad_reTrms.matrix <- function(x, columns = TRUE, ...) {
     colnames(x) else rownames(x)
   keep <- !grepl("_NEW_", nms, fixed = TRUE)
   if (columns) x[, keep, drop = FALSE] else x[keep, , drop = FALSE]
+}
+
+
+
+
+
+
+#------ Functions below here are not actually used
+
+# Function to turn the matched call for all longitudinal submodels together
+# into a matched call for just one of the longitudinal submodels
+#
+# @param m Integer specifying which longitudinal marker/submodel to create
+#   the matched call for
+# @param y_mc The user inputted matched call corresponding to all longitudinal
+#   submodels
+# @return The matched call for fitting the longitudinal submodel for marker m
+create_m_mc <- function(m, y_mc, was_list) {    
+  m_mc <- y_mc
+  m_mc$formula <- if (was_list$formula) y_mc$formula[[(1+m)]] else y_mc$formula
+  m_mc$data <- if (was_list$data) y_mc$data[[(1+m)]] else y_mc$data
+  if (!is.null(was_list$subset))   
+    m_mc$subset <- if (was_list$subset) y_mc$subset[[(1+m)]] else y_mc$subset
+  if (!is.null(was_list$family))   
+    m_mc$family <- if (was_list$family) y_mc$family[[(1+m)]] else y_mc$family
+  return(m_mc)
 }
  
