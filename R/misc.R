@@ -144,3 +144,47 @@ check_submodelopt3 <- function(x) {
   if (!x %in% c("long", "event", "both"))
     stop("submodel option must be 'long', 'event' or 'both'") 
 }
+
+# Removes a specified character string from the names of an
+# object (for example, a matched call)
+#
+# @param x The matched call
+# @param string The character string to be removed
+strip_nms <- function(x, string) {
+  names(x) <- gsub(string, "", names(x))
+  x
+}
+
+
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
