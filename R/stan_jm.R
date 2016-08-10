@@ -209,7 +209,8 @@ stan_jm <- function(formulaLong, dataLong,
                     formulaEvent, dataEvent, 
                     time_var, id_var, family = gaussian,
                     assoc = "etavalue",
-                    base_haz = "weibull", quadnodes = 15, 
+                    base_haz = c("weibull", "piecewise", "splines"), 
+                    df, quadnodes = 15, 
                     subsetLong, subsetEvent, 
                     na.action = getOption("na.action", "na.omit"),
                     weights, offset, contrasts,
@@ -250,7 +251,7 @@ stan_jm <- function(formulaLong, dataLong,
   call <- match.call(expand.dots = TRUE)    
   mc <- match.call(expand.dots = FALSE)
   mc$time_var <- mc$id_var <- 
-    mc$assoc <- mc$base_haz <- mc$quadnodes <- 
+    mc$assoc <- mc$base_haz <- mc$df <- mc$quadnodes <- 
     mc$centreLong <- mc$centreEvent <- mc$init <- NULL
   mc$priorLong <- mc$priorLong_intercept <- mc$priorLong_ops <- 
     mc$priorEvent <- mc$priorEvent_intercept <- mc$priorEvent_ops <-
@@ -592,6 +593,17 @@ stan_jm <- function(formulaLong, dataLong,
   # Baseline hazard
   base_haz <- match.arg(base_haz)
   base_haz_weibull <- (base_haz == "weibull")
+  base_haz_piecewise <- (base_haz == "piecewise")
+  base_haz_splines <- (base_haz == "splines")
+  
+  if ((base_haz_splines) && (missing(df)))
+    stop("df must be specified when splines baseline hazard is used",
+         call. = FALSE)
+  if ((!base_haz_splines) && (!missing(df)))
+    stop("df can only be specified when splines baseline hazard is used",
+         call. = FALSE)
+  if (missing(df)) df <- 0 
+  splines_df <- df
   
   # Set up model frame for event submodel 
   cluster_term <- paste0("cluster(", id_var, ")")
@@ -1091,7 +1103,7 @@ stan_jm <- function(formulaLong, dataLong,
 
   # QR not yet implemented for stan_jm  
   if (QR) {
-    stop("QR decomposition is not yet supported by stan_jm or stan_jm.fit")
+    stop("QR decomposition is not yet supported by stan_jm")
     if (ncol(xtemp) <= 1)
       stop("'QR' can only be specified when there are multiple predictors.")
     cn <- colnames(xtemp)
@@ -1138,6 +1150,9 @@ stan_jm <- function(formulaLong, dataLong,
     
     # data for event submodel
     basehaz_weibull = as.integer(base_haz_weibull),
+    basehaz_piecewise = as.integer(base_haz_piecewise),
+    basehaz_splines = as.integer(base_haz_splines),
+    splines_df = as.integer(splines_df),
     e_centre = as.integer(centreEvent),
     e_has_intercept = as.integer(e_has_intercept),
     nrow_y_Xq = NROW(xqtemp[[1]]),
@@ -1293,7 +1308,9 @@ stan_jm <- function(formulaLong, dataLong,
                             "neg_binomial_2" = 6L)}))     
   standata$any_fam_3 <- as.integer(any(standata$family == 3L))
   
-
+  standata$e_ns_times <- if (base_haz_splines) 
+    as.array(splines::ns(standata$e_times, splines_df)) else as.array(matrix(0,0,0))
+  
   #================
   # Initial values
   #================
@@ -1362,7 +1379,15 @@ stan_jm <- function(formulaLong, dataLong,
     ))
     init <- function() model_based_inits
   }
-  
+
+
+  #===========
+  # Fit model
+  #===========
+
+  # !!! REMOVE
+  standata <<- standata
+
   # call stan() to draw from posterior distribution
   stanfit <- stanmodels$jm
   pars <- c(if (sum_y_has_intercept_unbound) "y_gamma_unbound",
@@ -1375,8 +1400,10 @@ stan_jm <- function(formulaLong, dataLong,
             if (a_K) "a_beta",
             if (Npat) "b_by_model",
             "y_dispersion", 
-            if (base_haz_weibull) "weibull_shape")
-            #"mean_PPD"
+            if (base_haz_weibull) "weibull_shape",
+            if (base_haz_piecewise) "log_lambda",
+            if (base_haz_splines) "splines_coefs")
+           #"mean_PPD"
 
   #cat("\n--> Fitting joint model now...")
   cat("\nPlease note the warmup phase may be much slower than",
@@ -1440,8 +1467,9 @@ stan_jm <- function(formulaLong, dataLong,
                  a_nms,                   
                  if (length(group)) c(paste0("b[", b_nms, "]")),
                  d_nms,
-                 if (base_haz_weibull) "Event|weibull shape"    ,               
-                 #"mean_PPD", 
+                 if (base_haz_weibull) "Event|weibull shape",               
+                 if (base_haz_splines) paste0("Event|basehaz coef", seq(splines_df)),               
+                #"mean_PPD", 
                  "log-posterior")
   stanfit@sim$fnames_oi <- new_names
   

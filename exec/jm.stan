@@ -636,6 +636,9 @@ data {
   
   // data for event submodel
   int<lower=0,upper=1> basehaz_weibull;  // weibull baseline hazard
+  int<lower=0,upper=1> basehaz_piecewise;  // piecewise constant baseline hazard
+  int<lower=0,upper=1> basehaz_splines;  // cubic splines baseline hazard
+  int<lower=0> splines_df;  // df for cubic splines baseline hazard
   int<lower=0,upper=1> e_centre;  // 1 = yes for centred predictor matrix
   int<lower=0,upper=1> e_has_intercept;  // 1 = yes
   int<lower=0> nrow_y_Xq;     // num. rows in long. predictor matrix at quad points
@@ -643,6 +646,7 @@ data {
   matrix[(M*nrow_y_Xq),sum_y_K] y_Xq; // predictor matrix (long submodel) at quadpoints, possibly centred              
   matrix[nrow_e_Xq,e_K] e_Xq;         // predictor matrix (event submodel) at quadpoints, possibly centred
   vector[nrow_e_Xq] e_times;          // event times and unstandardised quadrature points
+  matrix[(nrow_e_Xq*basehaz_splines),splines_df] e_ns_times; // basis for cubic splines baseline hazard
   vector[nrow_e_Xq] e_d;              // event indicator, followed by dummy indicator for quadpoints
   vector[e_K*(e_centre>0)] e_xbar;   // predictor means (event submodel)
   int<lower=0> num_non_zero_Zq;    // number of non-zero elements in the Z matrix (at quadpoints)
@@ -834,9 +838,11 @@ parameters {
   
   // parameters for event submodel
   real e_gamma[e_has_intercept];          // intercept (event model)
-  vector[e_K] e_z_beta;                    // primative coefs (event submodel)
+  vector[e_K] e_z_beta;                   // primative coefs (event submodel)
   real<lower=0> weibull_shape_unscaled[basehaz_weibull];  // unscaled weibull shape parameter 
-  
+  real<lower=0> log_lambda[basehaz_piecewise];  // coefs for exponential baseline hazard
+  vector[splines_df] splines_coefs;       // coefs for cubic splines baseline hazard
+ 
   // parameters for association structure
   vector[a_K] a_z_beta;   // primative coefs
     
@@ -863,7 +869,8 @@ transformed parameters {
   
   // parameters for event submodel
   vector[e_K] e_beta; 
-  real weibull_shape[basehaz_weibull]; 
+  real weibull_shape[basehaz_weibull];
+  
   // parameters for GK quadrature  
   vector[(M*nrow_y_Xq)] y_eta_q;          // linear predictor (all long submodels) evaluated at quadpoints
   vector[nrow_y_Xq] ysep_eta_q[M];        // linear predictor (each long submodel) evaluated at quadpoints
@@ -872,6 +879,7 @@ transformed parameters {
   vector[nrow_y_Xq*(sum_has_assoc_es > 0)] 
     dydtsep_eta_q[M];     // slope of linear predictor (each long submodel) evaluated at quadpoints
   vector[nrow_e_Xq] e_eta_q;      // linear predictor (event submodel) evaluated at quadpoints
+  vector[nrow_e_Xq] log_basehaz;      // baseline hazard evaluated at quadpoints
   vector[nrow_e_Xq] ll_haz_q;     // log hazard contribution to the log likelihood for the event model at event time and quad points
   vector[Npat] ll_haz_eventtime;  // log hazard contribution to the log likelihood for the event model AT the event time only
   vector[Npat_times_quadnodes] ll_haz_quadtime;    // log hazard for the event model AT the quadrature points only
@@ -947,10 +955,12 @@ transformed parameters {
   }
   else if (priorEvent_dist == 3) e_beta = hs_prior(e_z_beta, e_global, e_local);
   else if (priorEvent_dist == 4) e_beta = hsplus_prior(e_z_beta, e_global, e_local);
-
-  if (priorEvent_scale_for_weibull > 0)
-    weibull_shape[1] = priorEvent_scale_for_weibull * weibull_shape_unscaled[1];
-  else weibull_shape = weibull_shape_unscaled;   
+  
+  if (basehaz_weibull == 1) {
+    if (priorEvent_scale_for_weibull > 0)
+      weibull_shape[1] = priorEvent_scale_for_weibull * weibull_shape_unscaled[1];
+    else weibull_shape = weibull_shape_unscaled;
+  }   
   
    // parameters for association structure
   if      (priorAssoc_dist == 0) a_beta = a_z_beta;
@@ -1078,7 +1088,13 @@ transformed parameters {
 
   // Calculate log hazard at event times and unstandardised quadrature points 
   // NB assumes Weibull baseline hazard
-  ll_haz_q = e_d .* (log(weibull_shape[1]) + (weibull_shape[1] - 1) * e_log_times + e_eta_q);
+  if (basehaz_weibull == 1) 
+	  log_basehaz = log(weibull_shape[1]) + (weibull_shape[1] - 1) * e_log_times;
+  else if (basehaz_piecewise == 1)
+    log_basehaz = rep_vector(log_lambda[1], nrow_e_Xq);
+  else if (basehaz_splines == 1)
+	  log_basehaz = e_ns_times * splines_coefs;	
+  ll_haz_q = e_d .* (log_basehaz + e_eta_q);
 					  
   // Partition event times and quad points
   ll_haz_eventtime = segment(ll_haz_q, 1, Npat);
