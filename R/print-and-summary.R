@@ -58,7 +58,7 @@
 #' 
 #' @seealso \code{\link{summary.stanjm}}, \code{\link{stanjm-methods}}
 #'
-print.stanjm <- function(x, digits = 1, ...) {
+print.stanjm <- function(x, digits = 3, ...) {
   print(x$call) 
   
   M <- x$n_markers
@@ -163,7 +163,7 @@ print.stanjm <- function(x, digits = 1, ...) {
 #' 
 #' @importMethodsFrom rstan summary
 summary.stanjm <- function(object, pars = c("long", "event"), regex_pars = NULL, 
-                            probs = NULL, ..., digits = 1) {
+                            probs = NULL, ..., digits = 3) {
   pars <- rstanarm:::collect_pars(object, pars, regex_pars)
   M <- object$n_markers
   
