@@ -82,9 +82,10 @@
 #'   matrix for the longitudinal submodel(s) or event submodel should be 
 #'   centred. 
 #' @param init The method for generating the initial values for the MCMC.
-#'   The default is \code{"model_based"}, which uses initial values obtained 
-#'   from fitting separate longitudinal and time-to-event models prior to 
-#'   fitting the joint model. Other possibilities for specifying \code{init}
+#'   The default is "random" (see \code{\link[rstan]{stan}}), however, 
+#'   \code{"model_based"} initial values are also available, which uses those  
+#'   obtained from fitting separate longitudinal and time-to-event models prior  
+#'   to fitting the joint model. Other possibilities for specifying \code{init}
 #'   are those described for \code{\link[rstan]{stan}}.     
 #' @param ... Further arguments passed to 
 #'   \code{\link[rstan]{sampling}} (e.g. \code{iter}, \code{chains}, 
@@ -200,9 +201,7 @@
 #'
 #' @import data.table
 #' @importFrom rstanarm normal student_t cauchy hs hs_plus decov
-#' @importFrom survival coxph Surv cluster
-#' @importFrom lme4 lmer glmer glFormula lmerControl glmerControl 
-#'                  fixef getME sigma VarCorr
+#' @importFrom survival Surv cluster
 #' @importFrom Matrix Matrix t cBind bdiag
 #' @importFrom JMbayes dns
 stan_jm <- function(formulaLong, dataLong, 
@@ -215,7 +214,7 @@ stan_jm <- function(formulaLong, dataLong,
                     na.action = getOption("na.action", "na.omit"),
                     weights, offset, contrasts,
                     centreLong = FALSE, centreEvent = FALSE, 
-                    init = "model_based", ...,				          
+                    init = "random", ...,				          
 					          priorLong = normal(), priorLong_intercept = normal(),
                     priorLong_ops = priorLong_options(),
                     priorEvent = normal(), priorEvent_intercept = normal(),
@@ -231,8 +230,8 @@ stan_jm <- function(formulaLong, dataLong,
   #=============================  
   
   # Check for arguments not yet implemented
-  if (!missing(weights)) 
-    stop("Weights not yet supported by stan_jm")
+#  if (!missing(weights)) 
+#    stop("Weights not yet supported by stan_jm")
   if (!missing(offset)) 
     stop("Offsets not yet supported by stan_jm")
 #  algorithm <- match.arg(algorithm)
@@ -287,7 +286,7 @@ stan_jm <- function(formulaLong, dataLong,
   # Is dataLong a list?
   if (is.data.frame(eval(y_mc$data))) {
     data_list <- FALSE
-  } else if (is.list(eval(y_mc$data))) {
+  } else if (is(eval(y_mc$data), "list")) {
     data_list <- TRUE
     if (length(eval(y_mc$data)) != M)
       stop("dataLong appears to be a list of the incorrect length")
@@ -299,13 +298,13 @@ stan_jm <- function(formulaLong, dataLong,
   
   # Is subset a list?
   if (is.null(y_mc$subset)) {
-    y_subset_list <- 0L  # NULL
-  } else if (is.list(eval(y_mc$subset))) {
-    y_subset_list <- 2L  # TRUE
+    y_subset_list <- NULL
+  } else if (is(eval(y_mc$subset), "list")) {
+    y_subset_list <- TRUE
     if (length(eval(y_mc$subset)) != M)
       stop("subsetLong appears to be a list of the incorrect length")
   } else if (is.vector(eval(y_mc$subset))) {
-    y_subset_list <- 1L  # FALSE
+    y_subset_list <- FALSE
   } else {
     stop("'subsetLong' should be a vector or possibly a list of vectors. ",
          "The latter is only required if fitting a multivariate joint ",
@@ -313,23 +312,44 @@ stan_jm <- function(formulaLong, dataLong,
          "longitudinal submodel.")
   }
   
-  # Is family a list?
-  if (is.null(y_mc$family)) {
-    family_list <- 0L  # NULL
-  } else if (is(eval(y_mc$family), "family")) {
-    family_list <- 1L  # FALSE
-  } else if (is.list(eval(y_mc$family))) {
-    family_list <- 2L  # TRUE
-    if (length(eval(y_mc$family)) != M)
-      stop("family should be a family function or, for a multivariate ",
-           "joint model, possibly a list of family functions")
+  # Is weights a list?
+  if (is.null(y_mc$weights)) {
+    y_weights_list <- NULL
+  } else if (is.list(eval(y_mc$weights))) {
+    y_weights_list <- TRUE
+    if (length(eval(y_mc$weights)) != M)
+      stop("weights argument appears to be a list of the incorrect length")
+  } else if (is.vector(eval(y_mc$weights))) {
+    y_weights_list <- FALSE
   } else {
-    stop("'family' should be a family function or, possibly a list of family ",
-         "functions. The latter is only required when fitting a multivariate ",
-         "joint model with a different family and/or link function for some ",
-         "of the longitudinal submodels.")
+    stop("'weights' argument should be a numeric vector or possibly a list of ",
+         "vectors. The latter is required if fitting a multivariate joint ",
+         "model and using different weights for each longitudinal submodel. ",
+         "If supplying a list then NULL should be specified for those submodels ",
+         "that do not require weights.")
   }
-  if (family_list %in% c(0L,1L)) family <- list(family)  # convert to list
+  if (is.null(y_weights_list)) {
+    y_weights <- rep(list(NULL), M)
+  } else if (!y_weights_list) {
+    y_weights <- list(weights)
+    if (length(y_weights) < M) y_weights <- rep(y_weights, M)
+  } else {
+    y_weights <- weights
+  }
+  lapply(y_weights, rstanarm:::validate_weights)
+  
+  # Is family a list?
+  if (is.null(eval(y_mc$family))) {
+    family_list <- NULL
+  } else if (is(eval(y_mc$family), "list")) {
+    family_list <- TRUE
+    if (length(eval(y_mc$family)) != M)
+      stop("'family' argument must be a family or possibly a list of families. ",
+           "The latter is only required when fitting a multivariate joint ",
+           "model with a different family and/or link function for some ",
+           "of the longitudinal submodels.")
+  } else family_list <- FALSE
+  if (is.null(family_list) || !family_list) family <- list(family)  # convert to list
   if (length(family) < M) family <- rep(family, M)  # repeat family if necessary
   
   # Is assoc a list? If not, then convert to list
@@ -373,31 +393,6 @@ stan_jm <- function(formulaLong, dataLong,
   if (any(lapply(link, length) == 0L)) 
     stop("'link' must be one of ", paste(supported_links, collapse = ", "))
 
-
-  #####
-  #if (binom_y_prop(y, family, weights))
-  #  stop("To specify 'y' as proportion of successes and 'weights' as ",
-  #       "number of trials please use stan_glm rather than calling ",
-  #       "stan_glm.fit directly.")
-  #if (rstanarm:::is.binomial(family$family)) {
-  #  if (NCOL(y) == 1L) {
-  #    if (is.numeric(y) || is.logical(y)) 
-  #      y <- as.integer(y)
-  #    if (is.factor(y)) 
-  #      y <- fac2bin(y)
-  #    if (!all(y %in% c(0L, 1L))) 
-  #      stop("y values must be 0 or 1 for bernoulli regression.")
-  #  } else {
-  #    if (!isTRUE(NCOL(y) == 2L))
-  #      stop("y should either be a vector or a matrix 1 or 2 columns.")
-  #    trials <- as.integer(y[, 1L] + y[, 2L])
-  #    y <- as.integer(y[, 1L])
-  #  }
-  #}
-  #####
-
-
-
   # Create call for each longitudinal submodel separately
   m_mc <- list()  # list containing matched calls for each marker
   for (m in 1:M) {
@@ -406,6 +401,8 @@ stan_jm <- function(formulaLong, dataLong,
     m_mc[[m]]$data    <- if (data_list)    y_mc$data[[(1+m)]]    else y_mc$data
     if (!is.null(y_subset_list))   
       m_mc[[m]]$subset  <- if (y_subset_list) y_mc$subset[[(1+m)]]  else y_mc$subset
+    if (!is.null(y_weights_list))   
+      m_mc[[m]]$weights  <- if (y_weights_list) y_mc$weights[[(1+m)]]  else y_mc$weights
     if (!is.null(family_list))   
       m_mc[[m]]$family  <- if (family_list)   y_mc$family[[(1+m)]]  else y_mc$family    
   }
@@ -427,23 +424,31 @@ stan_jm <- function(formulaLong, dataLong,
   # Items to store for each longitudinal submodel
   y_mod         <- list()     # fitted long. submodels
   y_vars        <- list()     # the variables used in fitting the model
+  y_is_real     <- c()        # indicator of response vector being reals (not integers)
   y             <- list()     # response vector
   x             <- list()     # design matrix with intercept
   xtemp         <- list()     # design matrix without intercept, possibly centred
-  xbar          <- list()       # means of predictors
+  xbar          <- list()     # means of predictors
+  trials        <- list()     # num. of trials for binomial outcome
   y_centre      <- c()        # submodel has intercept
   y_has_intercept <- c()      # submodel has intercept
-  y_has_intercept_unbound <- c()      # has unbounded intercept
-  y_has_intercept_bound <- c()    # has bounded intercept
+  y_has_intercept_unbound <- c()    # has unbounded intercept
+  y_has_intercept_lobound <- c()    # has lower bounded intercept
+  y_has_intercept_upbound <- c()    # has upper bounded intercept
+  y_has_weights <- c()        # submodel has weights
+  y_has_dispersion <- c()     # submodel has dispersion term
   y_N           <- c()        # num. observations
+  y_N01         <- list()     # num. 0 and 1 observations if bernoulli
+  y_real_N      <- c()        # num. observations, for real outcomes
+  y_int_N       <- c()        # num. observations, for integer outcomes
   y_K           <- c()        # num. predictors (excluding intercept)
-  y_weights     <- list()     # weights
   y_offset      <- list()     # offsets
   Z             <- list()     # Z matrices
   y_cnms          <- list()   
   y_flist         <- list()   
   y_gamma_unbound <- list()   # initial values for intercepts
-  y_gamma_bound   <- list()   # initial values for intercepts
+  y_gamma_lobound <- list()   # initial values for intercepts
+  y_gamma_upbound <- list()   # initial values for intercepts
   y_beta          <- list()   # initial values for coefs
   y_dispersion    <- c()      # initial values for dispersion
   sd_b            <- list()   # initial values for random effect sds
@@ -466,22 +471,52 @@ stan_jm <- function(formulaLong, dataLong,
       m_mc[[m]]$control <- get_control_args(glmer = TRUE)               
     }
     y_mod[[m]] <- eval(m_mc[[m]], parent.frame())      
+
+    # Indicator of real or integer response vector
+    y_is_real[m] <- check_response_real(family[[m]]$family)
+    
+    # Indicator of whether model includes a dispersion term
+    y_has_dispersion[m] <- check_for_dispersion(family[[m]]$family)
     
     # Response vector and design matrix
     y[[m]] <- as.vector(lme4::getME(y_mod[[m]], "y"))
     x[[m]] <- as.matrix(lme4::getME(y_mod[[m]], "X"))
     y_has_intercept[m] <- grepl("(Intercept", colnames(x[[m]])[1L], fixed = TRUE)
     if (y_has_intercept[m]) {
-      if ((family[[m]]$family == "gaussian") || (family[[m]]$link == "log")) {
-        y_has_intercept_unbound[m] <- 1L
-        y_has_intercept_bound[m] <- 0L
-      } else {
-        y_has_intercept_unbound[m] <- 0L
-        y_has_intercept_bound[m] <- 1L
-      }
-    } else y_has_intercept_unbound[m] <- y_has_intercept_bound[m] <- 0L
+      check_int <- check_intercept(family[[m]]$family, family[[m]]$link)
+      y_has_intercept_unbound[m] <- check_int$unbound
+      y_has_intercept_lobound[m] <- check_int$lobound
+      y_has_intercept_upbound[m] <- check_int$upbound
+    } else {
+      y_has_intercept_unbound[m] <- 0L
+      y_has_intercept_lobound[m] <- 0L
+      y_has_intercept_upbound[m] <- 0L
+    } 
     xtemp[[m]] <- if (y_has_intercept[m]) x[[m]][, -1L, drop=FALSE] else x[[m]]
-   
+
+    if (rstanarm:::is.binomial(family[[m]]$family)) {
+      if (NCOL(y[[m]]) == 1L) {
+        if (is.numeric(y[[m]]) || is.logical(y[[m]])) 
+          y[[m]] <- as.integer(y[[m]])
+        if (is.factor(y[[m]])) 
+          y[[m]] <- fac2bin(y[[m]])
+        if (!all(y[[m]] %in% c(0L, 1L))) 
+          stop("y values must be 0 or 1 for bernoulli regression.")
+        trials[[m]] <- rep(0L, length(y[[m]]))
+      } else {
+        if (!isTRUE(NCOL(y[[m]]) == 2L))
+          stop("y should either be a vector or a matrix 1 or 2 columns.")
+        trials[[m]] <- as.integer(y[[m]][, 1L] + y[[m]][, 2L])
+        y[[m]] <- as.integer(y[[m]][, 1L])
+      }
+    } else trials[[m]] <- rep(0L, length(y[[m]]))
+
+    # Falsify weights vector if weights are not included
+    if (!length(y_weights[[m]])) {
+      y_weights[[m]] <- rep(0.0, length(y[[m]]))
+      y_has_weights[m] <- 0L
+    } else y_has_weights[m] <- 1L
+    
     # Random effect terms
     Z[[m]]     <- lme4::getME(y_mod[[m]], "Z")
     y_cnms[[m]]  <- lme4::getME(y_mod[[m]], "cnms")
@@ -495,50 +530,79 @@ stan_jm <- function(formulaLong, dataLong,
       xtemp[[m]] <- sweep(xtemp[[m]], 2, xbar[[m]], FUN = "-")
     }
     
+    # Reorder y, X, Z if bernoulli (zeros first)
+    if (rstanarm:::is.binomial(family[[m]]$family) && all(y[[m]] %in% 0:1)) {      
+      y[[m]] <- y[[m]][order(y[[m]])]
+      trials[[m]] <- trials[[m]][order(y[[m]])]
+      y_weights[[m]] <- y_weights[[m]][order(y[[m]])]
+      xtemp[[m]] <- xtemp[[m]][order(y[[m]]), , drop = FALSE]  
+      Z[[m]] <- Z[[m]][order(y[[m]]), , drop = FALSE]
+      y_N01[[m]] <- sapply(0:1, function(x) sum(y[[m]] == x))
+    } else y_N01[[m]] <- rep(0L, 2)  # dud entry if not bernoulli
+    
     # Dimensions
     y_N[m] <- NROW(xtemp[[m]])
+    y_real_N[m] <- if (y_is_real[m]) y_N[m] else 0L
+    y_int_N[m] <- if (!y_is_real[m]) y_N[m] else 0L
     y_K[m] <- NCOL(xtemp[[m]])
 
     # Update formula if using splines or other data dependent predictors
     y_vars[[m]] <- get_formvars(y_mod[[m]])
     m_mc[[m]]$formula <- substitute_vars(y_mod[[m]], y_vars[[m]]$formvars, y_vars[[m]]$predvars)
-    
+
     # Model based initial values
     if (init == "model_based") {
       if (y_has_intercept_unbound[m]) {
         y_beta[[m]] <- lme4::fixef(y_mod[[m]])[-1L]
-        marku <- sum(y_has_intercept_unbound[1:m])
-        y_gamma_unbound[[marku]] <- fixef(y_mod[[m]])[1L]
+        markun <- sum(y_has_intercept_unbound[1:m])
+        y_gamma_unbound[[markun]] <- fixef(y_mod[[m]])[1L]
         if (centreLong) 
-          y_gamma_unbound[[marku]] <- y_gamma_unbound[[marku]] - xbar[[m]] %*% y_beta[[m]]
-      } else if (y_has_intercept_bound[m]) {
+          y_gamma_unbound[[markun]] <- y_gamma_unbound[[markun]] - xbar[[m]] %*% y_beta[[m]]
+      } else if (y_has_intercept_lobound[m]) {
         y_beta[[m]] <- lme4::fixef(y_mod[[m]])[-1L]
-        markb <- sum(y_has_intercept_bound[1:m])        
-        y_gamma_bound[[markb]] <- fixef(y_mod[[m]])[1L]
+        marklo <- sum(y_has_intercept_lobound[1:m])        
+        y_gamma_lobound[[marklo]] <- fixef(y_mod[[m]])[1L]
         if (centreLong) 
-          y_gamma_bound[[markb]] <- y_gamma_unbound[[markb]] - xbar[[m]] %*% y_beta[[m]]
+          y_gamma_lobound[[marklo]] <- y_gamma_lobound[[marklo]] - xbar[[m]] %*% y_beta[[m]]
+      } else if (y_has_intercept_upbound[m]) {
+        y_beta[[m]] <- lme4::fixef(y_mod[[m]])[-1L]
+        markup <- sum(y_has_intercept_upbound[1:m])        
+        y_gamma_upbound[[markup]] <- fixef(y_mod[[m]])[1L]
+        if (centreLong) 
+          y_gamma_upbound[[markup]] <- y_gamma_upbound[[markup]] - xbar[[m]] %*% y_beta[[m]]
       } else {
         y_beta[[m]] <- lme4::fixef(y_mod[[m]])
       }
       vc <- lme4::VarCorr(y_mod[[m]])[[1]]
       sd_b[[m]] <- attr(vc, "stddev")
       b_Corr[[m]] <- attr(vc, "correlation")
-      y_dispersion[m] <- lme4::sigma(y_mod[[m]])
+      if (y_has_dispersion[m]) {
+        disp_mark <- sum(y_has_dispersion[1:m])
+        y_dispersion[disp_mark] <- sigma(y_mod[[m]])
+      }
     }
 
   }
   
   # Sum dimensions across all longitudinal submodels
   sum_y_N <- sum(y_N)
+  sum_y_real_N <- sum(y_real_N)
+  sum_y_int_N <- sum(y_int_N)
   sum_y_K <- sum(y_K)
   sum_y_has_intercept <- sum(y_has_intercept)
   sum_y_has_intercept_unbound <- sum(y_has_intercept_unbound)
-  sum_y_has_intercept_bound <- sum(y_has_intercept_bound)
+  sum_y_has_intercept_lobound <- sum(y_has_intercept_lobound)
+  sum_y_has_intercept_upbound <- sum(y_has_intercept_upbound)
+  sum_y_has_dispersion <- sum(y_has_dispersion)
   
-  # Indexing for binded response vector
-  y_beg <- sapply(1:M, function(i) sum(y_N[0:(i-1)]) + 1)
-  y_end <- sapply(1:M, function(i) sum(y_N[0:i]))  
-
+  # Indexing for binded response vector, design matrix, weights, etc
+  y_beg <- sapply(1:M, function(m) sum(y_N[0:(m-1)]) + 1)
+  y_end <- sapply(1:M, function(m) sum(y_N[0:m]))  
+  y_real_beg <- sapply(1:M, function(m) if (y_is_real[m]) sum(y_real_N[0:(m-1)]) + 1L else 0L)
+  y_real_end <- sapply(1:M, function(m) if (y_is_real[m]) sum(y_real_N[0:m]) else 0L)  
+  y_int_beg <- sapply(1:M, function(m) if (!y_is_real[m]) sum(y_int_N[0:(m-1)]) + 1L else 0L)
+  y_int_end <- sapply(1:M, function(m) if (!y_is_real[m]) sum(y_int_N[0:m]) else 0L)  
+  
   # Additional error checks
   id_var <- check_id_var(id_var, y_cnms)
   id_list <- check_id_list(id_var, y_flist)
@@ -606,19 +670,14 @@ stan_jm <- function(formulaLong, dataLong,
   splines_df <- df
   
   # Set up model frame for event submodel 
-  cluster_term <- paste0("cluster(", id_var, ")")
   e_mc[[1]] <- quote(survival::coxph) 
-  e_mc$formula <- do.call(update.formula, list(
-                            e_mc$formula, 
-                            paste0(" ~ . +", cluster_term)))
   e_mc$x <- TRUE
   e_mod <- eval(e_mc, parent.frame())
-                           
-  e_mf <- model.frame(e_mod)
-  e_mf <- cbind(e_mf[,1][,1:ncol(e_mf[,1])], e_mf)
+  e_mf <- expand.model.frame(e_mod, id_var, na.expand = TRUE)
+  e_mf <- cbind(unclass(e_mf[,1]), e_mf)
 
   # Check ID sorting
-  e_id_list <- factor(unique(e_mf[, cluster_term]))
+  e_id_list <- factor(unique(e_mf[, id_var]))
   if (!identical(id_list, e_id_list))
     stop("'dataEvent' needs to be sorted by the subject ",
          "ID/grouping variable", call. = FALSE)
@@ -629,14 +688,14 @@ stan_jm <- function(formulaLong, dataLong,
   if (attr(e_y, "type") == "counting") {
     tvc         <- TRUE
     mf_event    <- do.call(rbind, lapply(
-                             split(e_mf, e_mf[, cluster_term]),
+                             split(e_mf, e_mf[, id_var]),
                              function(d) d[which.max(d[,"stop"]), ]))
-    flist_event <- mf_event[, cluster_term]
+    flist_event <- mf_event[, id_var]
     eventtime   <- mf_event$stop
     d           <- mf_event$status
   
-    e_mf           <- data.table(cbind(e_y, e_mf), key = c(cluster_term, "start"))
-    e_mf_eventtime <- e_mf[, .SD[.N], by = e_mf[, cluster_term]]
+    e_mf           <- data.table(cbind(e_y, e_mf), key = c(id_var, "start"))
+    e_mf_eventtime <- e_mf[, .SD[.N], by = e_mf[, id_var]]
     # Unstandardised quadrature points
     quadpoint <- lapply(quadpoints$points, FUN = function(x) 
                           (eventtime/2) * x + (eventtime/2))
@@ -654,7 +713,7 @@ stan_jm <- function(formulaLong, dataLong,
   } else if (attr(e_y, "type") == "right") {
     tvc         <- FALSE 
     mf_event    <- e_mf
-    flist_event <- mf_event[, cluster_term]
+    flist_event <- mf_event[, id_var]
     eventtime   <- mf_event$time
     d           <- mf_event$status
     # Unstandardised quadrature points
@@ -692,7 +751,9 @@ stan_jm <- function(formulaLong, dataLong,
   }
     
   # Error checks for the ID variable
-  if (!identical(id_list, as.factor(sort(unique(flist_event)))))
+  id_list <<- id_list
+  flist_event <<- flist_event
+  if (!identical(id_list, factor(sort(unique(flist_event)))))
     stop("The patient IDs (levels of the grouping factor) included ",
          "in the longitudinal and event submodels do not match")
 
@@ -886,7 +947,7 @@ stan_jm <- function(formulaLong, dataLong,
   priorLong_scaled <- priorLong_ops$scaled
   priorLong_min_prior_scale <- priorLong_ops$min_prior_scale
   priorLong_scale_for_dispersion <- 
-    as.array(rstanarm:::maybe_broadcast(priorLong_ops$prior_scale_for_dispersion, M))
+    as.array(rstanarm:::maybe_broadcast(priorLong_ops$prior_scale_for_dispersion, sum_y_has_dispersion))
   
   if (is.null(priorLong)) {
     priorLong_dist <- 0L
@@ -1125,8 +1186,13 @@ stan_jm <- function(formulaLong, dataLong,
     M = as.integer(M),
     Npat = as.integer(Npat),
     y_N = as.array(y_N), 
+    y_real_N = as.array(y_real_N), 
+    y_int_N = as.array(y_int_N), 
+    y_N01 = as.array(t(sapply(y_N01, cbind))), 
     y_K = as.array(y_K), 
     sum_y_N = as.integer(sum_y_N),
+    sum_y_real_N = as.integer(sum_y_real_N),
+    sum_y_int_N = as.integer(sum_y_int_N),
     sum_y_K = as.integer(sum_y_K),
     e_K = as.integer(e_K),
     a_K = as.integer(a_K),
@@ -1134,17 +1200,29 @@ stan_jm <- function(formulaLong, dataLong,
     Npat_times_quadnodes = as.integer(Npat * quadnodes),
     sum_y_has_intercept = as.integer(sum_y_has_intercept), 
     sum_y_has_intercept_unbound = as.integer(sum_y_has_intercept_unbound), 
-    sum_y_has_intercept_bound = as.integer(sum_y_has_intercept_bound), 
+    sum_y_has_intercept_lobound = as.integer(sum_y_has_intercept_lobound), 
+    sum_y_has_intercept_upbound = as.integer(sum_y_has_intercept_upbound), 
+    sum_y_has_dispersion = as.integer(sum_y_has_dispersion),
     
     # data for longitudinal submodel(s)
     link = as.array(link),
     y_centre = as.integer(centreLong),
     y_has_intercept = as.array(as.integer(y_has_intercept)),
     y_has_intercept_unbound = as.array(y_has_intercept_unbound),
-    y_has_intercept_bound = as.array(y_has_intercept_bound),
-    y = as.array(do.call(c, y)),
+    y_has_intercept_lobound = as.array(y_has_intercept_lobound),
+    y_has_intercept_upbound = as.array(y_has_intercept_upbound),
+    y_has_weights = as.array(y_has_weights),
+    y_has_dispersion = as.array(as.numeric(y_has_dispersion)),
+    y_real = as.array(as.numeric(unlist(y[y_is_real]))),
+    y_int = as.array(as.integer(unlist(y[!y_is_real]))),
     y_beg = as.array(y_beg),  # indexing for combined response vector
     y_end = as.array(y_end),
+    y_real_beg = as.array(y_real_beg),
+    y_real_end = as.array(y_real_end),
+    y_int_beg = as.array(y_int_beg), 
+    y_int_end = as.array(y_int_end),
+    y_weights = as.array(do.call(c, y_weights)),
+    trials = as.array(as.integer(do.call(c, trials))),
     y_xbar = if (centreLong) as.array(do.call(c, xbar)) else double(0),
     y_X = as.array(as.matrix(Matrix::bdiag(xtemp))),
     
@@ -1202,7 +1280,8 @@ stan_jm <- function(formulaLong, dataLong,
     priorEvent_df_for_intercept = priorEvent_df_for_intercept,
     priorAssoc_df = priorAssoc_df, 
     priorLong_scale_for_dispersion = as.array(priorLong_scale_for_dispersion),
-    priorEvent_scale_for_weibull = priorEvent_scale_for_weibull,
+    priorEvent_scale_for_weibull = 
+      if (base_haz_weibull) as.array(priorEvent_scale_for_weibull) else as.array(double(0)),
     
     prior_PD = as.integer(prior_PD)
   )  
@@ -1217,23 +1296,25 @@ stan_jm <- function(formulaLong, dataLong,
   y_flist_padded <- lapply(1:M, function(x) group[[x]]$flist)
   t <- length(cnms_nms) # num. of unique grouping factors
   t_i <- which(cnms_nms == id_var) # index of patient-level grouping factor
-  p <- matrix(0, t, M)
+  pmat <- matrix(0, t, M)
   for (i in 1:t) {
     for (j in 1:M) {
-      p[i,j] <- length(y_cnms[[j]][[cnms_nms[i]]])
+      pmat[i,j] <- length(y_cnms[[j]][[cnms_nms[i]]])
     }
   }
-  l_tmp <- matrix(0, t, M)
+  p <- rowSums(pmat)
+  lmat <- matrix(0, t, M)
   l <- c()
   for (i in 1:t) {
     for (j in 1:M) {
-      l_tmp[i,j] <- nlevels(y_flist_padded[[j]][[cnms_nms[i]]])
+      lmat[i,j] <- nlevels(y_flist_padded[[j]][[cnms_nms[i]]])
     }
-    l[i] <- max(l_tmp[i,])
-    if (!all(l_tmp[i,] %in% c(0, l[i])))
+    l[i] <- max(lmat[i,])
+    if (!all(lmat[i,] %in% c(0, l[i])))
       stop("The number of factor levels for each of the grouping factors ",
            "must be the same in each of the longitudinal submodels")
   }
+  qmat <- l * pmat
   q <- l * p
   
   # Names of clustering variables
@@ -1257,11 +1338,12 @@ stan_jm <- function(formulaLong, dataLong,
   }
   standata$t <- t
   standata$t_i <- as.integer(t_i)
+  standata$pmat <- as.array(pmat)
   standata$p <- as.array(p)
   standata$l <- as.array(l)
+  standata$qmat <- as.array(qmat)
   standata$q <- as.array(q)
-  p_tmp <- rowSums(p)
-  standata$len_theta_L <- sum(choose(p_tmp, 2), p_tmp)
+  standata$len_theta_L <- sum(choose(p, 2), p)
   Zmerge <- Matrix::bdiag(Z)
   standata$len_b <- as.integer(ncol(Zmerge))
   parts <- rstan::extract_sparse_parts(Zmerge)
@@ -1291,21 +1373,23 @@ stan_jm <- function(formulaLong, dataLong,
   decov_args <- prior_covariance
   standata$shape <- as.array(rstanarm:::maybe_broadcast(decov_args$shape, t))
   standata$scale <- as.array(rstanarm:::maybe_broadcast(decov_args$scale, t))
-  standata$len_concentration <- sum(p_tmp[p_tmp > 1])
+  standata$len_concentration <- sum(p[p > 1])
   standata$concentration <- 
-    as.array(rstanarm:::maybe_broadcast(decov_args$concentration, sum(p_tmp[p_tmp > 1])))
-  standata$len_regularization <- sum(p_tmp > 1)
+    as.array(rstanarm:::maybe_broadcast(decov_args$concentration, sum(p[p > 1])))
+  standata$len_regularization <- sum(p > 1)
   standata$regularization <- 
-    as.array(rstanarm:::maybe_broadcast(decov_args$regularization, sum(p_tmp > 1))) 
+    as.array(rstanarm:::maybe_broadcast(decov_args$regularization, sum(p > 1))) 
 
   standata$family <- as.array(sapply(1:M, function(x) {
-                       switch(family[[x]]$family, 
+                       return_fam <- switch(family[[x]]$family, 
                             gaussian = 1L, 
                             Gamma = 2L,
                             inverse.gaussian = 3L,
                             binomial = 4L,
-                            poisson = 5L,
-                            "neg_binomial_2" = 6L)}))     
+                            poisson = 6L,
+                            "neg_binomial_2" = 7L)
+                       if (is_bernoulli[[x]]) return_fam <- 5L
+                       return_fam}))
   standata$any_fam_3 <- as.integer(any(standata$family == 3L))
   
   standata$e_ns_times <- if (base_haz_splines) 
@@ -1317,7 +1401,8 @@ stan_jm <- function(formulaLong, dataLong,
  
   if (init == "model_based") {
     y_gamma_unbound <- unlist(y_gamma_unbound)
-    y_gamma_bound   <- unlist(y_gamma_bound)
+    y_gamma_lobound <- unlist(y_gamma_lobound)
+    y_gamma_upbound <- unlist(y_gamma_upbound)
     y_z_beta <- (unlist(y_beta) - priorLong_mean) / priorLong_scale
     y_dispersion_unscaled <- y_dispersion / priorLong_scale_for_dispersion
     e_z_beta <- (e_beta - priorEvent_mean) / priorEvent_scale 
@@ -1336,8 +1421,8 @@ stan_jm <- function(formulaLong, dataLong,
     if (prior_covariance$dist == "decov") {
       len_z_T <- 0
       for (i in 1:t) {
-        if (p_tmp[i] > 2) 
-          for (j in 3:p_tmp[i]) len_z_T <- len_z_T + p_tmp[i] - 1;
+        if (p[i] > 2) 
+          for (j in 3:p[i]) len_z_T <- len_z_T + p[i] - 1;
       }
     } else if (prior_covariance$dist == "lkjcorr") { 
       sd_b_unscaled <- (unlist(sd_b)) / prior_scale_for_sd_b
@@ -1347,7 +1432,8 @@ stan_jm <- function(formulaLong, dataLong,
     model_based_inits <- Filter(function(x) (!is.null(x)), c(
       list(
       y_gamma_unbound = if (sum_y_has_intercept_unbound) as.array(y_gamma_unbound) else double(0),
-      y_gamma_bound = if (sum_y_has_intercept_bound) as.array(y_gamma_bound) else double(0),
+      y_gamma_lobound = if (sum_y_has_intercept_lobound) as.array(y_gamma_lobound) else double(0),
+      y_gamma_upbound = if (sum_y_has_intercept_upbound) as.array(y_gamma_upbound) else double(0),
       y_z_beta = if (sum_y_K) as.array(y_z_beta) else double(0),
       y_dispersion_unscaled = if (M) as.array(y_dispersion_unscaled) else double(0),
       e_gamma = if (e_has_intercept) as.array(0) else double(0),
@@ -1391,9 +1477,11 @@ stan_jm <- function(formulaLong, dataLong,
   # call stan() to draw from posterior distribution
   stanfit <- stanmodels$jm
   pars <- c(if (sum_y_has_intercept_unbound) "y_gamma_unbound",
-            if (sum_y_has_intercept_bound) "y_gamma_bound",
+            if (sum_y_has_intercept_lobound) "y_gamma_lobound",
+            if (sum_y_has_intercept_upbound) "y_gamma_upbound",
             #if (sum_y_has_intercept_unbound) "y_alpha_unbound", 
-            #if (sum_y_has_intercept_bound) "y_alpha_bound", 
+            #if (sum_y_has_intercept_lobound) "y_alpha_lobound", 
+            #if (sum_y_has_intercept_upbound) "y_alpha_upbound", 
             if (sum_y_K) "y_beta",
             if (e_has_intercept) "e_gamma",
             if (e_K) "e_beta",
@@ -1401,7 +1489,6 @@ stan_jm <- function(formulaLong, dataLong,
             if (Npat) "b_by_model",
             "y_dispersion", 
             if (base_haz_weibull) "weibull_shape",
-            if (base_haz_piecewise) "log_lambda",
             if (base_haz_splines) "splines_coefs")
            #"mean_PPD"
 
@@ -1475,7 +1562,7 @@ stan_jm <- function(formulaLong, dataLong,
   
   n_grps <- l - 1
   names(n_grps) <- cnms_nms  # n_grps is num. of levels within each grouping factor
-  names(p_tmp) <- cnms_nms   # p_tmp is num. of variables within each grouping factor
+  names(p) <- cnms_nms       # p is num. of variables within each grouping factor
   
   #colnames(Z) <- b_names(names(stanfit), value = TRUE)
   fit <- rstanarm:::nlist(stanfit, family, formula = c(formulaLong, formulaEvent), 
@@ -1487,7 +1574,8 @@ stan_jm <- function(formulaLong, dataLong,
                             if (getRversion() < "3.2.0") cBind(xq[[i]], Zq[[i]]) else cbind2(xq[[i]], Zq[[i]])),                 
                           dxdtq = lapply(1:M, function(i) 
                             if (getRversion() < "3.2.0") 
-                              cBind(dxdtqtemp[[i]], dZdtq[[i]]) else cbind2(dxdtqtemp[[i]], dZdtq[[i]])),                          y = y, e_x, eventtime, d,
+                              cBind(dxdtqtemp[[i]], dZdtq[[i]]) else cbind2(dxdtqtemp[[i]], dZdtq[[i]])),                          
+                          y = y, e_x, eventtime, d,
                           standata, dataLong, dataEvent, call, terms = NULL, model = NULL,                          
                           prior.info = rstanarm:::get_prior_info(call, formals()),
                           na.action, algorithm = "sampling", init)
@@ -1755,6 +1843,56 @@ get_quadpoints <- function(nodes = 15) {
         0.104656226026467265194))      
   } else stop("The specified number of Gauss-Kronrod quadrature points 
               ('quadnodes') must be either 7, 11 or 15.")  
+}
+
+
+# Function to return the appropriate intercept type based on family and link
+#
+# @param family A GLM family
+# @param link A link function
+# @return A list specifying whether an unbounded, lower bounded, or upper 
+#   bounded intercept is required
+check_intercept <- function(family, link) {
+  if (family == "binomial") {
+    if (link == "log") {
+      unbound <- 0L; lobound <- 0L; upbound <- 1L;  # binomial, log
+    } else {
+      unbound <- 1L; lobound <- 0L; upbound <- 0L;  # binomial, !log
+    }
+  } else {
+    if (link == "log") {
+      unbound <- 1L; lobound <- 0L; upbound <- 0L;  # gamma/inv-gaus/poisson/nb, log
+    } else {
+      if (family == "gaussian") {
+        unbound <- 1L; lobound <- 0L; upbound <- 0L;  # gaussian, any link
+      } else {
+        unbound <- 0L; lobound <- 1L; upbound <- 0L;  # gamma/inv-gaus/poisson/nb, !log      
+      }
+    }
+  }  
+  rstanarm:::nlist(unbound, lobound, upbound) 
+}
+
+
+# Function to check if the response vector is real or integer
+#
+# @param family A GLM family
+# @return A logical specify whether the response is real (TRUE) or integer (FALSE)
+check_response_real <- function(family) {
+  if (family == "binomial" || 
+      family == "poisson" ||
+      family == "neg_binomial_2") {
+    FALSE
+  } else TRUE
+}
+
+
+# Function to check if the submodel should include a dispersion term
+#
+# @param family A GLM family
+# @return A logical specify whether the submodel includes a dispersion term
+check_for_dispersion <- function(family) {
+  if (family == "binomial" || family == "poisson") FALSE else TRUE
 }
 
 
