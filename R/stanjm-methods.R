@@ -161,9 +161,6 @@ log_lik.stanjm <- function(object, newdata = NULL, ...) {
   if (!rstanarm:::used.sampling(object)) 
     rstanarm:::STOP_sampling_only("Pointwise log-likelihood matrix")
   if (!is.null(newdata)) {
-    if ("gam" %in% names(object))
-      stop("'log_lik' with 'newdata' not yet supported ", 
-           "for models estimated via 'stan_gamm4'.")
     newdata <- as.data.frame(newdata)
   }
   fun <- ll_fun(object)
@@ -211,9 +208,12 @@ formula.stanjm <- function (x, fixed.only = FALSE, random.only = FALSE, ...) {
   if (fixed.only && random.only) 
     stop("'fixed.only' and 'random.only' can't both be TRUE.", call. = FALSE)
   
+  M <- x$n_markers
+  fr <- lapply(x$glmod, function(m) m$fr) 
   form <- lapply(x$formula, as.formula, ...)
+  glmod_form <- lapply(seq(M), function(m) attr(fr[[m]], "formula")) 
+  if (!is.null(glmod_form)) form[1:M] <- glmod_form[1:M]
   if (any(fixed.only, random.only)) {
-    M <- x$n_markers
     if (fixed.only) {
       for (m in 1:M)
         form[[m]][[length(form[[m]])]] <- lme4::nobars(form[[m]][[length(form[[m]])]])
@@ -224,6 +224,41 @@ formula.stanjm <- function (x, fixed.only = FALSE, random.only = FALSE, ...) {
   } 
   return(form)
 }
+
+#' terms method for stanjm objects
+#' @export
+#' @keywords internal
+#' @param x,fixed.only,random.only,... See lme4:::terms.merMod.
+#' 
+terms.stanjm <- function(x, ..., fixed.only = TRUE, random.only = FALSE) {
+  if (!is.stanjm(x))
+    return(NextMethod("terms"))
+  
+  fr <- lapply(x$glmod, function(m) m$fr) 
+  if (missing(fixed.only) && random.only) 
+    fixed.only <- FALSE
+  if (fixed.only && random.only) 
+    stop("'fixed.only' and 'random.only' can't both be TRUE.", call. = FALSE)
+  
+  Terms <- lapply(fr, function(m) attr(m, "terms"))
+  if (fixed.only) {
+    Terms <- lapply(seq(M), function(m) {
+      Terms <- terms.formula(formula(x, fixed.only = TRUE)[[m]])
+      attr(Terms, "predvars") <- attr(terms(fr[[m]]), "predvars.fixed")
+      Terms
+    })     
+  } 
+  if (random.only) {
+    Terms <- lapply(seq(M), function(m) {
+      Terms <- terms.formula(lme4::subbars(formula.stanjm(x, random.only = TRUE)[[m]]))
+      attr(Terms, "predvars") <- attr(terms(fr[[m]]), "predvars.random")
+      Terms
+    })      
+  }
+  
+  return(Terms)
+}
+
 
 #' @rdname stanjm-methods
 #' @export
@@ -299,7 +334,7 @@ vcov.stanjm <- function(object, correlation = FALSE, ...) {
 
 
 .stanjm_check <- function(object) {
-  if (!is.jm(object))
+  if (!is.stanjm(object))
     stop("This method is for stanjm objects only.", call. = FALSE)
 }
 .cnms <- function(object, remove_stub = FALSE) {
@@ -436,11 +471,6 @@ VarCorr.stanjm <- function(x, sigma = 1, ...) {
 #' @param object,... See \code{\link[stats]{family}}.
 family.stanjm <- function(object, ...) object$family
 
-
-#----------------------------------------------
-# The following are not yet adapted for stan_jm
-#----------------------------------------------
-
 #' model.frame method for stanjm objects
 #' 
 #' @keywords internal
@@ -449,18 +479,26 @@ family.stanjm <- function(object, ...) object$family
 #' @param fixed.only See \code{\link[lme4]{model.frame.merMod}}.
 #' 
 model.frame.stanjm <- function(formula, fixed.only = FALSE, ...) {
-  if (is.mer(formula)) {
-    fr <- formula$glmod$fr
+  if (is.stanjm(formula)) {
+    M <- formula$n_markers
+    fr <- lapply(seq(M), function(m) formula$glmod[[m]]$fr)
     if (fixed.only) {
-      ff <- formula(formula, fixed.only = TRUE)
-      vars <- rownames(attr(terms.formula(ff), "factors"))
-      fr <- fr[vars]
+      fr <- lapply(seq(M), function(m) {
+        ff <- formula(formula, fixed.only = TRUE)[[m]]
+        vars <- rownames(attr(terms.formula(ff), "factors"))
+        fr[[m]][vars]
+      })
     }
     return(fr)
-  }
+  } 
   
   NextMethod("model.frame")
 }
+
+
+#----------------------------------------------
+# The following are not yet adapted for stan_jm
+#----------------------------------------------
 
 #' model.matrix method for stanjm objects
 #' 
@@ -469,8 +507,10 @@ model.frame.stanjm <- function(formula, fixed.only = FALSE, ...) {
 #' @param object,... See \code{\link[stats]{model.matrix}}.
 #' 
 model.matrix.stanjm <- function(object, ...) {
-  if (is.mer(object))
-    return(object$glmod$X)
+  if (is.stanjm(object)) {
+    M <- object$n_markers
+    return(lapply(seq(M), object$glmod[[m]]$X))
+  }
   
   NextMethod("model.matrix")
 }

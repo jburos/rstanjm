@@ -19,8 +19,16 @@
 # Test if object is stanjm class
 #
 # @param x An object to be tested.
-is.jm <- function(x) {
+is.stanjm <- function(x) {
   is(x, "stanjm")
+}
+
+# Throw error if object isn't a stanjm object
+# 
+# @param x The object to test.
+validate_stanjm_object <- function(x, call. = FALSE) {
+  if (!is.stanjm(x))
+    stop("Object is not a stanjm object.", call. = call.) 
 }
 
 # Separates a names object into separate parts based on the longitudinal, 
@@ -156,6 +164,50 @@ strip_nms <- function(x, string) {
 }
 
 
+#' Extract X, Y or Z from a stanjm object
+#' 
+#' @keywords internal
+#' @export
+#' @templateVar stanjmArg object
+#' @template args-stanjm-object
+#' @return For \code{get_x} and \code{get_z}, list of matrices. For \code{get_y}, either
+#'   a vector or a matrix, depending on how the response variable was specified.
+get_y <- function(object) UseMethod("get_y")
+#' @rdname get_y
+#' @export
+get_x <- function(object) UseMethod("get_x")
+#' @rdname get_y
+#' @export
+get_z <- function(object) UseMethod("get_z")
+
+#' @export
+get_y.stanjm <- function(object) {
+  object[["y"]] %ORifNULL% stop("Y not found")
+}
+#' @export
+get_x.stanjm <- function(object) {
+  lapply(object$glmod, function(m) 
+    lme4::getME(m, "X") %ORifNULL% stop("X not found"))
+}
+#' @export
+get_z.stanjm <- function(object) {
+  lapply(object$glmod, function(m) 
+    lme4::getME(m, "Z") %ORifNULL% stop("Z not found"))
+}
+
+
+# Get inverse link function
+#
+# @param x A stanjm object or family object. 
+# @param ... Ignored. 
+# @return The inverse link function associated with x.
+linkinv <- function(x, ...) UseMethod("linkinv")
+linkinv.stanjm <- function(x, ...) {
+  lapply(family(x), function(y) y$linkinv)
+}
+linkinv.family <- function(x, ...) {
+  x$linkinv
+}
   
   
   

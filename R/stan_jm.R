@@ -666,8 +666,10 @@ stan_jm <- function(formulaLong, dataLong,
   if ((!base_haz_splines) && (!missing(df)))
     stop("df can only be specified when splines baseline hazard is used",
          call. = FALSE)
-  if (missing(df)) df <- 0 
-  splines_df <- df
+  if (missing(df)) {
+    df <- NULL
+    splines_df <- 0L
+  } else splines_df <- df
   
   # Set up model frame for event submodel 
   e_mc[[1]] <- quote(survival::coxph) 
@@ -1406,7 +1408,6 @@ stan_jm <- function(formulaLong, dataLong,
     y_z_beta <- (unlist(y_beta) - priorLong_mean) / priorLong_scale
     y_dispersion_unscaled <- y_dispersion / priorLong_scale_for_dispersion
     e_z_beta <- (e_beta - priorEvent_mean) / priorEvent_scale 
-    a_z_beta <- rep(0, a_K)
 
     y_hs <- if (priorLong_dist <= 2L) 0 
             else if (priorLong_dist == 3L) 2
@@ -1435,8 +1436,9 @@ stan_jm <- function(formulaLong, dataLong,
       y_gamma_lobound = if (sum_y_has_intercept_lobound) as.array(y_gamma_lobound) else double(0),
       y_gamma_upbound = if (sum_y_has_intercept_upbound) as.array(y_gamma_upbound) else double(0),
       y_z_beta = if (sum_y_K) as.array(y_z_beta) else double(0),
-      y_dispersion_unscaled = if (M) as.array(y_dispersion_unscaled) else double(0),
+      y_dispersion_unscaled = if (sum_y_has_dispersion) as.array(y_dispersion_unscaled) else double(0),
       e_gamma = if (e_has_intercept) as.array(0) else double(0),
+      splines_coefs = if (!is.null(df)) as.array(rep(0, splines_df)) else double(0),
       e_z_beta = if (e_K) as.array(e_z_beta) else double(0),
       weibull_shape_unscaled = if (base_haz_weibull) 
         as.array(runif(1, 0.5, 3) / priorEvent_scale_for_weibull) else double(0),
@@ -1578,7 +1580,7 @@ stan_jm <- function(formulaLong, dataLong,
                           y = y, e_x, eventtime, d,
                           standata, dataLong, dataEvent, call, terms = NULL, model = NULL,                          
                           prior.info = rstanarm:::get_prior_info(call, formals()),
-                          na.action, algorithm = "sampling", init)
+                          na.action, algorithm = "sampling", init, glmod = y_mod)
   out <- stanjm(fit)
   
   return(out)

@@ -122,10 +122,11 @@ stanjm <- function(object) {
     prior.info = object$prior.info,
     algorithm = object$algorithm,
     stan_summary,  
-    stanfit = if (opt) stanfit$stanfit else stanfit
+    stanfit = if (opt) stanfit$stanfit else stanfit,
+    glmod = object$glmod
   )
   if (opt) 
     out$asymptotic_sampling_dist <- stanmat
   
-  structure(out, class = c("stanjm", "stanreg"))
+  structure(out, class = c("stanjm", "stanreg", "lmerMod"))
 }
