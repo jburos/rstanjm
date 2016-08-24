@@ -209,7 +209,7 @@ formula.stanjm <- function (x, fixed.only = FALSE, random.only = FALSE, ...) {
     stop("'fixed.only' and 'random.only' can't both be TRUE.", call. = FALSE)
   
   M <- x$n_markers
-  fr <- lapply(x$glmod, function(m) m$fr) 
+  fr <- lapply(x$glmod, model.frame) 
   form <- lapply(x$formula, as.formula, ...)
   glmod_form <- lapply(seq(M), function(m) attr(fr[[m]], "formula")) 
   if (!is.null(glmod_form)) form[1:M] <- glmod_form[1:M]
@@ -234,7 +234,7 @@ terms.stanjm <- function(x, ..., fixed.only = TRUE, random.only = FALSE) {
   if (!is.stanjm(x))
     return(NextMethod("terms"))
   
-  fr <- lapply(x$glmod, function(m) m$fr) 
+  fr <- lapply(x$glmod, model.frame) 
   if (missing(fixed.only) && random.only) 
     fixed.only <- FALSE
   if (fixed.only && random.only) 
@@ -481,7 +481,7 @@ family.stanjm <- function(object, ...) object$family
 model.frame.stanjm <- function(formula, fixed.only = FALSE, ...) {
   if (is.stanjm(formula)) {
     M <- formula$n_markers
-    fr <- lapply(seq(M), function(m) formula$glmod[[m]]$fr)
+    fr <- lapply(formula$glmod, model.frame)
     if (fixed.only) {
       fr <- lapply(seq(M), function(m) {
         ff <- formula(formula, fixed.only = TRUE)[[m]]
@@ -521,7 +521,7 @@ model.matrix.stanjm <- function(object, ...) {
 #' @param x,fixed.only,random.only,... See lme4:::terms.merMod.
 #' 
 terms.stanjm <- function(x, ..., fixed.only = TRUE, random.only = FALSE) {
-  if (!is.mer(x))
+  if (!is.stanjm(x))
     return(NextMethod("terms"))
   
   fr <- x$glmod$fr

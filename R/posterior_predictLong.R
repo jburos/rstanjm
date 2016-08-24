@@ -1,5 +1,6 @@
-# Part of the rstanarm package for estimating model parameters
+# Part of the rstanjm package
 # Copyright (C) 2015, 2016 Trustees of Columbia University
+# Copyright (C) 2016 Sam Brilleman
 # 
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -15,7 +16,7 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
-#' Draw from posterior predictive distribution for each submodel
+#' Draw from posterior predictive distribution for the longitudinal submodel
 #' 
 #' The posterior predictive distribution is the distribution of the outcome 
 #' implied by the model after using the observed data to update our beliefs 
@@ -28,8 +29,10 @@
 #' distribution to generate predicted outcomes.
 #' 
 #' @export
-#' @templateVar stanregArg object
-#' @template args-stanreg-object
+#' @templateVar stanjmArg object
+#' @templateVar mArg object
+#' @template args-stanjm-object
+#' @template args-m
 #' @param newdata Optionally, a data frame in which to look for variables with 
 #'   which to predict. If omitted, the model matrix is used. If \code{newdata} 
 #'   is provided and any variables were transformed (e.g. rescaled) in the data 
@@ -84,93 +87,46 @@
 #'   \pkg{rstanarm} vignettes and demos.
 #'   
 #' @examples
-#' if (!exists("example_model")) example(example_model)
-#' yrep <- posterior_predict(example_model)
-#' table(yrep)
 #' 
-#' \donttest{
-#' # Using newdata
-#' counts <- c(18,17,15,20,10,20,25,13,12)
-#' outcome <- gl(3,1,9)
-#' treatment <- gl(3,3)
-#' fit3 <- stan_glm(counts ~ outcome + treatment, family = poisson(link="log"),
-#'                 prior = normal(0, 1), prior_intercept = normal(0, 5))
-#' nd <- data.frame(treatment = factor(rep(1,3)), outcome = factor(1:3))
-#' ytilde <- posterior_predict(fit3, nd, draws = 500)
-#' print(dim(ytilde))  # 500 by 3 matrix (draws by nrow(nd))
-#' ytilde <- data.frame(count = c(ytilde), 
-#'                      outcome = rep(nd$outcome, each = 500))
-#' ggplot2::ggplot(ytilde, ggplot2::aes(x=outcome, y=count)) + 
-#'   ggplot2::geom_boxplot() + 
-#'   ggplot2::ylab("predicted count")
-#' 
-#' 
-#' # Using newdata with a binomial model
-#' # example_model is binomial so we need to set
-#' # the number of trials to use for prediction.
-#' # This could be a different number for each 
-#' # row of newdata or the same for all rows.
-#' # Here we'll use the same value for all.
-#' nd <- lme4::cbpp
-#' print(formula(example_model))  # cbind(incidence, size - incidence) ~ ...
-#' nd$size <- max(nd$size) + 1L   # number of trials
-#' nd$incidence <- 0  # set to 0 so size - incidence = number of trials
-#' ytilde <- posterior_predict(example_model, newdata = nd)
-#' 
-#' 
-#' # Using fun argument to transform predictions
-#' mtcars2 <- mtcars
-#' mtcars2$log_mpg <- log(mtcars2$mpg)
-#' fit <- stan_glm(log_mpg ~ wt, data = mtcars2)
-#' ytilde <- posterior_predict(fit, fun = exp)
-#' }
-#' 
-posterior_predict <- function(object, newdata = NULL, draws = NULL, 
+posterior_predictLong <- function(object, m = 1, newdata = NULL, draws = NULL, 
                               re.form = NULL, fun = NULL, seed = NULL, 
                               offset = NULL, ...) {
   validate_stanjm_object(object)
   M <- object$n_markers
+  if (m < 1)
+    stop("'m' must be positive")
+  if (m > M)
+    stop(paste0("'m' must be less than, or equal to, the number ", 
+                "of longitudinal markers (M=", M, ")"))
   if (!is.null(seed)) 
     set.seed(seed)
   if (!is.null(fun)) 
     fun <- match.fun(fun)
-  if (!is.null(newdata)) {
-    olddata_list <- is(object$dataLong, "list")
-    newdata_list <- is(newdata, "list")
-    if (!identical(olddata_list, newdata_list))
-      stop("'newdata' should be provided in the same format as dataLong was ",
-           "provided in the original model call. That is, 'newdata' should be ",
-           if (olddata_list) "a list of data frames." else "a data frame.",
-           call. = FALSE)
-    if (!newdata_list) newdata <- list(newdata)  # convert to list of data frames      
-    newdata <- lapply(newdata, as.data.frame)
-    lapply(seq_along(newdata), function(m) {
-      if (any(is.na(newdata[[m]]))) 
-        stop("Currently NAs are not allowed in 'newdata'.")})       
+  if (!is.null(newdata)) {      
+    newdata <- as.data.frame(newdata)
+    if (any(is.na(newdata))) 
+      stop("Currently NAs are not allowed in 'newdata'.")     
   }
             
-  ytilde <- lapply(seq(M), function(m) {
-    dat <-
-      pp_data(object,
-              newdata = newdata,
-              m = m,
-              re.form = re.form,
-              offset = offset,
-              ...)
-    ppargs <- pp_args(object, data = pp_eta(object, dat, m, draws), m)
-    if (rstanarm:::is.binomial(family(object)[[m]]$family))
-      ppargs$trials <- pp_binomial_trials(object, newdata)
-    
-    ppfun <- pp_fun(object, m)
-    ytilde <- do.call(ppfun, ppargs)
-    if (!is.null(newdata) && nrow(newdata) == 1L) 
-      ytilde <- t(ytilde)
-    if (!is.null(fun)) 
-      ytilde <- do.call(fun, list(ytilde))
-    ytilde
-  })
+  dat <-
+    pp_data_long(object,
+            m = m,
+            newdata = newdata,
+            re.form = re.form,
+            offset = offset,
+            ...)
+  ppargs <- pp_args_long(object, data = pp_eta_long(object, dat, m, draws), m)
+  if (rstanarm:::is.binomial(family(object)[[m]]$family))
+    ppargs$trials <- pp_binomial_trials(object, newdata)
   
-  list_nms(ytilde, M)
+  ppfun <- pp_fun_long(object, m)
+  ytilde <- do.call(ppfun, ppargs)
+  if (!is.null(newdata) && nrow(newdata) == 1L) 
+    ytilde <- t(ytilde)
+  if (!is.null(fun)) 
+    ytilde <- do.call(fun, list(ytilde))
+  
+  ytilde
 }
 
 
@@ -179,7 +135,7 @@ posterior_predict <- function(object, newdata = NULL, draws = NULL,
 #
 # @param object A stanjm object
 # @param m Integer specifying the longitudinal submodel
-pp_fun <- function(object, m) {
+pp_fun_long <- function(object, m) {
   suffix <- family(object)[[m]]$family
   getFromNamespace(paste0(".pp_", suffix), "rstanarm")
 }
@@ -190,7 +146,7 @@ pp_fun <- function(object, m) {
 # @param object A stanjm object
 # @param data Output from pp_eta (named list with eta and stanmat)
 # @return named list
-pp_args <- function(object, data, m) {
+pp_args_long <- function(object, data, m) {
   stanmat <- data$stanmat
   eta <- data$eta
   stopifnot(is.stanjm(object), is.matrix(stanmat))
@@ -216,7 +172,7 @@ pp_args <- function(object, data, m) {
 # @param data output from pp_data()
 # @param draws number of draws
 # @return linear predictor "eta" and matrix of posterior draws stanmat"
-pp_eta <- function(object, data, m, draws = NULL) {
+pp_eta_long <- function(object, data, m, draws = NULL) {
   M <- object$n_markers
   x <- data$x
   S <- rstanarm:::posterior_sample_size(object)
