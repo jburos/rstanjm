@@ -234,6 +234,7 @@ terms.stanjm <- function(x, ..., fixed.only = TRUE, random.only = FALSE) {
   if (!is.stanjm(x))
     return(NextMethod("terms"))
   
+  M <- x$n_markers
   fr <- lapply(x$glmod, model.frame) 
   if (missing(fixed.only) && random.only) 
     fixed.only <- FALSE
