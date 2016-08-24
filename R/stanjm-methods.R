@@ -514,31 +514,3 @@ model.matrix.stanjm <- function(object, ...) {
   
   NextMethod("model.matrix")
 }
-
-#' terms method for stanjm objects
-#' @export
-#' @keywords internal
-#' @param x,fixed.only,random.only,... See lme4:::terms.merMod.
-#' 
-terms.stanjm <- function(x, ..., fixed.only = TRUE, random.only = FALSE) {
-  if (!is.stanjm(x))
-    return(NextMethod("terms"))
-  
-  fr <- x$glmod$fr
-  if (missing(fixed.only) && random.only) 
-    fixed.only <- FALSE
-  if (fixed.only && random.only) 
-    stop("'fixed.only' and 'random.only' can't both be TRUE.", call. = FALSE)
-  
-  Terms <- attr(fr, "terms")
-  if (fixed.only) {
-    Terms <- terms.formula(formula(x, fixed.only = TRUE))
-    attr(Terms, "predvars") <- attr(terms(fr), "predvars.fixed")
-  } 
-  if (random.only) {
-    Terms <- terms.formula(lme4::subbars(formula.stanjm(x, random.only = TRUE)))
-    attr(Terms, "predvars") <- attr(terms(fr), "predvars.random")
-  }
-  
-  return(Terms)
-}
