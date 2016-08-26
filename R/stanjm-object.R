@@ -1,6 +1,7 @@
-# Part of the rstanarm package for estimating model parameters
+# Part of the rstanjm package
 # Copyright (C) 2015, 2016 Trustees of Columbia University
-# 
+# Copyright (C) 2016 Sam Brilleman
+#
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
 # as published by the Free Software Foundation; either version 3
@@ -101,6 +102,7 @@ stanjm <- function(object) {
     y_cnms = list_nms(y_cnms, M), 
     y_flist = list_nms(y_flist, M),
     assoc,
+    fr = list_nms(object$fr, M),
     y = list_nms(y, M), 
     x = list_nms(x, M), 
     xq = list_nms(xq, M), 
@@ -111,6 +113,8 @@ stanjm <- function(object) {
     dataEvent = object$dataEvent,     
     family = list_nms(family, M), 
     base_haz = object$base_haz,
+    df = object$df,
+    quadnodes = object$quadnodes,
 #    offset = if (any(object$offset != 0)) object$offset else NULL,
 #    weights = object$weights, 
 #    prior.weights = object$weights, 
@@ -123,7 +127,8 @@ stanjm <- function(object) {
     algorithm = object$algorithm,
     stan_summary,  
     stanfit = if (opt) stanfit$stanfit else stanfit,
-    glmod = object$glmod
+    glmod = object$glmod,
+    coxmod = object$coxmod
   )
   if (opt) 
     out$asymptotic_sampling_dist <- stanmat

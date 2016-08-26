@@ -1,6 +1,7 @@
-# Part of the rstanarm package for estimating model parameters
+# Part of the rstanjm package
 # Copyright 2015 Douglas Bates, Martin Maechler, Ben Bolker, Steve Walker
 # Copyright (C) 2015, 2016 Trustees of Columbia University
+# Copyright (C) 2016 Sam Brilleman
 # 
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -16,16 +17,16 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
-pp_data <-
-  function(object,
+pp_data_long <-
+  function(object, 
+           m,
            newdata = NULL,
            re.form = NULL,
            offset = NULL,
-           m,
            ...) {
     validate_stanjm_object(object)
-    x <- .pp_data_jm_x(object, newdata, m, ...)
-    z <- .pp_data_jm_z(object, newdata, m, re.form, ...)
+    x <- .pp_data_long_x(object, newdata, m, ...)
+    z <- .pp_data_long_z(object, newdata, m, re.form, ...)
     #offset <- .pp_data_offset(object, newdata, offset)
     return(rstanarm:::nlist(x, offset = offset, Zt = z$Zt, Z_names = z$Z_names))
   }
@@ -34,7 +35,7 @@ pp_data <-
 # the functions below are heavily based on a combination of 
 # lme4:::predict.merMod and lme4:::mkNewReTrms, although they do also have 
 # substantial modifications
-.pp_data_jm_x <- function(object, newdata, m, ...) {
+.pp_data_long_x <- function(object, newdata, m, ...) {
   x <- get_x(object)[[m]]
   if (is.null(newdata)) return(x)
   form <- formula(object)[[m]]
@@ -55,7 +56,7 @@ pp_data <-
   return(x)
 }
 
-.pp_data_jm_z <- function(object, newdata, m, re.form = NULL,
+.pp_data_long_z <- function(object, newdata, m, re.form = NULL,
                            allow.new.levels = TRUE, na.action = na.pass) {
   NAcheck <- !is.null(re.form) && !is(re.form, "formula") && is.na(re.form)
   fmla0check <- (is(re.form, "formula") && 

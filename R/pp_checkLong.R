@@ -18,15 +18,19 @@
 #
 #' Graphical posterior predictive checks for the longitudinal submodel
 #' 
-#' Various plots comparing the observed outcome variable \eqn{y} from one
-#' of the longitudinal submodels to simulated 
+#' Various plots comparing the observed outcome variable from one
+#' of the longitudinal submodels \eqn{y} to simulated 
 #' datasets \eqn{y^{rep}}{yrep} from the posterior predictive distribution.
+#' This function is modelled on the \code{\link[rstanarm]{pp_check}} function
+#' from the \pkg{rstanarm} package.
 #' 
 #' @export
 #' @templateVar bdaRef (Ch. 6)
-#' @templateVar stanregArg object
+#' @templateVar stanjmArg object
+#' @templateVar mArg object
 #' @template reference-bda
-#' @template args-stanreg-object
+#' @template args-stanjm-object
+#' @template args-m
 #' @param check The type of plot (possibly abbreviated) to show. One of 
 #'   \code{"distributions"}, \code{"residuals"}, \code{"scatter"}, 
 #'   \code{"test"}. See Details for descriptions.
@@ -54,7 +58,18 @@
 #' @return A ggplot object that can be further customized using the
 #'   \pkg{ggplot2} package.
 #'   
-#' @details Descriptions of the plots corresponding to the different values of 
+#' @details 
+#' Note that the posterior predictive checks here condition on all 
+#' observed data, that is for a predicted observation \eqn{y^{rep}_{i}(t)}
+#' the predictive distribution contains information from data that may
+#' have been observed later in time, that is some time \eqn{s} where 
+#' \eqn{s>t}. The predictions are therefore suitable for assessing model
+#' fit, but should not be used to dynamic predictions where we want to 
+#' condition only on previous measurements for the individual. In that 
+#' situation the alternative \code{\link{pp_dynLong}} should be used for
+#' dynamic predictions which condition only only prior observed measurements. \cr
+#' \cr
+#' Descriptions of the plots corresponding to the different values of 
 #' \code{check}:
 #' \describe{
 #'  \item{\code{distributions}}{The distributions of \eqn{y} and \code{nreps} 
@@ -82,51 +97,16 @@
 #' @note For binomial data, plots of \eqn{y} and \eqn{y^{rep}}{yrep} show the
 #'   proportion of 'successes' rather than the raw count.
 #' 
-#' @seealso \code{\link{posterior_predict}} for drawing from the posterior 
-#'   predictive distribution. Examples of posterior predictive checks can also
-#'   be found in the \pkg{rstanarm} vignettes and demos.
+#' @seealso \code{\link{posterior_predictLong}} for drawing from the posterior 
+#'   predictive distribution for the longitudinal submodel, 
+#'   \code{\link{posterior_predictEvent}} for drawing from the posterior 
+#'   predictive distribution for the event submodel, and 
+#'   \code{\link{pp_checkEvent}} for graphical posterior predictive checks 
+#'   for the event submodel.
 #' 
 #' @examples 
-#' if (!exists("example_model")) example(example_model)
-#' # Compare distribution of y to distributions of yrep
-#' (pp_dist <- pp_check(example_model, check = "dist", overlay = TRUE))
-#' pp_dist + 
-#'  ggplot2::scale_color_manual(values = c("red", "black")) + # change colors
-#'  ggplot2::scale_size_manual(values = c(0.5, 3)) + # change line sizes 
-#'  ggplot2::scale_fill_manual(values = c(NA, NA)) # remove fill
-#'
-#' # Check residuals
-#' pp_check(example_model, check = "resid", nreps = 6)
-#'
-#' # Check histograms of test statistics
-#' test_mean <- pp_check(example_model, check = "test", test = "mean")
-#' test_sd <- pp_check(example_model, check = "test", test = "sd")
-#' gridExtra::grid.arrange(test_mean, test_sd, ncol = 2)
 #' 
-#' # Scatterplot of two test statistics
-#' pp_check(example_model, check = "test", test = c("mean", "sd"))
-#' 
-#' \donttest{
-#' # Scatterplots of y vs. yrep
-#' fit <- stan_glm(mpg ~ wt, data = mtcars)
-#' pp_check(fit, check = "scatter") # y vs. average yrep
-#' pp_check(fit, check = "scatter", nreps = 3) # y vs. a few different yrep datasets 
-#' 
-#' 
-#' # Defining a function to compute test statistic 
-#' roaches$roach100 <- roaches$roach1 / 100
-#' fit_pois <- stan_glm(y ~ treatment + roach100 + senior, offset = log(exposure2), 
-#'                      family = "poisson", data = roaches)
-#' fit_nb <- update(fit_pois, family = "neg_binomial_2")
-#' 
-#' prop0 <- function(y) mean(y == 0) # function to compute proportion of zeros
-#' pp_check(fit_pois, check = "test", test = "prop0") # looks bad 
-#' pp_check(fit_nb, check = "test", test = "prop0")   # much better
-#' }
-#' 
-#' @importFrom ggplot2 ggplot aes_string xlab %+replace% theme
-#' 
-pp_check <- function(object, m = 1, check = "distributions", nreps = NULL, 
+pp_checkLong <- function(object, m = 1, check = "distributions", nreps = NULL, 
                      seed = NULL, overlay = TRUE, test = "mean", ...) {
   validate_stanjm_object(object)
   if (rstanarm:::used.optimizing(object)) 
@@ -153,7 +133,7 @@ pp_check <- function(object, m = 1, check = "distributions", nreps = NULL,
   }
   
   y <- get_y(object)[[m]]
-  yrep <- posterior_predict(object, m, draws = nreps, seed = seed)[[m]]
+  yrep <- posterior_predictLong(object, m, draws = nreps, seed = seed)
   if (is(object, "polr")) {
     y <- as.integer(y)
     yrep <- apply(yrep, 2, function(x) as.integer(as.factor(x)))

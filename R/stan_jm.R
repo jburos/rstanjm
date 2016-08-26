@@ -1,5 +1,6 @@
-# Part of the rstanarm package for estimating model parameters
+# Part of the rstanjm package
 # Copyright (C) 2015, 2016 Trustees of Columbia University
+# Copyright (C) 2016 Sam Brilleman
 # 
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -548,7 +549,6 @@ stan_jm <- function(formulaLong, dataLong,
 
     # Update formula if using splines or other data dependent predictors
     y_vars[[m]] <- get_formvars(y_mod[[m]])
-    m_mc[[m]]$formula <- substitute_vars(y_mod[[m]], y_vars[[m]]$formvars, y_vars[[m]]$predvars)
 
     # Model based initial values
     if (init == "model_based") {
@@ -642,8 +642,9 @@ stan_jm <- function(formulaLong, dataLong,
                     "specified for longitudinal marker ", x,
                     ", the model must have an intercept."))
     }
-  })  
+  })
     
+  
   #=========================
   # Data for event submodel
   #=========================
@@ -675,7 +676,7 @@ stan_jm <- function(formulaLong, dataLong,
   e_mc[[1]] <- quote(survival::coxph) 
   e_mc$x <- TRUE
   e_mod <- eval(e_mc, parent.frame())
-  e_mf <- expand.model.frame(e_mod, id_var, na.expand = TRUE)
+  e_fr <- e_mf <- expand.model.frame(e_mod, id_var, na.expand = TRUE)
   e_mf <- cbind(unclass(e_mf[,1]), e_mf)
 
   # Check ID sorting
@@ -797,6 +798,7 @@ stan_jm <- function(formulaLong, dataLong,
     
   # Items to store for each longitudinal submodel
   y_mod_q         <- list()   # fitted long. submodels at quadpoints
+  y_fr            <- list()   # model frame with the addition of time_var
   xq              <- list()   # design matrix before removing intercept 
                               # and centering
   xqtemp          <- list()   # design matrix (without intercept) for 
@@ -819,10 +821,13 @@ stan_jm <- function(formulaLong, dataLong,
       m_mc_temp$control <- get_control_args(norank = TRUE)
     } else {
       m_mc_temp$control <- get_control_args(glmer = TRUE, norank = TRUE)
-    }      
-      
+    }     
+    
+    # Obtain model frame with time_var definitely included
     y_mod_wtime <- eval(m_mc_temp, parent.frame())      
-                        
+    y_fr[[m]] <- y_mod_wtime$fr
+    
+    # Update model based on predvars and obtain new model frame
     mf <- data.table(y_mod_wtime$fr, key = c(id_var, time_var))
   
     # Identify which row in longitudinal data is closest to event time
@@ -850,6 +855,7 @@ stan_jm <- function(formulaLong, dataLong,
     names(mf_quadtime)[names(mf_quadtime) == "quadpoint"]   <- time_var
     mf_quadtime <- rbind(mf_eventtime, mf_quadtime, idcol = "xbind.id")
     m_mc_temp$formula <- m_mc[[m]]$formula  # return to original formula
+    m_mc_temp$formula <- substitute_vars(y_mod[[m]], y_vars[[m]]$formvars, y_vars[[m]]$predvars)
     m_mc_temp$control <- m_mc[[m]]$control  # return to original control args
     m_mc_temp$data    <- mf_quadtime        # data at event and quadrature times
     y_mod_q[[m]] <- eval(m_mc_temp, parent.frame())     
@@ -1568,8 +1574,10 @@ stan_jm <- function(formulaLong, dataLong,
   
   #colnames(Z) <- b_names(names(stanfit), value = TRUE)
   fit <- rstanarm:::nlist(stanfit, family, formula = c(formulaLong, formulaEvent), 
-                          id_var, time_var, offset = NULL, base_haz, 
-                          M, cnms, y_N, y_cnms, y_flist, Npat, n_grps, assoc = has_assoc,
+                          id_var, time_var, offset = NULL, base_haz, quadnodes,
+                          df = if (base_haz_splines) splines_df else NULL,
+                          M, cnms, y_N, y_cnms, y_flist, Npat, n_grps, assoc = has_assoc, 
+                          fr = c(y_fr, list(e_fr)),
                           x = lapply(1:M, function(i) 
                             if (getRversion() < "3.2.0") cBind(x[[i]], Z[[i]]) else cbind2(x[[i]], Z[[i]])),
                           xq = lapply(1:M, function(i) 
@@ -1580,7 +1588,7 @@ stan_jm <- function(formulaLong, dataLong,
                           y = y, e_x, eventtime, d,
                           standata, dataLong, dataEvent, call, terms = NULL, model = NULL,                          
                           prior.info = rstanarm:::get_prior_info(call, formals()),
-                          na.action, algorithm = "sampling", init, glmod = y_mod)
+                          na.action, algorithm = "sampling", init, glmod = y_mod, coxmod = e_mod)
   out <- stanjm(fit)
   
   return(out)

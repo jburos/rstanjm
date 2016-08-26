@@ -209,7 +209,7 @@ formula.stanjm <- function (x, fixed.only = FALSE, random.only = FALSE, ...) {
     stop("'fixed.only' and 'random.only' can't both be TRUE.", call. = FALSE)
   
   M <- x$n_markers
-  fr <- lapply(x$glmod, function(m) m$fr) 
+  fr <- lapply(x$glmod, model.frame) 
   form <- lapply(x$formula, as.formula, ...)
   glmod_form <- lapply(seq(M), function(m) attr(fr[[m]], "formula")) 
   if (!is.null(glmod_form)) form[1:M] <- glmod_form[1:M]
@@ -221,7 +221,9 @@ formula.stanjm <- function (x, fixed.only = FALSE, random.only = FALSE, ...) {
     if (random.only)
       for (m in 1:M)
         form[[m]] <- rstanarm:::justRE(form[[m]], response = TRUE)
-  } 
+  }
+  form <- list_nms(form, M)
+  
   return(form)
 }
 
@@ -234,7 +236,8 @@ terms.stanjm <- function(x, ..., fixed.only = TRUE, random.only = FALSE) {
   if (!is.stanjm(x))
     return(NextMethod("terms"))
   
-  fr <- lapply(x$glmod, function(m) m$fr) 
+  M <- x$n_markers
+  fr <- lapply(x$glmod, model.frame) 
   if (missing(fixed.only) && random.only) 
     fixed.only <- FALSE
   if (fixed.only && random.only) 
@@ -255,6 +258,9 @@ terms.stanjm <- function(x, ..., fixed.only = TRUE, random.only = FALSE) {
       Terms
     })      
   }
+  fr <- model.frame(x$coxmod)
+  Terms$Event <- attr(fr, "terms")
+  Terms <- list_nms(Terms, M)
   
   return(Terms)
 }
@@ -481,7 +487,8 @@ family.stanjm <- function(object, ...) object$family
 model.frame.stanjm <- function(formula, fixed.only = FALSE, ...) {
   if (is.stanjm(formula)) {
     M <- formula$n_markers
-    fr <- lapply(seq(M), function(m) formula$glmod[[m]]$fr)
+    fr <- formula$fr
+    #fr <- lapply(formula$glmod, model.frame)
     if (fixed.only) {
       fr <- lapply(seq(M), function(m) {
         ff <- formula(formula, fixed.only = TRUE)[[m]]
@@ -489,6 +496,8 @@ model.frame.stanjm <- function(formula, fixed.only = FALSE, ...) {
         fr[[m]][vars]
       })
     }
+    #fr$Event <- formula$coxmod$x
+    fr <- list_nms(fr, M)
     return(fr)
   } 
   
@@ -513,32 +522,4 @@ model.matrix.stanjm <- function(object, ...) {
   }
   
   NextMethod("model.matrix")
-}
-
-#' terms method for stanjm objects
-#' @export
-#' @keywords internal
-#' @param x,fixed.only,random.only,... See lme4:::terms.merMod.
-#' 
-terms.stanjm <- function(x, ..., fixed.only = TRUE, random.only = FALSE) {
-  if (!is.mer(x))
-    return(NextMethod("terms"))
-  
-  fr <- x$glmod$fr
-  if (missing(fixed.only) && random.only) 
-    fixed.only <- FALSE
-  if (fixed.only && random.only) 
-    stop("'fixed.only' and 'random.only' can't both be TRUE.", call. = FALSE)
-  
-  Terms <- attr(fr, "terms")
-  if (fixed.only) {
-    Terms <- terms.formula(formula(x, fixed.only = TRUE))
-    attr(Terms, "predvars") <- attr(terms(fr), "predvars.fixed")
-  } 
-  if (random.only) {
-    Terms <- terms.formula(lme4::subbars(formula.stanjm(x, random.only = TRUE)))
-    attr(Terms, "predvars") <- attr(terms(fr), "predvars.random")
-  }
-  
-  return(Terms)
 }
