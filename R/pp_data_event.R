@@ -17,31 +17,68 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
+
+# @param tcalc A vector with the times at which to evaluate the design matrix. The
+#   first Npat rows of the design matrix will correspond to time tcalc, with the
+#   remaining rows corresponding to design matrix evaluated at the quadrature points
 pp_data_event <-
-  function(object, 
-           m,
-           newdata = NULL,
-           re.form = NULL,
+  function(object, newdataEvent, newdataLong,
            offset = NULL,
+           ids, times, id_var, time_var,
            ...) {
     validate_stanjm_object(object)
-    x <- .pp_data_event_x(object, newdata, m, ...)
-    z <- .pp_data_event_z(object, newdata, m, re.form, ...)
+    M <- object$n_markers
+    flist_long <- lapply(newdataLong, function(x) x[[id_var]])
+    flist_event <- newdataEvent[[id_var]]
+    Npat_long <- lapply(flist_long, function(x) length(unique(x)))
+    Npat_event <- length(unique(flist_event))
+    lapply(Npat_long, function(x) {
+      if (!identical(x, Npat_event))
+        stop("Bug found: number of individuals in newdataEvent and each newdataLong ",
+             "should be equal.")})
+    if (!identical(Npat_event, length(ids)))
+      stop("Bug found: number of individuals in newdataEvent and each newdataLong ",
+           "should be the same as the length of the 'ids' argument.")
+    if (!identical(Npat_event, length(times)))
+      stop("Bug found: the vector in the times argument -- which is a vector indicating ",
+           "the times at which  to evaluate the survival probability -- should be ",
+           "the same length as the number of individuals in newdataEvent.")
+    
+    # Quadrature points
+    quadnodes <- object$quadnodes  # num. of quadrature nodes
+    quadpoints <- get_quadpoints(quadnodes) # standardised quadrature points and weights
+    quadpoint <- lapply(quadpoints$points, FUN = function(x) (times/2) * x + (times/2))
+    quadpoint <- c(list(times), quadpoint)
+    
+    # Call to evaluate design matrices at quadrature points
+    e_xQ <- .pp_data_event_xQ(object, newdataEvent, quadpoint, 
+                              ids, id_var, time_var, ...)
+    y_xQ <- lapply(1:M, function(m) 
+                   .pp_data_long_xQ(object, newdataLong[[m]], m, quadpoint, 
+                                    ids, id_var, time_var, ...))
+    y_zQ <- lapply(1:M, function(m) 
+                   .pp_data_long_zQ(object, newdataLong[[m]], m, quadpoint, 
+                                    ids, id_var, time_var, ...))
     #offset <- .pp_data_offset(object, newdata, offset)
-    return(rstanarm:::nlist(x, offset = offset, Zt = z$Zt, Z_names = z$Z_names))
+    return(rstanarm:::nlist(e_xQ, y_xQ, y_zQ, offset = offset, quadpoint = quadpoint))
   }
 
 
-.pp_data_event_xQ <- function(object, newdata, m, ...) {
-  quadnodes <- object$quadnodes
-  e_xQ <- get_xQ(object)$Event
-  if (is.null(newdata)) return(e_xQ)
+# @param newdata A data frame indicating the predictor values for the event
+#   submodel. This should include variables id_var and time_var.
+# @param quadpoint A list of numeric vectors. The first element of the list is
+#   the times at which to evaluate the survival probability, and the remaining
+#   elements contain the times for each of the quadrature points.
+# @param id_var Name of the id variable
+# @param time_var Name of the time variable
+.pp_data_event_xQ <- function(object, newdata, quadpoint,
+                              ids, id_var, time_var, ...) {
+  # Obtain model formula and original factor levels
   form <- formula(object)$Event
   L <- length(form)
-  form[[L]] <- lme4::nobars(form[[L]])
   RHS <- formula(substitute(~R, list(R = form[[L]])))
-  Terms <- terms(object)[[m]] 
-  mf <- model.frame(object)[[m]]
+  Terms <- terms(object)$Event
+  mf <- model.frame(object)$Event
   ff <- formula(form)
   vars <- rownames(attr(terms.formula(ff), "factors"))
   mf <- mf[vars]
@@ -49,15 +86,40 @@ pp_data_event <-
   isFac[attr(Terms, "response")] <- FALSE
   orig_levs <- if (length(isFac) == 0) 
     NULL else lapply(mf[isFac], levels)
-  mfnew <- model.frame(delete.response(Terms), newdata, xlev = orig_levs)
-  x <- model.matrix(RHS, data = mfnew, contrasts.arg = attr(x, "contrasts"))
+  # Evaluate predictor values at quadrature points
+  resp_type <- attr(newdata[[1]], "type")
+  if (!is.null(resp_type)) {
+    newdata <- cbind(unclass(newdata[[1]]), newdata)
+    if (resp_type == "right") {
+      newdata <- data.table::data.table(newdata, key = c(id_var, "time"))
+    } else if (resp_type == "counting") {
+      newdata <- data.table::data.table(newdata, key = c(id_var, "start"))
+    } else {
+      stop("Bug found: newdataEvent was set to NULL, but the model ",
+           "frame collected from the original model doesn't appear to ",
+           "contain an appropriate Surv(.) response variable.")
+    }
+  } else {
+    newdata <- data.table::data.table(newdata, key = c(id_var, time_var))
+  }
+  newdataQ <- do.call(rbind, lapply(quadpoint, FUN = function(x) 
+    newdata[data.table::SJ(ids, x), roll = TRUE, rollends = c(TRUE, TRUE)])) 
+  # Generate model frame based on data at all quadrature points
+  mfnew <- model.frame(delete.response(Terms), newdataQ, xlev = orig_levs)
+  x <- model.matrix(RHS, data = mfnew, contrasts.arg = attr(mf, "contrasts"))
   return(x)
 }
 
-.pp_data_long_xQ <- function(object, newdata, m, ...) {
-  quadnodes <- object$quadnodes
-  y_xQ <- get_xQ(object)[[m]]
-  if (is.null(newdata)) return(x)
+# @param newdata The list or data frame supplying the new longitudinal data to 
+#   be used for estimating eta for longitudinal submodel m
+# @param m Integer specifying the longitudinal submodel
+# @param quadpoint A list of numeric vectors. The first element of the list is
+#   the times at which to evaluate the survival probability, and the remaining
+#   elements contain the times for each of the quadrature points.
+# @param id_var Name of the id variable
+# @param time_var Name of the time variable
+.pp_data_long_xQ <- function(object, newdata, m, quadpoint, 
+                             ids, id_var, time_var, ...) {
   form <- formula(object)[[m]]
   L <- length(form)
   form[[L]] <- lme4::nobars(form[[L]])
@@ -71,39 +133,34 @@ pp_data_event <-
   isFac[attr(Terms, "response")] <- FALSE
   orig_levs <- if (length(isFac) == 0) 
     NULL else lapply(mf[isFac], levels)
-  mfnew <- model.frame(delete.response(Terms), newdata, xlev = orig_levs)
-  x <- model.matrix(RHS, data = mfnew, contrasts.arg = attr(x, "contrasts"))
+  # Evaluate predictor values at quadrature points
+  newdata <- data.table::data.table(newdata, key = c(id_var, time_var))
+  newdataQ <- do.call(rbind, lapply(quadpoint, FUN = function(x) 
+    newdata[data.table::SJ(ids, x), roll = TRUE, rollends = c(TRUE, TRUE)]))  
+  # Generate model frame based on data at all quadrature points
+  mfnew <- model.frame(delete.response(Terms), newdataQ, xlev = orig_levs)
+  x <- model.matrix(RHS, data = mfnew, contrasts.arg = attr(mf, "contrasts"))
   return(x)
 }
 
-.pp_data_long_zQ <- function(object, newdata, m, re.form = NULL,
+.pp_data_long_zQ <- function(object, newdata, m, quadpoint, 
+                             ids, id_var, time_var, re.form = NULL,
                            allow.new.levels = TRUE, na.action = na.pass) {
-  NAcheck <- !is.null(re.form) && !is(re.form, "formula") && is.na(re.form)
-  fmla0check <- (is(re.form, "formula") && 
-                   length(re.form) == 2 && 
-                   identical(re.form[[2]], 0))
-  if (NAcheck || fmla0check) return(list())
-  if (is.null(newdata) && is.null(re.form)) {
-    ZQ <- get_zQ(object)[[m]]
-    return(list(ZQt = t(ZQ)))
+  # Evaluate predictor values at quadrature points
+  newdata <- data.table::data.table(newdata, key = c(id_var, time_var))
+  newdata <- do.call(rbind, lapply(quadpoint, FUN = function(x) 
+    newdata[data.table::SJ(ids, x), roll = TRUE, rollends = c(TRUE, TRUE)]))  
+  # Carry out all remaining steps on expanded newdata
+  mfnew <- model.frame(delete.response(terms(object, fixed.only = TRUE)[[m]]),
+                       newdata, na.action = na.action)  
+  newdata.NA <- newdata
+  if (!is.null(fixed.na.action <- attr(mfnew,"na.action"))) {
+    newdata.NA <- newdata.NA[-fixed.na.action,]
   }
-  else if (is.null(newdata)) {
-    rfd <- mfnew <- model.frame(object)[[m]]
-  } else {
-    if ("gam" %in% names(object))
-      stop("'posterior_predict' with non-NULL 're.form' not yet supported ", 
-           "for models estimated via 'stan_gamm4'")
-    mfnew <- model.frame(delete.response(terms(object, fixed.only = TRUE)[[m]]),
-                         newdata, na.action = na.action)
-    newdata.NA <- newdata
-    if (!is.null(fixed.na.action <- attr(mfnew,"na.action"))) {
-      newdata.NA <- newdata.NA[-fixed.na.action,]
-    }
-    tt <- delete.response(terms(object, random.only = TRUE)[[m]])
-    rfd <- model.frame(tt, newdata.NA, na.action = na.pass)
-    if (!is.null(fixed.na.action))
-      attr(rfd,"na.action") <- fixed.na.action
-  }
+  tt <- delete.response(terms(object, random.only = TRUE)[[m]])
+  rfd <- model.frame(tt, newdata.NA, na.action = na.pass)
+  if (!is.null(fixed.na.action))
+    attr(rfd,"na.action") <- fixed.na.action
   if (is.null(re.form)) 
     re.form <- rstanarm:::justRE(formula(object)[[m]])
   if (!inherits(re.form, "formula"))

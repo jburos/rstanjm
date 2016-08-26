@@ -221,7 +221,9 @@ formula.stanjm <- function (x, fixed.only = FALSE, random.only = FALSE, ...) {
     if (random.only)
       for (m in 1:M)
         form[[m]] <- rstanarm:::justRE(form[[m]], response = TRUE)
-  } 
+  }
+  form <- list_nms(form, M)
+  
   return(form)
 }
 
@@ -256,6 +258,9 @@ terms.stanjm <- function(x, ..., fixed.only = TRUE, random.only = FALSE) {
       Terms
     })      
   }
+  fr <- model.frame(x$coxmod)
+  Terms$Event <- attr(fr, "terms")
+  Terms <- list_nms(Terms, M)
   
   return(Terms)
 }
@@ -482,7 +487,8 @@ family.stanjm <- function(object, ...) object$family
 model.frame.stanjm <- function(formula, fixed.only = FALSE, ...) {
   if (is.stanjm(formula)) {
     M <- formula$n_markers
-    fr <- lapply(formula$glmod, model.frame)
+    fr <- formula$fr
+    #fr <- lapply(formula$glmod, model.frame)
     if (fixed.only) {
       fr <- lapply(seq(M), function(m) {
         ff <- formula(formula, fixed.only = TRUE)[[m]]
@@ -490,6 +496,8 @@ model.frame.stanjm <- function(formula, fixed.only = FALSE, ...) {
         fr[[m]][vars]
       })
     }
+    #fr$Event <- formula$coxmod$x
+    fr <- list_nms(fr, M)
     return(fr)
   } 
   
