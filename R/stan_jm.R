@@ -696,7 +696,8 @@ stan_jm <- function(formulaLong, dataLong,
     flist_event <- mf_event[, id_var]
     eventtime   <- mf_event$stop
     d           <- mf_event$status
-  
+    names(eventtime) <- names(d) <- flist_event
+    
     e_mf           <- data.table(cbind(e_y, e_mf), key = c(id_var, "start"))
     e_mf_eventtime <- e_mf[, .SD[.N], by = e_mf[, id_var]]
     # Unstandardised quadrature points
@@ -719,6 +720,7 @@ stan_jm <- function(formulaLong, dataLong,
     flist_event <- mf_event[, id_var]
     eventtime   <- mf_event$time
     d           <- mf_event$status
+    names(eventtime) <- names(d) <- flist_event
     # Unstandardised quadrature points
     quadpoint <- lapply(quadpoints$points, FUN = function(x) 
                           (eventtime/2) * x + (eventtime/2))    
@@ -855,7 +857,9 @@ stan_jm <- function(formulaLong, dataLong,
     names(mf_quadtime)[names(mf_quadtime) == "quadpoint"]   <- time_var
     mf_quadtime <- rbind(mf_eventtime, mf_quadtime, idcol = "xbind.id")
     m_mc_temp$formula <- m_mc[[m]]$formula  # return to original formula
-    m_mc_temp$formula <- substitute_vars(y_mod[[m]], y_vars[[m]]$formvars, y_vars[[m]]$predvars)
+    m_mc_temp$formula <- use_these_vars(y_mod[[m]], 
+                                        c(y_vars[[m]]$formvars$fixed[-1], y_vars[[m]]$formvars$random[-1]), 
+                                        c(y_vars[[m]]$predvars$fixed[-1], y_vars[[m]]$predvars$random[-1]))
     m_mc_temp$control <- m_mc[[m]]$control  # return to original control args
     m_mc_temp$data    <- mf_quadtime        # data at event and quadrature times
     y_mod_q[[m]] <- eval(m_mc_temp, parent.frame())     
@@ -1710,21 +1714,42 @@ get_formvars <- function(mod) {
 }
 
 
-# Function to replace the variables in the model formula with the prediction variables
+# Function to substitute variables in the formula of a fitted model
 #
 # @param mod A (g)lmer model object from which to extract the model formula
-# @param formvars A list with components fixed and random which give the original 
-#   variables used in the model formula
-# @param predvars A list with components fixed and random which gives the new 
-#   variables used to replace the variables in formvars
-# @return The reformulated model formula with the variables replaced by predvars
-substitute_vars <- function(mod, formvars, predvars) {
+# @param formvars A list of the original variables used in the model formula
+# @param newvars A list of the variables to use as replacements
+# @return The reformulated model formula with the variables in oldvars replaced 
+#   the corresponding entries in newvars
+use_these_vars <- function(mod, oldvars, newvars) {
+  if (!identical(length(oldvars), length(newvars)))
+    stop("oldvars and newvars should be the same length.")
   fm <- formula(mod)
-  if (!identical(formvars, predvars)) {
-    for (j in 2:length(formvars$fixed))
-      fm <- gsub(formvars$fixed[[j]], predvars$fixed[[j]], fm, fixed = TRUE)    
-    for (j in 2:length(formvars$random))
-      fm <- gsub(formvars$random[[j]], predvars$random[[j]], fm, fixed = TRUE)    
+  if (!identical(oldvars, newvars)) {
+    for (j in 1:length(oldvars))
+      fm <- gsub(oldvars[[j]], newvars[[j]], fm, fixed = TRUE)    
+    fm <- reformulate(fm[[3]], response = fm[[2]])
+  }
+  fm
+}
+
+# Function to substitute variables in the formula of a fitted model
+# with the corresponding predvars based on the terms object for the model
+#
+# @param formula A formula object from a fitted model
+# @param terms A terms object from a fitted model
+# @return A reformulated model formula with variables replaced by predvars
+use_predvars <- function(mod) {
+  fm <- formula(mod)
+  ff <- grep("", attr(terms(mod, fixed.only = TRUE), "variables"), value = TRUE)[-1]
+  fr <- grep("", attr(terms(mod, random.only = TRUE), "variables"), value = TRUE)[-1]
+  pf <- grep("", attr(terms(mod, fixed.only = TRUE), "predvars"), value = TRUE)[-1]
+  pr <- grep("", attr(terms(mod, random.only = TRUE), "predvars"), value = TRUE)[-1]
+  if (!identical(c(ff, fr), c(pf, pr))) {
+    for (j in 1:length(ff))
+      fm <- gsub(ff[[j]], pf[[j]], fm, fixed = TRUE)    
+    for (j in 1:length(fr))
+      fm <- gsub(fr[[j]], pr[[j]], fm, fixed = TRUE)    
     fm <- reformulate(fm[[3]], response = fm[[2]])
   }
   fm

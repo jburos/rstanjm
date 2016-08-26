@@ -40,6 +40,10 @@
 #'   transformations were specified inside the model formula. Also see the Note
 #'   section below for a note about using the \code{newdata} argument with with
 #'   binomial models.
+#' @param ids A vector containing the IDs of individuals for whom predictions
+#'   should be obtained. This defaults to \code{NULL} which returns predictions
+#'   for all individuals in the original model if \code{newdataEvent} is 
+#'   \code{NULL}, or otherwise all individuals in \code{newdataEvent}.
 #' @param draws An integer indicating the number of draws to return. The default
 #'   and maximum number of draws is the size of the posterior sample.
 #' @param fun An optional function to apply to the results. \code{fun} is found 
@@ -48,8 +52,11 @@
 #' @param seed An optional \code{\link[=set.seed]{seed}} to use.
 #' @param ... Currently unused.
 #' 
-#' @return A \code{draws} by \code{nrow(newdata)} matrix of simulations
-#'   from the posterior predictive distribution. Each row of the matrix is a
+#' @return A named list with two elements, 'times' and 'survprobs'. The former
+#'   is a list of times at which the survival probabilities are calculated. 
+#'   The latter is a list containing the correponding survival probabilities.
+#'   Each element of 'survprobs' contains a \code{draws} by \code{levels(ids)} 
+#'   matrix of estimated survival probabilities. Each row of the matrix is a
 #'   vector of predictions generated using a single draw of the model parameters
 #'   from the posterior distribution.
 #' 
@@ -60,8 +67,8 @@
 #' @examples
 #' 
 posterior_predictEvent <- function(object, newdataEvent = NULL, 
-                                   newdataLong = NULL, draws = NULL, 
-                              fun = NULL, seed = NULL, ...) {
+                                   newdataLong = NULL, ids = NULL,
+                                   draws = NULL, fun = NULL, seed = NULL, ...) {
   validate_stanjm_object(object)
   M <- object$n_markers
   id_var <- object$id_var
@@ -91,35 +98,43 @@ posterior_predictEvent <- function(object, newdataEvent = NULL,
                       "It should be the same length as the number of longitudinal ",
                       "markers (M=", M))
     }
-    if (any(is.na(newdataEvent))) 
-      stop("Currently NAs are not allowed in 'newdataEvent'.")
-    lapply(newdataLong, function(x) 
-      if (any(is.na(x)))
-        stop("Currently NAs are not allowed in 'newdataLong'."))
-    colnms <- lapply(c(newdataLong, list(newdataEvent)), colnames)
-    ids_and_times <- lapply(c(newdataLong, list(newdataEvent)), function(x) {
+    lapply(c(newdataLong, list(newdataEvent)), function(x) {
       if (!id_var %in% colnames(x))
         stop("id_var from the original model call must appear in all ",
              "newdata data frames.")
       if (!time_var %in% colnames(x))
         stop("time_var from the original model call must appear in all ",
              "newdata data frames.")
-      x[, c(id_var, time_var)]
-    })
-    ids_and_times <- do.call(rbind, ids_and_times)
+    })    
+    if (!is.null(ids)) {
+      newdataEvent <- newdataEvent[newdataEvent[[id_var]] %in% ids,]
+      newdataLong <- lapply(newdataLong, function(x) x[x[[id_var]] %in% ids, ])
+    }    
+    if (any(is.na(newdataEvent))) 
+      stop("Currently NAs are not allowed in 'newdataEvent'.")
+    lapply(newdataLong, function(x) 
+      if (any(is.na(x)))
+        stop("Currently NAs are not allowed in 'newdataLong'."))
+    ids_and_times <- do.call(rbind, lapply(c(newdataLong, list(newdataEvent)), 
+                       function(x) x[, c(id_var, time_var)]))
     # Latest known observation time for each individual
-    eventtime <- tapply(ids_and_times[[time_var]], ids_and_times[[id_var]], FUN = max)
+    lasttime <- tapply(ids_and_times[[time_var]], ids_and_times[[id_var]], FUN = max)
   } else {
     newdataLong <- model.frame(object)[1:M]
     newdataEvent <- model.frame(object)$Event
     # Latest known observation time for each individual
-    eventtime <- object$eventtime
+    lasttime <- object$eventtime
+    if (!is.null(ids)) {
+      newdataEvent <- newdataEvent[newdataEvent[[id_var]] %in% ids,]
+      newdataLong <- lapply(newdataLong, function(x) x[x[[id_var]] %in% ids, ])
+      lasttime <- lasttime[ids]
+    }    
   }
   # Maximum observation time across all individuals
-  max_etime <- max(eventtime)
+  max_time <- max(object$eventtime)
   # Time sequence across which to generate the survival probabilities
   time_seq <- lapply(0:n_increments, function(x) 
-    eventtime + (x / n_increments) * (max_etime - eventtime))
+    lasttime + (x / n_increments) * (max_time - lasttime))
   # List of ordered ids
   ids <- unique(newdataEvent[[id_var]])
   
@@ -128,11 +143,12 @@ posterior_predictEvent <- function(object, newdataEvent = NULL,
                   newdataEvent = newdataEvent,
                   newdataLong = newdataLong,
                   ids = ids,
-                  times = x, 
+                  t = x, 
                   id_var = id_var,
                   time_var = time_var,
                   ...) 
     surv <- pp_survcalc(object, dat, draws)
+    colnames(surv) <- ids
     if (!is.null(newdataEvent) && nrow(newdataEvent) == 1L) 
       surv <- t(surv)
     #if (!is.null(fun)) 
@@ -156,11 +172,12 @@ pp_survcalc <- function(object, data, draws = NULL) {
   e_xQ <- data$e_xQ
   y_xQ <- data$y_xQ
   y_zQ <- data$y_zQ
-  quadpoint <- data$quadpoint
-  quadnodes <- length(quadpoint) - 1
-  Npat <- length(quadpoint[[1]])
-  assoc <- object$assoc
-  basehaz <- object$base_haz
+  t    <- data$t
+  tQ   <- data$tQ
+  t_and_tQ  <- c(list(t), tQ)
+  Npat      <- length(t)
+  quadnodes <- length(tQ)
+  Q         <- quadnodes + 1
   S <- rstanarm:::posterior_sample_size(object)
   if (is.null(draws)) 
     draws <- S
@@ -175,83 +192,105 @@ pp_survcalc <- function(object, data, draws = NULL) {
   stanmat <- as.matrix(object$stanfit)
   nms <- collect_nms(colnames(stanmat), M)
   
+  # Longitudinal submodels
   y_beta <- lapply(1:M, function(m) {
     mat <- stanmat[, nms$y[[m]], drop = FALSE]
     if (some_draws) 
       mat <- mat[samp, , drop = FALSE]
     mat
   }) 
-  eta_long <- lapply(1:M, function(m) 
-    rstanarm:::linear_predictor.matrix(y_beta[[m]], y_xQ[[m]], data$offset))
-  y_b <- lapply(1:M, function(m) {
+  eta_long <- lapply(seq(M), function(m) {
+    lapply(seq(Q), function(q)
+      rstanarm:::linear_predictor.matrix(
+        y_beta[[m]], y_xQ[[m]][[q]], data$offset)) 
+  }) 
+    
+  y_b <- lapply(seq(M), function(m) {
     mat <- stanmat[, nms$y_b[[m]], drop = FALSE]
     if (some_draws) 
       mat <- mat[samp, , drop = FALSE]
-    if (is.null(y_zQ[[m]]$Z_names)) {
-      mat <- mat[, !grepl("_NEW_", colnames(mat), fixed = TRUE), drop = FALSE]
-    } else {
-      mat <- rstanarm:::pp_b_ord(mat, y_zQ[[m]]$Z_names)
-    }
-    mat
+    rstanarm:::pp_b_ord(mat, y_zQ[[m]]$Z_names)
   })
-  eta_long <- lapply(1:M, function(m) 
-    eta_long[[m]] + as.matrix(y_b[[m]] %*% y_zQ[[m]]$Zt))
+  eta_long <- lapply(seq(M), function(m) {
+    lapply(seq(Q), function(q)
+      eta_long[[m]][[q]] + as.matrix(y_b[[m]] %*% y_zQ[[m]]$Zt[[q]]))
+  })
 
+  # Event submodel
   e_beta <- stanmat[, nms$e, drop = FALSE]
   if (some_draws) 
     e_beta <- e_beta[samp, , drop = FALSE] 
-  eta_event <- rstanarm:::linear_predictor.matrix(e_beta, e_xQ, offset = NULL)
-  a_beta <- stanmat[, nms$a, drop = FALSE]
-  if (some_draws) 
-    a_beta <- a_beta[samp, , drop = FALSE]
-  mark <- 1
-  for (m in 1:M) {
-    if (assoc$etavalue[m]) {
-      eta_event <- eta_event + a_beta[, mark] * eta_long[[m]] 
-      mark <- mark + 1  
-    } 
-    if (assoc$etaslope[m]) {
-      #etaslope_long[[m]] <- NULL  # !!! needs calculation of derivative
-      #eta_event <- eta_event + a_beta[, mark] * etaslope_long[[m]] 
-      mark <- mark + 1  
+  eta_event <- lapply(seq(Q), function(q)
+    rstanarm:::linear_predictor.matrix(e_beta, e_xQ[[q]], offset = NULL))
+  
+  # Association structure
+  assoc <- object$assoc
+  if (any(unlist(assoc))) {
+    a_beta <- stanmat[, nms$a, drop = FALSE]
+    if (some_draws) 
+      a_beta <- a_beta[samp, , drop = FALSE]
+    mark <- 1
+    for (m in 1:M) {
+      if (assoc$etavalue[m]) {
+        eta_event <- lapply(seq(Q), function(q)
+          eta_event[[q]] + a_beta[, mark] * eta_long[[m]][[q]]) 
+        mark <- mark + 1  
+      } 
+      if (assoc$etaslope[m]) {
+        #etaslope_long[[m]] <- NULL  # !!! needs calculation of derivative
+        #eta_event <- eta_event + a_beta[, mark] * etaslope_long[[m]] 
+        mark <- mark + 1  
+      }
+      if (assoc$muvalue[m]) {
+        invlink <- family(object)[[m]]$linkinv
+        eta_event <- lapply(seq(Q), function(q)
+          eta_event[[q]] + a_beta[, mark] * invlink(eta_long[[m]][[q]])) 
+        mark <- mark + 1  
+      }
+      if (assoc$muslope[m]) {
+        #muslope_long[[m]] <- NULL  # !!! needs calculation of derivative
+        #eta_event <- eta_event + a_beta[, mark] * muslope_long[[m]] 
+        mark <- mark + 1  
+      }    
     }
-    if (assoc$muvalue[m]) {
-      invlink <- family(object)[[m]]$linkinv
-      eta_event <- eta_event + a_beta[, mark] * invlink(eta_long[[m]]) 
-      mark <- mark + 1  
-    }
-    if (assoc$muslope[m]) {
-      #muslope_long[[m]] <- NULL  # !!! needs calculation of derivative
-      #eta_event <- eta_event + a_beta[, mark] * muslope_long[[m]] 
-      mark <- mark + 1  
+    if (any(assoc$shared_b)) {
+      # !!!
     }    
   }
-  if (any(assoc$shared_b)) {
-    # !!!
+
+  # Baseline hazard
+  if (object$base_haz == "weibull") {
+    shape <- stanmat[, nms$e_extra, drop = FALSE]
+    if (some_draws) 
+      shape <- shape[samp, , drop = FALSE] 
+    log_basehaz <- lapply(t_and_tQ, function(x) {
+      # returns S x Npat matrix
+      as.vector(log(shape)) + (shape - 1) %*% matrix(log(x), nrow = 1)
+    })
+  } else if (object$base_haz == "splines") {
+    coefs <- stanmat[, nms$e_extra, drop = FALSE]
+    if (some_draws) 
+      coefs <- coefs[samp, , drop = FALSE] 
+    log_basehaz <- lapply(t_and_tQ, function(x) {
+      # returns S x Npat matrix
+      coefs %*% t(ns(x, object$df)) # !!! needs to accept df or knots
+    })
   }
-  if (basehaz == "weibull") {
-    weibull_shape <- stanmat[, nms$e_extra, drop = FALSE]
-    log_basehaz <- as.vector(log(weibull_shape)) + 
-      (weibull_shape - 1) %*% matrix(log(unlist(quadpoint)), nrow = 1)
-  } else if (basehaz == "splines") {
-    spline_coefs <- stanmat[, nms$e_extra, drop = FALSE]
-    log_basehaz <- splines_coefs %*% t(ns(unlist(quadpoint), object$df))  # !!! needs to accept df or knots	
-  }
-  log_haz <- log_basehaz + eta_event
+  log_haz <- mapply(function(x,y) x + y, 
+                    log_basehaz, eta_event, SIMPLIFY = FALSE)
   
-  log_haz_t <- log_haz[, 1:Npat, drop = FALSE]
-  log_haz_Q <- log_haz[, (Npat+1):NCOL(log_haz), drop = FALSE]
-  times <- quadpoint[[1]]
-  qp <- tail(quadpoint, quadnodes)
+  log_haz_t <- log_haz[[1]]
+  log_haz_Q <- log_haz[2:Q]
   qw <- get_quadpoints(quadnodes)$weights
-  qw_times_half_t <- lapply(1:quadnodes, function(x) qw[x] * (times / 2))
-  log_surv_t <- apply(log_haz_Q, 1, function(x) exp(x) * unlist(qw_times_half_t))  # returns matrix with S cols
-  id_seq <- rep(1:Npat, quadnodes)
-  log_surv_t <- lapply(split(log_surv_t, id_seq), matrix, ncol = S)
-  surv_t <- lapply(log_surv_t, function(x) t(exp(colSums(x))))
-  surv_t <- t(matrix(unsplit(surv_t, id_seq), ncol = S))
-  
-  return(surv_t) # S x Npat matrix evaluating survival probability at t
+  qw_times_half_t <- lapply(seq(quadnodes), function(x) qw[x] * (t / 2))
+  haz_Q <- lapply(log_haz_Q, exp)
+  weighted_haz_Q <- lapply(seq(quadnodes), function(q) {
+    # returns S x Npat matrix
+    t(apply(haz_Q[[q]], 1, function(row) row * qw_times_half_t[[q]]))    
+  })
+  sum_weighted_haz_Q <- Reduce('+', weighted_haz_Q)
+  surv_t <- exp(-sum_weighted_haz_Q)
+  return(surv_t) # returns S x Npat matrix of survival probabilities at t
 }
 
 
