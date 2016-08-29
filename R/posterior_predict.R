@@ -88,7 +88,7 @@
 #'   
 #' @examples
 #' 
-posterior_predictLong <- function(object, m = 1, newdata = NULL, draws = NULL, 
+posterior_predict <- function(object, m = 1, newdata = NULL, draws = NULL, 
                               re.form = NULL, fun = NULL, seed = NULL, 
                               offset = NULL, ...) {
   validate_stanjm_object(object)
@@ -109,17 +109,17 @@ posterior_predictLong <- function(object, m = 1, newdata = NULL, draws = NULL,
   }
             
   dat <-
-    pp_data_long(object,
+    pp_data(object,
             m = m,
             newdata = newdata,
             re.form = re.form,
             offset = offset,
             ...)
-  ppargs <- pp_args_long(object, data = pp_eta_long(object, dat, m, draws), m)
+  ppargs <- pp_args(object, data = pp_eta(object, dat, m, draws), m)
   if (rstanarm:::is.binomial(family(object)[[m]]$family))
     ppargs$trials <- pp_binomial_trials(object, newdata)
   
-  ppfun <- pp_fun_long(object, m)
+  ppfun <- pp_fun(object, m)
   ytilde <- do.call(ppfun, ppargs)
   if (!is.null(newdata) && nrow(newdata) == 1L) 
     ytilde <- t(ytilde)
@@ -135,7 +135,7 @@ posterior_predictLong <- function(object, m = 1, newdata = NULL, draws = NULL,
 #
 # @param object A stanjm object
 # @param m Integer specifying the longitudinal submodel
-pp_fun_long <- function(object, m) {
+pp_fun <- function(object, m) {
   suffix <- family(object)[[m]]$family
   getFromNamespace(paste0(".pp_", suffix), "rstanarm")
 }
@@ -146,7 +146,7 @@ pp_fun_long <- function(object, m) {
 # @param object A stanjm object
 # @param data Output from pp_eta (named list with eta and stanmat)
 # @return named list
-pp_args_long <- function(object, data, m) {
+pp_args <- function(object, data, m) {
   stanmat <- data$stanmat
   eta <- data$eta
   stopifnot(is.stanjm(object), is.matrix(stanmat))
@@ -172,7 +172,7 @@ pp_args_long <- function(object, data, m) {
 # @param data output from pp_data()
 # @param draws number of draws
 # @return linear predictor "eta" and matrix of posterior draws stanmat"
-pp_eta_long <- function(object, data, m, draws = NULL) {
+pp_eta <- function(object, data, m, draws = NULL) {
   M <- object$n_markers
   x <- data$x
   S <- rstanarm:::posterior_sample_size(object)

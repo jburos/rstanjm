@@ -24,7 +24,7 @@
 # @param t A vector with the times at which to evaluate the survival probability.
 # @param id_var Name of the id variable in the original model.
 # @param time_var Name of the time variable in the original model.
-pp_data_event <-
+ps_data <-
   function(object, newdataEvent, newdataLong,
            offset = NULL,
            ids, t, id_var, time_var,
@@ -54,13 +54,13 @@ pp_data_event <-
     t_and_tQ <- c(list(t), tQ)
     
     # Call to evaluate design matrices at quadrature points
-    e_xQ <- .pp_data_event_xQ(object, newdataEvent, t_and_tQ, 
+    e_xQ <- .ps_data_event_xQ(object, newdataEvent, t_and_tQ, 
                               ids, id_var, time_var, ...)
     y_xQ <- lapply(1:M, function(m) 
-                   .pp_data_long_xQ(object, newdataLong[[m]], m, t_and_tQ, 
+                   .ps_data_long_xQ(object, newdataLong[[m]], m, t_and_tQ, 
                                     ids, id_var, time_var, ...))
     y_zQ <- lapply(1:M, function(m) 
-                   .pp_data_long_zQ(object, newdataLong[[m]], m, t_and_tQ, 
+                   .ps_data_long_zQ(object, newdataLong[[m]], m, t_and_tQ, 
                                     ids, id_var, time_var, ...))
     #offset <- .pp_data_offset(object, newdata, offset)
     return(rstanarm:::nlist(e_xQ, y_xQ, y_zQ, offset, t, tQ))
@@ -77,7 +77,7 @@ pp_data_event <-
 #   predictions for.
 # @param id_var Name of the id variable in the original model.
 # @param time_var Name of the time variable in the original model.
-.pp_data_event_xQ <- function(object, newdata, t_and_tQ,
+.ps_data_event_xQ <- function(object, newdata, t_and_tQ,
                               ids, id_var, time_var, ...) {
   # Obtain model formula RHS
   form <- formula(object)$Event
@@ -147,7 +147,7 @@ pp_data_event <-
 #   elements contain the times for each of the quadrature points.
 # @param id_var Name of the id variable
 # @param time_var Name of the time variable
-.pp_data_long_xQ <- function(object, newdata, m, t_and_tQ, 
+.ps_data_long_xQ <- function(object, newdata, m, t_and_tQ, 
                              ids, id_var, time_var, ...) {
   # Obtain model formula RHS fixed part only
   form <- formula(object)[[m]]
@@ -188,7 +188,7 @@ pp_data_event <-
   return(x)
 }
 
-.pp_data_long_zQ <- function(object, newdata, m, t_and_tQ, 
+.ps_data_long_zQ <- function(object, newdata, m, t_and_tQ, 
                              ids, id_var, time_var, re.form = NULL,
                            allow.new.levels = TRUE, na.action = na.pass) {
   # Expand newdata based on a rolling merge between newdata at observation
