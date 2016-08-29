@@ -82,15 +82,17 @@
 #'   the number of trials. See the Examples section below and the 
 #'   \emph{How to Use the rstanarm Package} for examples.
 #' 
-#' @seealso \code{\link{pp_check}} for graphical posterior predictive checks.
-#'   Examples of posterior predictive checking can also be found in the
-#'   \pkg{rstanarm} vignettes and demos.
+#' @seealso \code{\link{pp_check}} for graphical posterior predictive checks
+#'   of the longitudinal submodel(s).
 #'   
 #' @examples
 #' 
-posterior_predict <- function(object, m = 1, newdata = NULL, draws = NULL, 
-                              re.form = NULL, fun = NULL, seed = NULL, 
-                              offset = NULL, ...) {
+posterior_predict <- function(object, m = 1, newdata = NULL, ids,  
+                              interpolate = FALSE, extrapolate = FALSE, 
+                              extrapolate_args = list(dist = NULL, prop = 0.5, 
+                                                      increments = 25),
+                              re.form = NULL, fun = NULL, 
+                              draws = NULL, seed = NULL, offset = NULL, ...) {
   validate_stanjm_object(object)
   M <- object$n_markers
   if (m < 1)
@@ -126,7 +128,12 @@ posterior_predict <- function(object, m = 1, newdata = NULL, draws = NULL,
   if (!is.null(fun)) 
     ytilde <- do.call(fun, list(ytilde))
   
-  ytilde
+  out <- list(times = time_seq, mu_pred = ytilde)
+  class(out) <- "predict.stanjm"
+  structure(out,
+            marginalised = marginalised, condition = condition,
+            extrapolate = extrapolate, extrapolate_args = extrapolate_args, 
+            ids = id_list, draws = draws, fun = fun, seed = seed)  
 }
 
 
