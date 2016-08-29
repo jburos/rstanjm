@@ -756,8 +756,6 @@ stan_jm <- function(formulaLong, dataLong,
   }
     
   # Error checks for the ID variable
-  id_list <<- id_list
-  flist_event <<- flist_event
   if (!identical(id_list, factor(sort(unique(flist_event)))))
     stop("The patient IDs (levels of the grouping factor) included ",
          "in the longitudinal and event submodels do not match")
@@ -1482,9 +1480,6 @@ stan_jm <- function(formulaLong, dataLong,
   #===========
   # Fit model
   #===========
-
-  # !!! REMOVE
-  standata <<- standata
 
   # call stan() to draw from posterior distribution
   stanfit <- stanmodels$jm

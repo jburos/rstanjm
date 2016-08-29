@@ -99,3 +99,14 @@ prep_for_facetwrap <- function(x, v_names, n_increments, ...) {
 }
 
 
+#-------------------------------------------------------------
+
+# default plotting attributes
+.PP_FILL <- "skyblue"
+.PP_DARK <- "skyblue4"
+.PP_VLINE_CLR <- "#222222"
+.PP_YREP_CLR <- "#487575"
+.PP_YREP_FILL <- "#222222"
+
+
+

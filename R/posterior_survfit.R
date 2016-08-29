@@ -40,18 +40,11 @@
 #'   transformations were specified inside the model formula. Also see the Note
 #'   section below for a note about using the \code{newdata} argument with with
 #'   binomial models.
-#' @param marginalised A logical specifying whether the estimated 
-#'   subject-specific survival probabilities should be averaged (marginalised)
-#'   across all individuals for whom the predictions were obtained. This can be
-#'   used to obtain an estimate of the marginal survival probability. It cannot
-#'   be set to \code{TRUE} if \code{condition} is set to \code{TRUE}.
-#' @param condition A logical specifying whether the estimated subject-specific
-#'   survival probabilities at time \code{t} should be conditioned on 
-#'   survival up to a fixed time point \code{u}. The default is to condition
-#'   on the latest observation time for each individual (taken to be the event 
-#'   or censoring time if \code{newdata} is not specified, or the lastest value of 
-#'   \code{time_var} if \code{newdata} is specified). It cannot
-#'   be set to \code{TRUE} if \code{marginalised} is set to \code{TRUE}.
+#' @param ids An optional character vector containing the IDs of individuals for 
+#'   whom the estimated survival probabilites should be obtained. This defaults 
+#'   to \code{NULL} which returns predictions for all individuals in the original 
+#'   model if \code{newdataEvent} is \code{NULL}, or otherwise all individuals 
+#'   in \code{newdataEvent}.
 #' @param times An optional scalar or numeric vector specifying the values of 
 #'   \code{time_var} in the original model at which to obtain the estimated 
 #'   survival probabilities. If not specified, and \code{marginalised = FALSE}, 
@@ -62,24 +55,37 @@
 #'   \code{marginalised = TRUE}, then the default behaviour is to calculate
 #'   the marginal survival probability at \code{n_increments} time points between
 #'   baseline and the latest observation or event/censoring time for all individuals.
-#' @param extrapolate Optionally, a positive scalar indicating the amount of time
-#'   beyond \code{time} for which to forecast the estimated survival probabilities.
-#'   The numeric value should represent the proportion of observed follow up time
-#'   (difference between baseline and \code{time}), for example, 0.2 = 20% of the 
-#'   observed follow up time. If set to \code{NULL} then survival probabilities
-#'   are only calculated at \code{time} and no extrapolation is carried out.
-#'   It is ignored if \code{marginalised} is set to \code{TRUE}.
-#' @param n_increments A positive integer. Specifies the number of increments in 
-#'   time at which to calculate the forecasted survival probabilities (if 
-#'   \code{marginalised = FALSE} and \code{extrapolate} is greater than zero)
-#'   or the marginal survival probabilities (if \code{marginalised = TRUE}). 
-#'   It is ignored if \code{marginalised} is set to \code{FALSE} and 
-#'   \code{extrapolate} is equal to \code{NULL}.
-#' @param ids An optional character vector containing the IDs of individuals for 
-#'   whom the estimated survival probabilites should be obtained. This defaults 
-#'   to \code{NULL} which returns predictions for all individuals in the original 
-#'   model if \code{newdataEvent} is \code{NULL}, or otherwise all individuals 
-#'   in \code{newdataEvent}.
+#' @param condition A logical specifying whether the estimated subject-specific
+#'   survival probabilities at time \code{t} should be conditioned on 
+#'   survival up to a fixed time point \code{u}. The default is to condition
+#'   on the latest observation time for each individual (taken to be the event 
+#'   or censoring time if \code{newdata} is not specified, or the lastest value of 
+#'   \code{time_var} if \code{newdata} is specified). It cannot
+#'   be set to \code{TRUE} if \code{marginalised} is set to \code{TRUE}.
+#' @param extrapolate A logical specifying whether to extrapolate the estimated 
+#'   survival function beyond the times specified in the \code{times} argument
+#'   (which will default to the latest observation time -- measurement, event or
+#'   censoring time -- if left equal to \code{NULL} and \code{marginalised = FALSE}).
+#'   If set to \code{TRUE} then the predictions can be further controlled using
+#'   the \code{extrapolate_args} argument.
+#' @param extrapolate_args A named list with parameters controlling extrapolation 
+#'   of the estimated survival function when \code{extrapolate = TRUE}. The list
+#'   can contain the following named elements: 
+#'   \code{dist}, a positive scalar 
+#'   specifying the amount of time across which to forecast the estimated survival
+#'   function; 
+#'   \code{prop}, a positive scalar between 0 and 1 specifying the 
+#'   amount of time across which to forecast the estimated survival function but
+#'   represented as a proportion of the total observed follow up time for each
+#'   individual;
+#'   \code{increments}, a positive integer specifying the number of increments in 
+#'   time at which to calculate the forecasted survival probabilities. 
+#'   See the \strong{Examples} below.
+#' @param marginalised A logical specifying whether the estimated 
+#'   subject-specific survival probabilities should be averaged (marginalised)
+#'   across all individuals for whom the predictions were obtained. This can be
+#'   used to obtain an estimate of the marginal survival probability. It cannot
+#'   be set to \code{TRUE} if \code{condition} is set to \code{TRUE}.
 #' @param draws An integer indicating the number of MCMC draws to return. The default
 #'   and maximum number of draws is the size of the posterior sample.
 #' @param fun An optional function to apply to the results. \code{fun} is found 
@@ -96,11 +102,17 @@
 #'   vector of predictions generated using a single draw of the model parameters
 #'   from the posterior distribution.
 #' 
-#' @seealso \code{\link{pp_check}} for graphical posterior predictive checks.
-#'   Examples of posterior predictive checking can also be found in the
-#'   \pkg{rstanarm} vignettes and demos.
+#' @seealso \code{\link{ps_check}} for for graphical checks of the estimated 
+#'   marginal survival function, and \code{\link{posterior_predict}} for 
+#'   drawing from the posterior predictive distribution for the longitudinal 
+#'   submodel.
 #'   
 #' @examples
+#' The numeric value should represent the proportion of observed follow up time
+#'   (difference between baseline and \code{time}), for example, 0.2 = 20% of the 
+#'   observed follow up time. If set to \code{NULL} then survival probabilities
+#'   are only calculated at \code{time} and no extrapolation is carried out.
+#'   It is ignored if \code{marginalised} is set to \code{TRUE}.
 #' 
 posterior_survfit <- function(object, newdataEvent = NULL, newdataLong = NULL, ids,  
                               times = NULL, condition = TRUE, extrapolate = TRUE, 
@@ -206,6 +218,8 @@ posterior_survfit <- function(object, newdataEvent = NULL, newdataLong = NULL, i
     } else time_seq <- list(rep(times, length(lasttime)))
   } else {
     # subject-specific predictions
+    if ((!is.null(times)) && (length(times) == 1L))
+      times <- rep(times, length(lasttime))
     if (extrapolate) {  
       # extrapolate
       # Note: prop assumes all individuals entered at time 0

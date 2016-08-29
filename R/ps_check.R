@@ -17,54 +17,86 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #
 
-#' Graphical posterior predictive checks for the event submodel
+#' Graphical checks of the estimated survival function
 #' 
-#' Various plots comparing the observed outcome variable from one
-#' of the longitudinal submodels \eqn{y} to simulated 
-#' datasets \eqn{y^{rep}}{yrep} from the posterior predictive distribution.
-#' This function is modelled on the \code{\link[rstanarm]{pp_check}} function
-#' from the \pkg{rstanarm} package.
+#' This function plots the estimated marginal survival function based on draws
+#' from the posterior predictive distribution of the fitted joint model, and then 
+#' overlays the Kaplan-Meier curve based on the observed data.
 #' 
 #' @export
+#' @templateVar stanjmArg object
+#' @template args-stanjm-object
+#'  
+#' @param check The type of plot to show. Currently only "survival" is 
+#'   allowed, which compares the estimated marginal survival function under
+#'   the joint model to the estimated Kaplan-Meier curve based on the 
+#'   observed data.
+#' @param ci Logical specifying whether to plot the credible interval for
+#'   the estimated marginal survival function.
+#' @param limits A numeric vector of length 2 specifying the limits to use
+#'   for the credible interval.
+#' @param draws An integer indicating the number of MCMC draws to use to 
+#'   to estimate the survival function. The default and maximum number of 
+#'   draws is the size of the posterior sample.
+#' @param seed An optional \code{\link[=set.seed]{seed}} to use.
+#' @param ... Optional arguments to geoms to control features of the plots.   
 #' 
-#' @importFrom ggplot2 ggplot aes_string geom_line labs facet_wrap
-ps_check <- function(object, type = "survival", ci_limit = c(.025, .975), 
+#' @return A ggplot object that can be further customized using the
+#'   \pkg{ggplot2} package.
+#'   
+#' @seealso \code{\link{posterior_survfit}} for the estimated marginal or
+#'   subject-specific survival function based on draws of the model parameters
+#'   from the posterior distribution, 
+#'   \code{\link{posterior_predict}} for drawing from the posterior 
+#'   predictive distribution for the longitudinal submodel, and 
+#'   \code{\link{pp_check}} for graphical checks of the longitudinal submodel.
+#'    
+#' @examples 
+#' if (!exists("example_jm")) example(example_jm)
+#' # Compare estimated survival function to Kaplan-Meier curve
+#' (ps <- ps_check(example_jm))
+#' ps + 
+#'  ggplot2::scale_color_manual(values = c("red", "black")) + # change colors
+#'  ggplot2::scale_size_manual(values = c(0.5, 3)) + # change line sizes 
+#'  ggplot2::scale_fill_manual(values = c(NA, NA)) # remove fill
+#' 
+#' @importFrom ggplot2 ggplot aes_string geom_step
+#' 
+ps_check <- function(object, check = "survival", 
+                     ci = TRUE, limits = c(.025, .975), 
                      draws = NULL, seed = NULL, ...) {
   validate_stanjm_object(object)
 
+  # Predictions for plotting the estimated survival function
   dat <- posterior_survfit(object, marginalised = TRUE, 
-                           draws = draws, seed = seed, ...)
+                           condition = FALSE, extrapolate = FALSE, 
+                           draws = draws, seed = seed)
   
-  if (type == "survival") {
-    
-    times <- do.call(cbind, dat$times)
-    if (NROW(times) == 1L) 
-      times <- as.vector(times)
-    survprob_median <- sapply(dat$survprobs, function(x) apply(x, 2, median)) 
-    survprob_lb <- sapply(dat$survprobs, function(x) apply(x, 2, quantile, ci_limit[1])) 
-    survprob_ub <- sapply(dat$survprobs, function(x) apply(x, 2, quantile, ci_limit[2])) 
- 
-    defaults <- list(color = "black")
-    geom_args <- rstanarm:::set_geom_args(defaults, ...)  
-       
-    plot_dat <- data.frame(x = times, y = survprob_median)
-    graph <- ggplot(plot_dat, aes_string("x", "y")) + 
-      do.call("geom_line", geom_args) +
-      labs(x = "Time", y = "Event free probability")
-    
-    # overlay KM curve
-    
+  # Estimate KM curve based on response from the event submodel
+  form <- reformulate("1", response = formula(object)$Event[[2]])
+  coxdat <- object$coxmod$y
+  if (is.null(coxdat)) 
+    stop("Bug found: no response y found in the 'coxmod' component of the ", 
+         "fitted joint model.")
+  resp <- attr(coxdat, "type")
+  if (resp == "right") {
+    form <- formula(survival::Surv(time, status) ~ 1)
+  } else if (resp == "counting") {
+    form <- formula(survival::Surv(start, stop, time) ~ 1)
+  } else {
+    stop("Bug found: only 'right' or 'counting' survival outcomes should ",
+         "have been allowed as the response type in the fitted joint model.")
   }
-  graph
+  km <- survival::survfit(form, data = as.data.frame(unclass(coxdat)))
+  kmdat <- data.frame(times = km$time, surv = km$surv,
+                       lb = km$lower, ub = km$upper)
+  
+  # Plot estimated survival function with KM curve overlaid
+  graph <- plot.survfit.stanjm(dat, ci = ci, limits = limits, ...)
+  kmgraph <- geom_step(data = kmdat, 
+                       mapping = aes_string(x = "times", y = "surv"))
+  graph + kmgraph
 }
-
-
-# default plotting attributes
-.PP_FILL <- "skyblue"
-.PP_DARK <- "skyblue4"
-.PP_VLINE_CLR <- "#222222"
-.PP_YREP_CLR <- "#487575"
-.PP_YREP_FILL <- "#222222"
 
 
 

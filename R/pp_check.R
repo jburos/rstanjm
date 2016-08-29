@@ -97,16 +97,16 @@
 #' @note For binomial data, plots of \eqn{y} and \eqn{y^{rep}}{yrep} show the
 #'   proportion of 'successes' rather than the raw count.
 #' 
-#' @seealso \code{\link{posterior_predictLong}} for drawing from the posterior 
+#' @seealso \code{\link{posterior_predict}} for drawing from the posterior 
 #'   predictive distribution for the longitudinal submodel, 
-#'   \code{\link{posterior_predictEvent}} for drawing from the posterior 
-#'   predictive distribution for the event submodel, and 
-#'   \code{\link{pp_checkEvent}} for graphical posterior predictive checks 
-#'   for the event submodel.
+#'   \code{\link{posterior_survfit}} for the estimated survival function based
+#'   on the posterior distribution of the model parameters, and 
+#'   \code{\link{ps_check}} for graphical checks of the estimated survival 
+#'   function.
 #' 
 #' @examples 
 #' 
-pp_checkLong <- function(object, m = 1, check = "distributions", nreps = NULL, 
+pp_check <- function(object, m = 1, check = "distributions", nreps = NULL, 
                      seed = NULL, overlay = TRUE, test = "mean", ...) {
   validate_stanjm_object(object)
   if (rstanarm:::used.optimizing(object)) 
