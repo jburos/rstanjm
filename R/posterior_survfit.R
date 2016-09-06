@@ -16,7 +16,7 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
-#' Draw from posterior predictive distribution for the event submodel
+#' Estimate the marginal or subject-specific survival function
 #' 
 #' The posterior predictive distribution is the distribution of the outcome 
 #' implied by the model after using the observed data to update our beliefs 
@@ -226,7 +226,7 @@ posterior_survfit <- function(object, newdataEvent = NULL, newdataLong = NULL, i
       # Note: still use whole follow up period for determining how 
       #       far to extrapolate even if times are provided?
       dist <- if (!is.null(prop)) prop * (lasttime - 0) else
-        extrapolate_args$prop
+        extrapolate_args$dist
       time_seq <- lapply(0:inc, function(x, t) t + dist * (x / inc), 
         t = if (!is.null(times)) times else lasttime)
     } else {
@@ -280,7 +280,7 @@ posterior_survfit <- function(object, newdataEvent = NULL, newdataLong = NULL, i
 
   out <- list(times = time_seq, survprobs = surv)
   class(out) <- "survfit.stanjm"
-  structure(out,
+  structure(out, n_increments = inc,
             marginalised = marginalised, condition = condition,
             extrapolate = extrapolate, extrapolate_args = extrapolate_args, 
             ids = id_list, draws = draws, fun = fun, seed = seed)

@@ -133,7 +133,7 @@ pp_check <- function(object, m = 1, check = "distributions", nreps = NULL,
   }
   
   y <- get_y(object)[[m]]
-  yrep <- posterior_predictLong(object, m, draws = nreps, seed = seed)
+  yrep <- posterior_predict(object, m, draws = nreps, seed = seed)
   if (is(object, "polr")) {
     y <- as.integer(y)
     yrep <- apply(yrep, 2, function(x) as.integer(as.factor(x)))

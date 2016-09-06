@@ -936,7 +936,6 @@ data {
   vector<lower=0>[a_K]   priorAssoc_df;
   vector<lower=0>[sum_y_has_dispersion] priorLong_scale_for_dispersion;
   real<lower=0> priorEvent_scale_for_weibull[basehaz_weibull];
-  vector<lower=0>[splines_df] priorEvent_scale_for_splines;
  
   // hyperparameters for random effects model
   vector<lower=0>[t] shape; 
@@ -987,14 +986,14 @@ transformed data {
 		    sqrt_y[n] = not_a_number();
 		    log_y[n] = log(y_real[n]);
 	    }
-      sum_log_y[m] = sum(log_y[y_real_beg[m]:y_real_end[m]]);
+      sum_log_y[m] = sum(log_y);
     }
     else if (family[m] == 3) {
       for (n in y_real_beg[m]:y_real_end[m]) {
 		    sqrt_y[n] = sqrt(y_real[n]);
 		    log_y[n] = log(y_real[n]);
 	     }
-      sum_log_y[m] = sum(log_y[y_real_beg[m]:y_real_end[m]]);
+      sum_log_y[m] = sum(log_y);
     }
     else sum_log_y[m] = not_a_number();
   }
@@ -1086,7 +1085,7 @@ parameters {
   real e_gamma[e_has_intercept];          // intercept (event model)
   vector[e_K] e_z_beta;                   // primative coefs (event submodel)
   real<lower=0> weibull_shape_unscaled[basehaz_weibull];  // unscaled weibull shape parameter 
-  vector[splines_df] splines_coefs_unscaled;       // unscaled coefs for cubic splines baseline hazard
+  vector[splines_df] splines_coefs;       // coefs for cubic splines baseline hazard
  
   // parameters for association structure
   vector[a_K] a_z_beta;   // primative coefs
@@ -1115,15 +1114,11 @@ transformed parameters {
   // parameters for event submodel
   vector[e_K] e_beta; 
   real weibull_shape[basehaz_weibull];
-  vector[splines_df] splines_coefs;     
   
   // parameters for GK quadrature  
   vector[(M*nrow_y_Xq)] y_eta_q;          // linear predictor (all long submodels) evaluated at quadpoints
-  vector[nrow_y_Xq] ysep_eta_q[M];        // linear predictor (each long submodel) evaluated at quadpoints
   vector[(M*nrow_y_Xq)*(sum_has_assoc_es > 0)] 
     dydt_eta_q;       // slope of linear predictor (all long submodels) evaluated at quadpoints
-  vector[nrow_y_Xq*(sum_has_assoc_es > 0)] 
-    dydtsep_eta_q[M];     // slope of linear predictor (each long submodel) evaluated at quadpoints
   vector[nrow_e_Xq] e_eta_q;      // linear predictor (event submodel) evaluated at quadpoints
   vector[nrow_e_Xq] log_basehaz;      // baseline hazard evaluated at quadpoints
   vector[nrow_e_Xq] ll_haz_q;     // log hazard contribution to the log likelihood for the event model at event time and quad points
@@ -1214,9 +1209,7 @@ transformed parameters {
     if (priorEvent_scale_for_weibull[1] > 0)
       weibull_shape[1] = priorEvent_scale_for_weibull[1] * weibull_shape_unscaled[1];
     else weibull_shape[1] = weibull_shape_unscaled[1];
-  } else if (basehaz_splines == 1) {
-    splines_coefs = priorEvent_scale_for_splines .* splines_coefs_unscaled;
-  }  
+  }   
   
   // parameters for association structure
   if      (priorAssoc_dist == 0) a_beta = a_z_beta;
@@ -1263,27 +1256,20 @@ transformed parameters {
   //if (y_has_offset == 1) y_eta_q = y_eta_q + y_offset;
   y_eta_q = y_eta_q + csr_matrix_times_vector((M*nrow_y_Xq), len_b, w_Zq, v_Zq, u_Zq, b_by_model);
   for (m in 1:M) {
-    ysep_eta_q[m] = segment(y_eta_q, ((m-1) * nrow_y_Xq) + 1, nrow_y_Xq);
     if (y_has_intercept[m] == 1) {
       if (y_has_intercept_unbound[m] == 1) 
-        ysep_eta_q[m] = ysep_eta_q[m] +
+        y_eta_q = y_eta_q +
                            y_gamma_unbound[sum(y_has_intercept_unbound[1:m])];
       else if (y_has_intercept_lobound[m] == 1)
-        ysep_eta_q[m] = ysep_eta_q[m] - min(ysep_eta_q[m]) + 
+        y_eta_q = y_eta_q - min(y_eta_q) + 
                            y_gamma_lobound[sum(y_has_intercept_lobound[1:m])];
 	  else if (y_has_intercept_upbound[m] == 1)
-        ysep_eta_q[m] = ysep_eta_q[m] - max(ysep_eta_q[m]) + 
+        y_eta_q = y_eta_q - max(y_eta_q) + 
                            y_gamma_lobound[sum(y_has_intercept_lobound[1:m])];
     }
     else if (y_centre == 1) {
-      int mark_beg;
-      int mark_end;
-      if (m == 1) mark_beg = 1;
-      else mark_beg = sum(y_K[1:(m-1)]) + 1;
-      mark_end = sum(y_K[1:m]);   
       // correction to eta if model has no intercept (and X is centered)
-      ysep_eta_q[m] = ysep_eta_q[m] + 
-            dot_product(y_xbar[mark_beg:mark_end], y_beta[mark_beg:mark_end]); 
+      y_eta_q = y_eta_q + dot_product(y_xbar, y_beta); 
     }
   }
   // Longitudinal submodel(s): slope of linear predictor at event and quad times
@@ -1292,7 +1278,6 @@ transformed parameters {
     else dydt_eta_q = rep_vector(0.0, (M*nrow_y_Xq));
     // !!! if (y_has_offset == 1) y_eta_q = y_eta_q + y_offset; # ignore offset in derivative?
     dydt_eta_q = dydt_eta_q + csr_matrix_times_vector((M*nrow_y_Xq), len_b, w_dZdtq, v_dZdtq, u_dZdtq, b_by_model);
-    for (m in 1:M) dydtsep_eta_q[m] = segment(dydt_eta_q, ((m-1) * nrow_y_Xq) + 1, nrow_y_Xq);
   }
   // Event submodel: linear predictor at event and quad times
   if (e_K > 0) e_eta_q = e_Xq * e_beta;
@@ -1310,25 +1295,25 @@ transformed parameters {
     for (m in 1:M) {
       if (has_assoc_ev[m] == 1) {
         mark = mark + 1;
-	      e_eta_q = e_eta_q + a_beta[mark] * ysep_eta_q[m];
+	      e_eta_q = e_eta_q + a_beta[mark] * y_eta_q;
       }	
       if (has_assoc_es[m] == 1) {
         mark = mark + 1;
-	      e_eta_q = e_eta_q + a_beta[mark] * dydtsep_eta_q[m]; 
+	      e_eta_q = e_eta_q + a_beta[mark] * dydt_eta_q[m]; 
       }	
       if (has_assoc_cv[m] == 1) {
         vector[nrow_y_Xq] y_q;  // expected long. outcome at event and quad times   
         mark = mark + 1;
         if (family[m] == 1) 
-          y_q = linkinv_gauss(ysep_eta_q[m], link[m]);
+          y_q = linkinv_gauss(y_eta_q, link[m]);
         else if (family[m] == 2) 
-          y_q = linkinv_gamma(ysep_eta_q[m], link[m]);
+          y_q = linkinv_gamma(y_eta_q, link[m]);
         else if (family[m] == 3)
-          y_q = linkinv_inv_gaussian(ysep_eta_q[m], link[m]);
+          y_q = linkinv_inv_gaussian(y_eta_q, link[m]);
         else if (family[m] == 4)
-          y_q = linkinv_bern(ysep_eta_q[m], link[m]);	
+          y_q = linkinv_bern(y_eta_q, link[m]);	
         else if (family[m] == 5)		  
-		  y_q = linkinv_binom(ysep_eta_q[m], link[m]); 
+		  y_q = linkinv_binom(y_eta_q, link[m]); 
         e_eta_q = e_eta_q + a_beta[mark] * y_q; 
       }				
       if (has_assoc_cs[m] == 1) {
@@ -1392,123 +1377,101 @@ model {
   //if (y_has_offset == 1) y_eta = y_eta + y_offset;
   y_eta = y_eta + csr_matrix_times_vector(sum_y_N, len_b, w, v, u, b_by_model);
   for (m in 1:M) {
-    vector[y_N[m]] y_eta_tmp;	
-    y_eta_tmp = y_eta[y_beg[m]:y_end[m]]; 
-	
     if (y_has_intercept[m] == 1) {
       if (y_has_intercept_unbound[m] == 1)
-        y_eta_tmp = y_eta_tmp + 
+        y_eta = y_eta + 
                     y_gamma_unbound[sum(y_has_intercept_unbound[1:m])];
       else if (y_has_intercept_lobound[m] == 1)
-        y_eta_tmp = y_eta_tmp - min(y_eta_tmp) + 
+        y_eta = y_eta - min(y_eta) + 
                     y_gamma_lobound[sum(y_has_intercept_lobound[1:m])];
       else if (y_has_intercept_upbound[m] == 1)
-        y_eta_tmp = y_eta_tmp - max(y_eta_tmp) + 
+        y_eta = y_eta - max(y_eta) + 
                     y_gamma_lobound[sum(y_has_intercept_upbound[1:m])];					
     }	
 	
     if (y_centre == 1) {
-      int mark_beg;
-      int mark_end;
-      if (m == 1) mark_beg = 1;
-      else mark_beg = sum(y_K[1:(m-1)]) + 1;
-      mark_end = sum(y_K[1:m]); 
       // correction to eta if model has no intercept (if X is centered)
-      y_eta_tmp = y_eta_tmp + 
-           dot_product(y_xbar[mark_beg:mark_end], y_beta[mark_beg:mark_end]); 
+      y_eta = y_eta + dot_product(y_xbar, y_beta); 
     }
     
 #    if (family[m] == 8) {  # poisson-gamma mixture
-#      if      (link[m] == 1) y_eta_tmp = y_eta_tmp + log(y_dispersion[disp_mark]) + log(y_noise[nois_mark]);
-#      else if (link[m] == 2) y_eta_tmp = y_eta_tmp * y_dispersion[disp_mark] .* y_noise[nois_mark];
-#      else                   y_eta_tmp = y_eta_tmp + sqrt(y_dispersion[disp_mark]) + sqrt_vec(y_noise[nois_mark]);
+#      if      (link[m] == 1) y_eta = y_eta + log(y_dispersion[disp_mark]) + log(y_noise[nois_mark]);
+#      else if (link[m] == 2) y_eta = y_eta * y_dispersion[disp_mark] .* y_noise[nois_mark];
+#      else                   y_eta = y_eta + sqrt(y_dispersion[disp_mark]) + sqrt_vec(y_noise[nois_mark]);
 #    }    
     
     // Log-likelihood for longitudinal submodel(s)
     if (y_has_weights[m] == 0 && prior_PD == 0) { # unweighted log-likelihoods
       if (family[m] == 1) {
-        if (link[m] == 1)      target += normal_lpdf(y_real[y_real_beg[m]:y_real_end[m]] | y_eta_tmp, y_dispersion[disp_mark]);
-        else if (link[m] == 2) target += lognormal_lpdf(y_real[y_real_beg[m]:y_real_end[m]] | y_eta_tmp, y_dispersion[disp_mark]);
-        else target += normal_lpdf(y_real[y_real_beg[m]:y_real_end[m]] | divide_real_by_vector(1, y_eta_tmp), y_dispersion[disp_mark]);
+        if (link[m] == 1)      target += normal_lpdf(y_real | y_eta, y_dispersion[disp_mark]);
+        else if (link[m] == 2) target += lognormal_lpdf(y_real | y_eta, y_dispersion[disp_mark]);
+        else target += normal_lpdf(y_real | divide_real_by_vector(1, y_eta), y_dispersion[disp_mark]);
       }
       else if (family[m] == 2) {
-        target += GammaReg(y_real[y_real_beg[m]:y_real_end[m]], y_eta_tmp, y_dispersion[disp_mark], link[m], sum_log_y[m]);
+        target += GammaReg(y_real, y_eta, y_dispersion[disp_mark], link[m], sum_log_y[m]);
       }
       else if (family[m] == 3) {
-	      vector[y_N[m]] sqrt_y_tmp;
-		    sqrt_y_tmp = sqrt_y[y_real_beg[m]:y_real_end[m]]; 
-        target += inv_gaussian(y_real[y_real_beg[m]:y_real_end[m]], 
-                               linkinv_inv_gaussian(y_eta_tmp, link[m]), 
-                               y_dispersion[disp_mark], sum_log_y[m], sqrt_y_tmp);
+        target += inv_gaussian(y_real, 
+                               linkinv_inv_gaussian(y_eta, link[m]), 
+                               y_dispersion[disp_mark], sum_log_y[m], sqrt_y);
       }
 	    else if (family[m] == 4) {
 		    vector[y_N01[m,1]] y_eta0_tmp;
 		    vector[y_N01[m,2]] y_eta1_tmp;
 	      real dummy;  // irrelevant but useful for testing
-		    y_eta0_tmp = segment(y_eta_tmp, 1, y_N01[m,1]);
-		    y_eta1_tmp = segment(y_eta_tmp, (y_N01[m,1] + 1), y_N01[m,2]);
+		    y_eta0_tmp = segment(y_eta, 1, y_N01[m,1]);
+		    y_eta1_tmp = segment(y_eta, (y_N01[m,1] + 1), y_N01[m,2]);
 	      dummy = ll_bern_lp(y_eta0_tmp, y_eta1_tmp, link[m], y_N01[m,]);	  
 	    }
 	    else if (family[m] == 5) {
-		    int trials_tmp[y_N[m]];		
 	      real dummy;  // irrelevant but useful for testing
-		    trials_tmp = trials[y_beg[m]:y_end[m]];
-        dummy = ll_binom_lp(y_int[y_int_beg[m]:y_int_end[m]], trials_tmp, y_eta_tmp, link[m]);	  
+        dummy = ll_binom_lp(y_int, trials, y_eta, link[m]);	  
 	    }
 	    else if (family[m] == 6 || family[m] == 8) {
-        if (link[m] == 1) target += poisson_log_lpmf(y_int[y_int_beg[m]:y_int_end[m]] | y_eta_tmp);
-        else target += poisson_lpmf(y_int[y_int_beg[m]:y_int_end[m]] | linkinv_count(y_eta_tmp, link[m]));
+        if (link[m] == 1) target += poisson_log_lpmf(y_int | y_eta);
+        else target += poisson_lpmf(y_int | linkinv_count(y_eta, link[m]));
 	    }
 	    else if (family[m] == 7) {
-  	    if (link[m] == 1) target += neg_binomial_2_log_lpmf(y_int[y_int_beg[m]:y_int_end[m]] | y_eta_tmp, y_dispersion[disp_mark]);
-        else target += neg_binomial_2_lpmf(y_int[y_int_beg[m]:y_int_end[m]] | 
-                                           linkinv_count(y_eta_tmp, link[m]), y_dispersion[disp_mark]);
+  	    if (link[m] == 1) target += neg_binomial_2_log_lpmf(y_int | y_eta, y_dispersion[disp_mark]);
+        else target += neg_binomial_2_lpmf(y_int | 
+                                           linkinv_count(y_eta, link[m]), y_dispersion[disp_mark]);
 	    }	    
     }    
     else if (prior_PD == 0) { # weighted log-likelihoods
-  	  vector[y_N[m]] y_weights_tmp;	  
   	  vector[y_N[m]] summands;
-      y_weights_tmp = y_weights[y_beg[m]:y_end[m]];	  
   	  if (family[m] == 1) {
-  	    summands = pw_gauss(y_real[y_real_beg[m]:y_real_end[m]], y_eta_tmp, y_dispersion[disp_mark], link[m]);
-  	    target += dot_product(y_weights_tmp, summands);	  	    
+  	    summands = pw_gauss(y_real, y_eta, y_dispersion[disp_mark], link[m]);
+  	    target += dot_product(y_weights, summands);	  	    
   	  }
   	  else if (family[m] == 2) {
-  	    summands = pw_gamma(y_real[y_real_beg[m]:y_real_end[m]], y_eta_tmp, y_dispersion[disp_mark], link[m]);
-  	    target += dot_product(y_weights_tmp, summands);	  	    
+  	    summands = pw_gamma(y_real, y_eta, y_dispersion[disp_mark], link[m]);
+  	    target += dot_product(y_weights, summands);	  	    
   	  }
   	  else if (family[m] == 3) {
-  	    vector[y_N[m]] log_y_tmp;	  
-  	    vector[y_N[m]] sqrt_y_tmp;  	    
-    		log_y_tmp = log_y[y_beg[m]:y_end[m]];
-    		sqrt_y_tmp = sqrt_y[y_beg[m]:y_end[m]];
-  	    summands = pw_inv_gaussian(y_real[y_real_beg[m]:y_real_end[m]], y_eta_tmp, y_dispersion[disp_mark], 
-  		                           link[m], log_y_tmp, sqrt_y_tmp);
-  	    target += dot_product(y_weights_tmp, summands);
+  	    summands = pw_inv_gaussian(y_real, y_eta, y_dispersion[disp_mark], 
+  		                           link[m], log_y, sqrt_y);
+  	    target += dot_product(y_weights, summands);
   	  }
 	    else if (family[m] == 4) {
     		vector[y_N01[m,1]] y_weights0_tmp;
     		vector[y_N01[m,2]] y_weights1_tmp;
     		vector[y_N01[m,1]] y_eta0_tmp;
     		vector[y_N01[m,2]] y_eta1_tmp;
-    		y_eta0_tmp = segment(y_eta_tmp, 1, y_N01[m,1]);
-    		y_eta1_tmp = segment(y_eta_tmp, (y_N01[m,1] + 1), y_N01[m,2]);
-    		y_weights0_tmp = segment(y_weights_tmp, 1, y_N01[m,1]);
-    		y_weights1_tmp = segment(y_weights_tmp, (y_N01[m,1] + 1), y_N01[m,2]);		
+    		y_eta0_tmp = segment(y_eta, 1, y_N01[m,1]);
+    		y_eta1_tmp = segment(y_eta, (y_N01[m,1] + 1), y_N01[m,2]);
+    		y_weights0_tmp = segment(y_weights, 1, y_N01[m,1]);
+    		y_weights1_tmp = segment(y_weights, (y_N01[m,1] + 1), y_N01[m,2]);		
         target += dot_product(y_weights0_tmp, pw_bern(0, y_eta0_tmp, link[m]));
         target += dot_product(y_weights1_tmp, pw_bern(1, y_eta1_tmp, link[m]));
   	  }
   	  else if (family[m] == 5) {
-    		int trials_tmp[y_N[m]];		
-    		trials_tmp = trials[y_beg[m]:y_end[m]];
-        target += dot_product(y_weights_tmp, 
-  		                      pw_binom(y_int[y_int_beg[m]:y_int_end[m]], trials_tmp, y_eta_tmp, link[m]));
+        target += dot_product(y_weights, pw_binom(y_int, trials, y_eta, link[m]));
   	  }
   	  else if (family[m] == 6 || family[m] == 8) {
-        target += dot_product(y_weights_tmp, pw_pois(y_int[y_int_beg[m]:y_int_end[m]], y_eta_tmp, link[m]));    		
+        target += dot_product(y_weights, pw_pois(y_int, y_eta, link[m]));    		
   	  }
   	  else if (family[m] == 7) {
-        target += dot_product(y_weights_tmp, pw_nb(y_int[y_int_beg[m]:y_int_end[m]], y_eta_tmp, y_dispersion[disp_mark], link[m]));
+        target += dot_product(y_weights, pw_nb(y_int, y_eta, y_dispersion[disp_mark], link[m]));
   	  }  	  
     }
     
@@ -1673,10 +1636,6 @@ model {
   // Log-prior for Weibull shape
   if (basehaz_weibull == 1) 
     target += cauchy_lpdf(weibull_shape_unscaled | 0, 1);   
-
-  // Log-prior for baseline hazard spline coefficients 
-  if (basehaz_splines == 1) 
-    target += normal_lpdf(splines_coefs_unscaled | 0, 1);
   
   // Prior for random effects model
   if (t > 0) decov_lp(z_b, z_T, rho, zeta, tau, 

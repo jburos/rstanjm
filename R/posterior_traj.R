@@ -16,7 +16,7 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
-#' Draw from posterior predictive distribution for the longitudinal submodel
+#' Estimate the marginal or subject-specific longitudinal trajectory 
 #' 
 #' The posterior predictive distribution is the distribution of the outcome 
 #' implied by the model after using the observed data to update our beliefs 
@@ -87,11 +87,20 @@
 #'   
 #' @examples
 #' 
-posterior_predict <- function(object, m = 1, newdata = NULL,
+posterior_traj <- function(object, m = 1, newdata = NULL, ids, 
+                           limits = c(.025, .975),
+                           last_time = NULL, 
+                              interpolate = TRUE, extrapolate = TRUE,
+                              interpolate_args = list(increments = 25),
+                              extrapolate_args = list(dist = NULL, prop = 0.5, 
+                                                      increments = 25),
                               re.form = NULL, fun = NULL, 
                               draws = NULL, seed = NULL, offset = NULL, ...) {
   validate_stanjm_object(object)
   M <- object$n_markers
+  id_var <- object$id_var
+  time_var <- object$time_var
+  if (missing(ids)) ids <- NULL
   if (m < 1)
     stop("'m' must be positive")
   if (m > M)
@@ -101,12 +110,77 @@ posterior_predict <- function(object, m = 1, newdata = NULL,
     set.seed(seed)
   if (!is.null(fun)) 
     fun <- match.fun(fun)
+  
+  mf <- model.frame(object)[[m]]
+
   if (!is.null(newdata)) {      
-    newdata <- as.data.frame(newdata)
+    obsdata <- newdata <- as.data.frame(newdata)
     if (any(is.na(newdata))) 
       stop("Currently NAs are not allowed in 'newdata'.")     
+    ids_and_times <- newdata[, c(id_var, time_var)]
+    # Latest known observation time for each individual
+    if (is.null(last_time))
+      last_time <- tapply(ids_and_times[[time_var]], ids_and_times[[id_var]], FUN = max)
+  } else {
+    # Latest known observation time for each individual
+    if (!is.null(last_time))
+      stop("'last_time' cannot be specified if 'newdata' is not specified. The ",
+           "latest observation (event or censoring) time will be inferred from ",
+           "the original data.")
+    obsdata <- newdata <- as.data.frame(mf)
+    last_time <- object$eventtime
+    if (!is.null(ids)) {
+      newdata <- newdata[newdata[[id_var]] %in% ids,]
+      last_time <- last_time[as.character(ids)]
+    }     
   }
-            
+  
+  # Time sequence across which to generate the longitudinal trajectory
+  max_time <- max(object$eventtime)
+  prop <- extrapolate_args$prop
+  iinc <- interpolate_args$increments
+  einc <- extrapolate_args$increments
+  # subject-specific predictions
+  if (interpolate) {  
+    # Note: prop assumes all individuals entered at time 0
+    inter_time_seq <- sapply(0:iinc, function(x, t) t * (x / iinc), 
+                       t = last_time)
+    # if there is only one patient then need to transform
+    if (is.vector(inter_time_seq)) {
+      inter_time_seq <- t(inter_time_seq)
+      rownames(inter_time_seq) <- names(last_time)
+    }
+  }  
+  if (extrapolate) {  
+    # Note: prop assumes all individuals entered at time 0
+    dist <- if (!is.null(prop)) prop * (last_time - 0) else
+      extrapolate_args$dist
+    extra_time_seq <- sapply(0:einc, function(x, t) t + dist * (x / einc), 
+                       t = last_time)
+    # if there is only one patient then need to transform
+    if (is.vector(extra_time_seq)) {
+      extra_time_seq <- t(extra_time_seq)
+      rownames(extra_time_seq) <- names(last_time)
+    }
+  }
+  if (interpolate && extrapolate) {
+    time_seq <- cbind(inter_time_seq, extra_time_seq)
+  } else if (interpolate) {
+    time_seq <- inter_time_seq
+  } else {
+    time_seq <- extra_time_seq
+  }
+  time_seq <- as.data.frame(time_seq)
+  n_obs <- NCOL(time_seq)
+  time_seq$id <- rownames(time_seq)
+  time_seq <- reshape(time_seq, direction = "long", varying = paste0("V", 1:n_obs), 
+                 v.names = time_var, timevar = "obs", idvar = id_var)
+  
+  newdata[[id_var]] <- as.character(newdata[[id_var]])
+  newdata <- data.table::data.table(newdata, key = c(id_var, time_var))
+  newdata <- newdata[data.table::SJ(time_seq[[id_var]], time_seq[[time_var]]),
+                         roll = TRUE, rollends = c(TRUE, TRUE)]  
+  
   dat <-
     pp_data(object,
             m = m,
@@ -125,133 +199,25 @@ posterior_predict <- function(object, m = 1, newdata = NULL,
   if (!is.null(fun)) 
     ytilde <- do.call(fun, list(ytilde))
   
-  ytilde
-}
-
-
-# call to rstanarm, to get the function to draw from the 
-# appropriate posterior predictive distribution for marker m
-#
-# @param object A stanjm object
-# @param m Integer specifying the longitudinal submodel
-pp_fun <- function(object, m) {
-  suffix <- family(object)[[m]]$family
-  getFromNamespace(paste0(".pp_", suffix), "rstanarm")
-}
-
-
-# create list of arguments to pass to the function returned by pp_fun
-#
-# @param object A stanjm object
-# @param data Output from pp_eta (named list with eta and stanmat)
-# @return named list
-pp_args <- function(object, data, m) {
-  stanmat <- data$stanmat
-  eta <- data$eta
-  stopifnot(is.stanjm(object), is.matrix(stanmat))
-  inverse_link <- linkinv(object)[[m]]
+  ytilde_med <- apply(ytilde, 2, median)
+  ytilde_lb <- apply(ytilde, 2, quantile, limits[1]) 
+  ytilde_ub <- apply(ytilde, 2, quantile, limits[2]) 
   
-  args <- list(mu = inverse_link(eta))
-  famname <- family(object)[[m]]$family
-  if (rstanarm:::is.gaussian(famname)) {
-    args$sigma <- stanmat[, paste0("Long", m, "|sigma")]
-  } else if (rstanarm:::is.gamma(famname)) {
-    args$shape <- stanmat[, paste0("Long", m, "|shape")]
-  } else if (rstanarm:::is.ig(famname)) {
-    args$lambda <- stanmat[, paste0("Long", m, "|lambda")]
-  } else if (rstanarm:::is.nb(famname)) {
-    args$size <- stanmat[, paste0("Long", m, "|overdispersion")]
-  }
-  args
+  Terms <- terms(mf)
+  yvar <- rownames(attr(Terms, "factors"))[attr(Terms, "response")]
+  xvars <- rownames(attr(Terms, "factors"))[-attr(Terms, "response")]
+  dat <- if (length(xvars)) as.data.frame(newdata)[, xvars, drop = FALSE] else NULL
+  out <- data.frame(cbind(dat, ypred_median = ytilde_med, 
+                          ypred_lb = ytilde_lb, ypred_ub = ytilde_ub))
+  
+  class(out) <- c("predict.stanjm", "data.frame")
+  structure(out, observed_data = obsdata, 
+            y_var = yvar, id_var = id_var, time_var = time_var,
+            interpolate = interpolate, interpolate_args = interpolate_args,
+            extrapolate = extrapolate, extrapolate_args = extrapolate_args, 
+            ids = rownames(last_time), last_time = last_time, 
+            draws = draws, fun = fun, seed = seed)  
 }
 
-# create eta and stanmat (matrix of posterior draws)
-# 
-# @param object stanjm object
-# @param data output from pp_data()
-# @param draws number of draws
-# @return linear predictor "eta" and matrix of posterior draws stanmat"
-pp_eta <- function(object, data, m, draws = NULL) {
-  M <- object$n_markers
-  x <- data$x
-  S <- rstanarm:::posterior_sample_size(object)
-  if (is.null(draws)) 
-    draws <- S
-  if (draws > S) {
-    err <- paste0("'draws' should be <= posterior sample size (", 
-                  S, ").")
-    stop(err)
-  }
-  some_draws <- isTRUE(draws < S)
-  if (some_draws)
-    samp <- sample(S, draws)
-  if (is.null(data$Zt)) {
-    stanmat <- as.matrix.stanjm(object)
-    nms <- collect_nms(colnames(stanmat), M)   
-    beta <- stanmat[, nms$y[[m]], drop = FALSE]
-    if (some_draws) 
-      beta <- beta[samp, , drop = FALSE]
-    eta <- rstanarm:::linear_predictor.matrix(beta, x, data$offset)
-  } else {
-    stanmat <- as.matrix(object$stanfit)
-    nms <- collect_nms(colnames(stanmat), M)   
-    beta <- stanmat[, nms$y[[m]], drop = FALSE]
-    if (some_draws) 
-      beta <- beta[samp, , drop = FALSE]
-    eta <- rstanarm:::linear_predictor.matrix(beta, x, data$offset)
-    b <- stanmat[, nms$y_b[[m]], drop = FALSE]
-    if (some_draws) 
-      b <- b[samp, , drop = FALSE]
-    if (is.null(data$Z_names)) {
-      b <- b[, !grepl("_NEW_", colnames(b), fixed = TRUE), drop = FALSE]
-    } else {
-      b <- rstanarm:::pp_b_ord(b, data$Z_names)
-    }
-    eta <- eta + as.matrix(b %*% data$Zt)
-  }
-  rstanarm:::nlist(eta, stanmat)
-}
 
-pp_b_ord <- function(b, Z_names) {
-  ord <- sapply(Z_names, FUN = function(x) {
-    m <- grep(paste0("b[", x, "]"), colnames(b), fixed = TRUE)
-    len <- length(m)
-    if (len == 1) 
-      return(m)
-    if (len > 1) 
-      stop("multiple matches bug")
-    m <- grep(paste0("b[", sub(" (.*):.*$", " \\1:_NEW_\\1", x), "]"), 
-              colnames(b), fixed = TRUE)
-    if (len == 1)
-      return(m)
-    if (len > 1)
-      stop("multiple matches bug")
-    x <- strsplit(x, split = ":", fixed = TRUE)[[1]]
-    stem <- strsplit(x[[1]], split = " ", fixed = TRUE)[[1]]
-    x <- paste(x[1], x[2], paste0("_NEW_", stem[2]), x[2], sep = ":")
-    m <- grep(paste0("b[", x, "]"), colnames(b), fixed = TRUE)
-    len <- length(m)
-    if (len == 1)
-      return(m)
-    if (len > 1)
-      stop("multiple matches bug")
-    x <- paste(paste(stem[1], stem[2]), paste0("_NEW_", stem[2]), sep = ":")
-    m <- grep(paste0("b[", x, "]"), colnames(b), fixed = TRUE)
-    len <- length(m)
-    if (len == 1)
-      return(m)
-    if (len > 1)
-      stop("multiple matches bug")
-    stop("no matches bug")    
-  })
-  b[, ord, drop = FALSE]
-}
 
-# Number of trials for binomial models
-pp_binomial_trials <- function(object, newdata = NULL, m) {
-  y <- if (is.null(newdata))
-    get_y(object)[[m]] else eval(formula(object)[[m]][[2L]], newdata)
-  if (NCOL(y) == 2L) 
-    return(rowSums(y))
-  rep(1, NROW(y))
-}

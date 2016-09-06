@@ -18,14 +18,17 @@
 #' Methods for stanjm objects
 #' 
 #' S3 methods for \link[=stanjm-object]{stanjm} objects. There are also 
-#' several methods (listed in See Also, below) with their own individual help
-#' pages.
+#' several methods (listed in \strong{See Also}, below) with their own
+#' individual help pages. A number of these methods will return a named list, 
+#' with each element of the list  containing the described item (for example, 
+#' coefficients, standard errors, residuals, etc) for one of the longitudinal 
+#' submodels or the event submodel.
 #' 
 #' @name stanjm-methods
 #' @aliases VarCorr fixef ranef ngrps sigma
 #' 
-#' @templateVar stanjmArg object,x
 #' @template args-stanjm-object
+#' @templateVar stanjmArg object,x
 #' @param ... Ignored, except by the \code{update} method. See
 #'   \code{\link{update}}.
 #' 
@@ -33,8 +36,10 @@
 #'   of class 'lm', 'glm', 'glmer', etc. However there are a few exceptions:
 #'   
 #' \describe{
-#' #' \item{\code{coef}}{
-#' Returns a list equal to the length of the number of submodels. The first
+#' \item{\code{coef}}{
+#' Medians are used for point estimates. See the \emph{Point estimates} section
+#' in \code{\link{print.stanjm}} for more details. \code{coef} returns a list 
+#' equal to the length of the number of submodels. The first
 #' elements of the list are the coefficients from each of the fitted longitudinal
 #' submodels and are the same layout as those returned by \code{coef} method of the
 #' \pkg{lme4} package, that is, the sum of the random and fixed effects coefficients 
@@ -42,51 +47,40 @@
 #' element of the returned list is a vector of fixed effect coefficients from the
 #' event submodel. 
 #' }
-#' 
-#' \item{\code{confint}}{
-#' For models fit using optimization, confidence intervals are returned via a
-#' call to \code{\link[stats]{confint.default}}. If \code{algorithm} is
-#' \code{"sampling"}, \code{"meanfield"}, or \code{"fullrank"}, the
-#' \code{\link{posterior_interval}} function should be used to compute Bayesian
-#' uncertainty intervals.
-#' }
-#' 
-#' \item{\code{log_lik}}{
-#' For models fit using MCMC only, the \code{log_lik}
-#' function returns the \eqn{S} by \eqn{N} pointwise log-likelihood matrix,
-#' where \eqn{S} is the size of the posterior sample and \eqn{N} is the number
-#' of data points. Note: we use \code{log_lik} rather than defining a
-#' \code{\link[stats]{logLik}} method because (in addition to the conceptual
-#' difference) the documentation for \code{logLik} states that the return value
-#' will be a single number, whereas we return a matrix.
-#' }
-#' 
-#' \item{\code{residuals}}{
-#' Residuals are \emph{always} of type \code{"response"} (not \code{"deviance"}
-#' residuals or any other type). However, in the case of \code{\link{stan_polr}}
-#' with more than two response categories, the residuals are the difference 
-#' between the latent utility and its linear predictor.
-#' }
-#' \item{\code{coef}}{
-#' Medians are used for point estimates. See the \emph{Point estimates} section
-#' in \code{\link{print.stanjm}} for more details.
-#' }
 #' \item{\code{se}}{
 #' The \code{se} function returns standard errors based on 
 #' \code{\link{mad}}. See the \emph{Uncertainty estimates} section in
 #' \code{\link{print.stanjm}} for more details.
+#' }
+#' \item{\code{confint}}{
+#' Not supplied, since the \code{\link{posterior_interval}} function should 
+#' be used instead to compute Bayesian uncertainty intervals.
+#' }
+#' \item{\code{residuals}}{
+#' Residuals are \emph{always} of type \code{"response"} (not \code{"deviance"}
+#' residuals or any other type).
+#' }
+#' \item{\code{log_lik}}{
+#' Returns the \eqn{S} by \eqn{N} pointwise log-likelihood matrix,
+#' where \eqn{S} is the size of the posterior sample and \eqn{N} is the number
+#' of individuals in the fitted model. The likelihood for a single individual 
+#' is therefore the sum of the likelihood contributions from their observed
+#' longitudinal measurements and their event time data.
+#' Note: we use \code{log_lik} rather than defining a
+#' \code{\link[stats]{logLik}} method because (in addition to the conceptual
+#' difference) the documentation for \code{logLik} states that the return value
+#' will be a single number, whereas we return a matrix.
 #' }
 #' }
 #' 
 #' @seealso
 #' Other S3 methods for stanjm objects, which have separate documentation, 
 #' including \code{\link{as.matrix.stanjm}}, \code{\link{plot.stanjm}}, 
-#' \code{\link{predict.stanjm}}, \code{\link{print.stanjm}}, and
-#' \code{\link{summary.stanjm}}.
+#' \code{\link{print.stanjm}}, and \code{\link{summary.stanjm}}.
 #' 
-#' \code{\link{posterior_interval}} and \code{\link{posterior_predict}} for 
-#' alternatives to \code{confint} and \code{predict} for models fit using MCMC 
-#' or variational approximation.
+#' \code{\link{posterior_interval}} for an alternative to \code{confint}, 
+#' and \code{posterior_predict}, \code{posterior_traj} and 
+#' \code{posterior_survfit} for predictions based on the fitted joint model.
 #' 
 NULL
 
@@ -94,8 +88,6 @@ NULL
 #' @rdname stanjm-methods
 #' @export
 #' @export coef
-#' @param remove_stub Logical specifying whether or not to remove the string
-#'    identifying the submodel from each of the coefficient names
 #'    
 coef.stanjm <- function(object, ...) {
   M <- object$n_markers
@@ -145,8 +137,8 @@ fitted.stanjm <- function(object, ...)  {
 #' @keywords internal
 #' @param object Fitted model object.
 #' @param ... Arguments to methods. For example the
-#'   \code{\link[=stanjm-methods]{stanjm}} method accepts the argument
-#'   \code{newdata}.
+#'   \code{\link[=stanjm-methods]{stanjm}} method accepts the arguments
+#'   \code{newdataLong} and \code{newdataEvent}.
 #' @return Pointwise log-likelihood matrix.
 #' @seealso \code{\link{log_lik.stanjm}}
 #' 
@@ -154,12 +146,12 @@ log_lik <- function(object, ...) UseMethod("log_lik")
 
 #' @rdname stanjm-methods
 #' @export
-#' @param newdata For \code{log_lik}, an optional data frame of new data (e.g. 
-#'   holdout data) to use when evaluating the log-likelihood. See the 
-#'   description of \code{newdata} for \code{\link{posterior_predict}}.
+#' @param newdataLong,newdataEvent For \code{log_lik}, an optional data frame 
+#'   of new data (e.g. holdout data) to use when evaluating the log-likelihood. 
+#'   See the description of \code{newdataLong} and \code{newdataEvent} for 
+#'   \code{\link{posterior_survfit}}.
 log_lik.stanjm <- function(object, newdata = NULL, ...) {
-  if (!rstanarm:::used.sampling(object)) 
-    rstanarm:::STOP_sampling_only("Pointwise log-likelihood matrix")
+  stop("'loglik' method not yet implemented")
   if (!is.null(newdata)) {
     newdata <- as.data.frame(newdata)
   }
@@ -370,7 +362,7 @@ vcov.stanjm <- function(object, correlation = FALSE, ...) {
 #' @export fixef
 #' @importFrom lme4 fixef
 #' @param remove_stub Logical specifying whether to remove the string identifying 
-#'    the longitudinal or event submodel from each of the coefficient names
+#'    the longitudinal or event submodel from each of the coefficient names.
 #' 
 fixef.stanjm <- function(object, remove_stub = TRUE, ...) {
   coefs <- object$coefficients
@@ -404,10 +396,10 @@ ranef.stanjm <- function(object, ...) {
     ans <- object$stan_summary[sel, rstanarm:::select_median(object$algorithm)]
     # avoid returning the extra levels that were included
     ans <- ans[!grepl("_NEW_", names(ans), fixed = TRUE)]
-    fl <- as.list(object$y_flist[[m]])
+    fl <- as.list(object$glmod[[m]]@flist)
     levs <- lapply(fl, levels)
     asgn <- attr(fl, "assign")
-    cnms <- object$y_cnms[[m]]
+    cnms <- object$glmod[[m]]@cnms
     nc <- vapply(cnms, length, 1L)
     nb <- nc * vapply(levs, length, 1L)[asgn]
     nbseq <- rep.int(seq_along(nb), nb)

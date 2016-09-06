@@ -65,27 +65,32 @@ plot.survfit.stanjm <- function(object, ci = TRUE, limits = c(.025, .975), ids =
     plot_dats <- mapply(prep_for_facetwrap, dats,
                         v_names, n_increments, SIMPLIFY = FALSE)
     plot_dat <- Reduce(function(...) merge(...), plot_dats)
-    graph <- ggplot(plot_dat, aes_string(x = "times", y = "med")) + 
+    graph <- ggplot(plot_dat, aes_string(x = "times", y = "med")) +
+      theme_bw() +
       do.call("geom_line", geom_args) +
       coord_cartesian(ylim = c(0, 1)) +      
       labs(x = "Time", y = "Event free probability") +
       facet_wrap(~ id, scales = "free")
-    if (ci)
+    if (ci) {
       graph_limits <- geom_ribbon(aes_string(ymin = "lb", ymax = "ub"), 
-                                  alpha = 0.3)
+                                  alpha = 0.3)      
+    } else graph_limits <- NULL
   } else {
     plot_dat <- data.frame(times = times, med = survprob_median,
                            lb = survprob_lb, ub = survprob_ub)
     graph <- ggplot(plot_dat, aes_string(x = "times", y = "med")) + 
+      theme_bw() +
       do.call("geom_line", geom_args) + 
       coord_cartesian(ylim = c(0, 1)) +
       labs(x = "Time", y = "Event free probability")
-    if (ci)
+    if (ci) {
       graph_limits <- geom_ribbon(aes_string(ymin = "lb", ymax = "ub"), 
-                                  alpha = 0.3)
+                                  alpha = 0.3)      
+    } else graph_limits <- NULL
+
   }    
 
-  graph + if (ci) graph_limits else NULL
+  graph + graph_limits
 }
 
 
