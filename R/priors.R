@@ -71,6 +71,7 @@ priorLong_options <- function(prior_scale_for_dispersion = 5,
 #'   which is given a half-Cauchy truncated at zero.
 #'
 priorEvent_options <- function(prior_scale_for_weibull = 5,
+                               prior_scale_for_splines = 10,
                                min_prior_scale = 1e-12, 
                                scaled = TRUE) {
   rstanarm:::validate_parameter_value(prior_scale_for_weibull)
@@ -85,4 +86,40 @@ priorAssoc_options <- function(min_prior_scale = 1e-12) {
   rstanarm:::validate_parameter_value(min_prior_scale)
   rstanarm:::nlist(min_prior_scale)
 }
+
+#' @rdname priors
+#' @export 
+#' @param scaling For the family of informative priors, the scale parameter
+#'   of the prior distribution will be set equal to the specified \code{scaling}
+#'   multiplied by the standard error of the likelihood-based regression 
+#'   coefficient obtained from fitting a separate longitudinal (using 
+#'   \code{\link[lme4]{lmer} or \code{\link[lme4]{glmer}) or time-to-event
+#'   (using \code{\link[survival]{coxph}}) model prior to fitting the joint
+#'   model. See \strong{Details} below.
+#'
+informative_normal <- function(scaling = 10) {
+  validate_positive_scalar(scaling)
+  rstanarm:::nlist(dist = "informative_normal", df = NA, 
+                   location = NA, scale = scaling)
+}
+
+#' @rdname priors
+#' @export
+#' @param df Prior degrees of freedom. The default is \eqn{1} for 
+#'   \code{student_t}, in which case it is equivalent to \code{cauchy}.
+#'   
+informative_student_t <- function(df = 1, scaling = 10) {
+  validate_positive_scalar(scaling)
+  validate_positive_scalar(df)
+  rstanarm:::nlist(dist = "informative_t", df = df, 
+                   location = NA, scale = scaling)
+}
+
+#' @rdname priors
+#' @export
+#' 
+informative_cauchy <- function(scaling = 5) {
+  informative_student_t(df = 1, scaling = scaling)
+}
+
 

@@ -39,8 +39,10 @@
 #' @details 
 #' The output from the \code{print} method includes very brief summary statistics 
 #' for the fixed effects parameter estimates (described below, and which are 
-#' displayed separately for each longitudinal or event submodel) as well as the 
-#' standard deviation and correlation parameter estimates for the random effects.  
+#' displayed separately for each longitudinal or event submodel), the additional
+#' parameters such as the residual error standard deviation, dispersion parameter, 
+#' or the Weibull shape parameter or baseline hazard coefficients. Also displayed 
+#' are the standard deviation and correlation parameter estimates for the random effects.  
 #'
 #' \subsection{Point estimates}{
 #' Point estimates are medians computed from the posterior sample generated 
@@ -78,7 +80,7 @@ print.stanjm <- function(x, digits = 3, ...) {
     # Add column with eform
     if (link[m] %in% c("log", "logit")) 
       estimates <- cbind(estimates, 
-        "exp(Median)" = c(exp(estimates[nms$y_extra[[m]], "Median"]), 
+        "exp(Median)" = c(exp(estimates[nms$y[[m]], "Median"]), 
                           rep(NA, length(nms$y_extra[[m]]))))
     
     # Print estimates
@@ -130,17 +132,25 @@ print.stanjm <- function(x, digits = 3, ...) {
 #' @param ... Currently ignored.
 #' @param pars An optional character vector specifying a subset of parameters to
 #'   display. Parameters can be specified by name or several shortcuts can be 
-#'   used. Using \code{pars="long"} and/or \code{pars="event"} will display the 
-#'   parameter estimates for the longitudinal and event submodels, respectively,
-#'   but will not include coefficients for the subject-specific random effects. 
-#'   Using \code{pars="fixef"} will display parameter estimates for the fixed
-#'   effects from both the longitudinal and event submodels. 
-#'   Using \code{pars="beta"} will restrict the displayed parameters to 
-#'   only the regression coefficients (without the intercept). \code{"alpha"} 
-#'   can also be used as a shortcut for \code{"(Intercept)"}. The estimates for
-#'   the subject-specific random effects can be selected using \code{pars="b"}.
-#'   If \code{pars} is \code{NULL} all parameters are selected. See 
-#'   Examples.
+#'   used. 
+#'   Using \code{pars = "long"} will display the 
+#'   parameter estimates for the longitudinal submodels only (excluding random
+#'   effects, but including dispersion parameters).
+#'   Using \code{pars = "event"} will display the 
+#'   parameter estimates for the event submodel only, including any association
+#'   parameters. 
+#'   Using \code{pars = "assoc"} will display only the 
+#'   association parameters. 
+#'   Using \code{pars = "fixef"} will display all fixed effects, but not
+#'   the random effects or the additional parameters such as dispersion, etc. 
+#'   Using \code{pars = "beta"} will display only the 
+#'   fixed effect regression coefficients (excluding the intercept terms).
+#'   Using \code{pars = "alpha"} will display only the 
+#'   fixed effect intercept terms.
+#'   The estimates for the random effects can be selected using \code{pars = "b"}
+#'   or \code{pars = "varying"}.
+#'   If both \code{pars} and \code{regex_pars} are set to \code{NULL} then all 
+#'   parameters are selected, including the log posterior. See \strong{Examples}.
 #' @param probs An optional numeric vector of probabilities passed to 
 #'   \code{\link[stats]{quantile}}, for calculating the quantiles of the 
 #'   posterior distribution for each parameter.
@@ -160,10 +170,41 @@ print.stanjm <- function(x, digits = 3, ...) {
 #' @seealso \code{\link{print.stanjm}}, \code{\link{stanjm-methods}}
 #' 
 #' @examples
+#' if (!exists("example_jm")) example(example_jm)
 #' 
+#' # Only showing 10th and 90th percentile   
+#' summary(example_jm, probs = c(0.1, 0.9))
+#' 
+#' # These produce the same output for this example, 
+#' # but the first method can be used for any model
+#' summary(example_jm, pars = c("long"))
+#' summary(example_jm, pars = c("Long1|(Intercept)",
+#'                              "Long1|year", 
+#'                              "Long1|sigma")) 
+#' 
+#' # Only show parameters for event submodel
+#' summary(example_jm, pars = "event")
+#'
+#' # Only show the association parameter for the current
+#' # value of the linear predictor from the longitudinal submodel
+#' summary(example_jm, pars = "Assoc|Long1:eta value")
+#' # or since there is only one association parameter in the 
+#' # model we can just use the following shortcut
+#' summary(example_jm, pars = "assoc")
+#'   
+#' # Only show random effects parameters
+#' summary(example_jm, pars = "b")
+#' as.data.frame(summary(example_model, pars = "b"))
+#'  
+#' # To obtain only the random intercepts we could also use a
+#' # regular expression in the regex argument as follows
+#' summary(example_jm, pars = NULL,
+#'         regex_pars = "\\(Intercept\\)\\sid")
+#'  
 #' @importMethodsFrom rstan summary
+#' 
 summary.stanjm <- function(object, pars = c("long", "event"), regex_pars = NULL, 
-                            probs = NULL, ..., digits = 3) {
+                            probs = NULL, digits = 3, ...) {
   pars <- rstanarm:::collect_pars(object, pars, regex_pars)
   M <- object$n_markers
   
@@ -172,50 +213,44 @@ summary.stanjm <- function(object, pars = c("long", "event"), regex_pars = NULL,
            paste0(x$family, " (", x$link, ")")) 
   
   # Construct summary table  
-  if (!rstanarm:::used.optimizing(object)) {
-    args <- list(object = object$stanfit)
-    if (!is.null(probs)) 
-      args$probs <- probs
-    out <- do.call("summary", args)$summary
-    
-    if (is.null(pars) && used.variational(object))
-      out <- out[!rownames(out) %in% "log-posterior", , drop = FALSE]
-    if (!is.null(pars)) {
-      nms <- collect_nms(rownames(object$stan_summary), M, value = TRUE)
+  args <- list(object = object$stanfit)
+  if (!is.null(probs)) 
+    args$probs <- probs
+  out <- do.call("summary", args)$summary
+  
+  if (!is.null(pars)) {
+    nms <- collect_nms(rownames(object$stan_summary), M, value = TRUE)
 
-      pars2 <- NA     
-      if ("alpha" %in% pars) pars2 <- c(pars2, nms$alphas)
-      if ("beta" %in% pars) pars2 <- c(pars2, nms$betas)
-      if ("long" %in% pars) pars2 <- c(pars2, unlist(nms$y), unlist(nms$y_extra))
-      if ("event" %in% pars) pars2 <- c(pars2, nms$e, nms$a, nms$e_extra)
-      if ("assoc" %in% pars) pars2 <- c(pars2, nms$a)      
-      if ("fixef" %in% pars) pars2 <- c(pars2, unlist(nms$y), nm$e, nms$a)
-      if ("b" %in% pars) pars2 <- c(pars2, nms$b)
-      pars2 <- c(pars2, setdiff(pars, 
-                                c("alpha", "beta", "varying", "b",
-                                  "long", "event", "assoc", "fixef")))
-      pars <- pars2[!is.na(pars2)]
-      out <- out[rownames(out) %in% pars, , drop = FALSE]
-    }
-    out <- out[!grepl(":_NEW_", rownames(out), fixed = TRUE), , drop = FALSE]
-    stats <- colnames(out)
-    if ("n_eff" %in% stats)
-      out[, "n_eff"] <- round(out[, "n_eff"])
-    if ("se_mean" %in% stats) # So people don't confuse se_mean and sd
-      colnames(out)[stats %in% "se_mean"] <- "mcse"
-      
-    # Reorder rows of output table
-    nms_tmp <- rownames(out)  
-    nms_tmp_y <- lapply(1:M, function(m) 
-                   grep(paste0("^Long", m, "\\|"), nms_tmp, value = TRUE))
-    nms_tmp_e <- grep("^Event\\|", nms_tmp, value = TRUE)
-    nms_tmp_a <- grep("^Assoc\\|", nms_tmp, value = TRUE)
-    nms_tmp_b <- rstanarm:::b_names(nms_tmp, value = TRUE)
-    out <- out[c(unlist(nms_tmp_y), nms_tmp_e, nms_tmp_a, nms_tmp_b), , drop = FALSE]
-    
-  } else { # used optimization
-    # not used for stan_jm
+    pars2 <- NA     
+    if ("alpha" %in% pars) pars2 <- c(pars2, nms$alpha)
+    if ("beta" %in% pars) pars2 <- c(pars2, nms$beta)
+    if ("long" %in% pars) pars2 <- c(pars2, unlist(nms$y), unlist(nms$y_extra))
+    if ("event" %in% pars) pars2 <- c(pars2, nms$e, nms$a, nms$e_extra)
+    if ("assoc" %in% pars) pars2 <- c(pars2, nms$a)      
+    if ("fixef" %in% pars) pars2 <- c(pars2, unlist(nms$y), nms$e, nms$a)
+    if ("b" %in% pars) pars2 <- c(pars2, nms$b)
+    pars2 <- c(pars2, setdiff(pars, 
+                              c("alpha", "beta", "varying", "b",
+                                "long", "event", "assoc", "fixef")))
+    pars <- pars2[!is.na(pars2)]
+    out <- out[rownames(out) %in% pars, , drop = FALSE]
   }
+  out <- out[!grepl(":_NEW_", rownames(out), fixed = TRUE), , drop = FALSE]
+  stats <- colnames(out)
+  if ("n_eff" %in% stats)
+    out[, "n_eff"] <- round(out[, "n_eff"])
+  if ("se_mean" %in% stats) # So people don't confuse se_mean and sd
+    colnames(out)[stats %in% "se_mean"] <- "mcse"
+    
+  # Reorder rows of output table
+  nms_tmp <- rownames(out)  
+  nms_tmp_y <- lapply(1:M, function(m) 
+                 grep(paste0("^Long", m, "\\|"), nms_tmp, value = TRUE))
+  nms_tmp_e <- grep("^Event\\|", nms_tmp, value = TRUE)
+  nms_tmp_a <- grep("^Assoc\\|", nms_tmp, value = TRUE)
+  nms_tmp_b <- rstanarm:::b_names(nms_tmp, value = TRUE)
+  nms_tmp_lp <- grep("^log-posterior$", nms_tmp, value = TRUE)
+  out <- out[c(unlist(nms_tmp_y), nms_tmp_e, nms_tmp_a, nms_tmp_b, nms_tmp_lp), , drop = FALSE]
   
   # Run times
   times <- round((rstan::get_elapsed_time(object$stanfit))/60, digits = 1)
@@ -233,7 +268,7 @@ summary.stanjm <- function(object, pars = c("long", "event"), regex_pars = NULL,
             id_var = object$id_var,
             time_var = object$time_var,
             family = fam,
-            base_haz = object$base_haz,
+            base_haz = object$base_haz$type,
             posterior_sample_size = rstanarm:::posterior_sample_size(object),
             times = times,
             print.digits = digits, 
@@ -265,9 +300,10 @@ print.summary.stanjm <- function(x, digits = max(1, attr(x, "print.digits")),
   cat(paste0("\n  Clustering variables: ", paste(names(atts$n_grps), sep = ",")))
   if (!is.null(atts$n_subjects))
     cat(paste0("\n  Num. subjects (", atts$id_var, "): ", atts$n_subjects))
-  cat("\n  Num. events:", atts$n_events)
+  cat(paste0("\n  Num. events: ", atts$n_events, " (", 
+            round(100 * atts$n_events/atts$n_subjects, 1), "%)"))
   cat("\n  Num. long observations: ")
-  cat(paste0(atts$n_yobs, if (M > 1) paste0(" (Long ", 1:M, ")"), sep = ","))
+  cat(paste0(atts$n_yobs, if (M > 1) paste0(" (Long ", 1:M, ")"), collapse = ", "))
   cat("\n  Posterior sample size:", atts$posterior_sample_size, "MCMC iterations")
   
   cat("\n\nTime taken for sampling (mins):\n")

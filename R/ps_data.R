@@ -255,9 +255,10 @@ ps_data <-
     nm <- group_nms[i]
     nms_i <- paste(ReTrms[[1]]$cnms[[i]], group_nms[i])
     if (length(nms_i) == 1) {
-      Z_names <- c(Z_names, paste0("Long", m, "|", nms_i, ":", levels(ReTrms[[1]]$flist[[nm]])))
+      Z_names <- c(Z_names, paste0("Long", m, "|", nms_i, ":", new_levels[[nm]]))
     } else {
-      Z_names <- c(Z_names, c(t(sapply("Long", m, "|", nms_i, paste0, ":", new_levels[[nm]]))))
+      Z_names <- c(Z_names, c(t(sapply(nms_i, function(x) 
+        paste0("Long", m, "|", x, ":", new_levels[[nm]])))))
     }
   }
 

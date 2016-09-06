@@ -31,6 +31,20 @@ validate_stanjm_object <- function(x, call. = FALSE) {
     stop("Object is not a stanjm object.", call. = call.) 
 }
 
+# Throw error if parameter isn't a positive scalar
+#
+# @param x The object to test.
+validate_positive_scalar <- function(x) {
+  nm <- deparse(substitute(x))
+  if (is.null(x))
+    stop(nm, " cannot be NULL", call. = FALSE)
+  if (!is.numeric(x))
+    stop(nm, " should be numeric", call. = FALSE)
+  if (any(x <= 0)) 
+    stop(nm, " should be postive", call. = FALSE)
+  invisible(TRUE)
+}
+
 # Separates a names object into separate parts based on the longitudinal, 
 # event, or association parameters.
 # 
@@ -49,7 +63,7 @@ collect_nms <- function(x, M, ...) {
       grep(paste0("^Long", m, "\\|overdispersion"), x, ...)))             
   y <- lapply(1:M, function(m) setdiff(y[[m]], y_extra[[m]]))
   e <- grep(mod2rx("^Event"), x, ...)     
-  e_extra <- c(grep("^Event\\|weibull shape", x, ...))         
+  e_extra <- c(grep("^Event\\|weibull\\sshape|^Event\\|basehaz\\scoef", x, ...))         
   e <- setdiff(e, e_extra)
   a <- grep(mod2rx("^Assoc"), x, ...)
   b <- b_names(x, ...)

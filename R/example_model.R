@@ -39,7 +39,6 @@
 #'           dataEvent = pbcSurv,
 #'           time_var = "year",
 #'           chains = 1, cores = 1, seed = 12345,
-#'           iter = 1000, warmup = 800)
-#' example_jm
+#'           iter = 1500, warmup = 750)
 #' 
 NULL

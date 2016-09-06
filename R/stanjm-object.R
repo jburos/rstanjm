@@ -16,122 +16,162 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
-# Create a stanjm object
-#
-# @param object A list provided by one of the \code{stan_*} modeling functions.
-# @return A stanjm object.
-#
-stanjm <- function(object) {
-  opt        <- object$algorithm == "optimizing"
-  mer        <- rep(1L, object$M)
-  stanfit    <- object$stanfit
-  M          <- object$M
-  family     <- object$family
-  assoc      <- object$assoc
-  y          <- object$y
-  x          <- object$x
-  xq         <- object$xq
-  dxdtq      <- object$dxdtq  
-  e_x        <- object$e_x
-  eventtime  <- object$eventtime
-  d          <- object$d  
-  dimensions <- object$dimensions
-  y_cnms <- object$y_cnms
-  y_flist <- object$y_flist
-  y_nms      <- lapply(y, names)
-  if (opt) {
-    stop("Optimisation not implemented for stan_jm")
-  } else {
-    stan_summary <- rstanarm:::make_stan_summary(stanfit)
-    nms <- collect_nms(rownames(stan_summary), M)
-    
-    # Coefs and SEs for longitudinal submodel(s)                    
-    y_coefs <- lapply(1:M, function(m)
-      stan_summary[c(nms$y[[m]], nms$y_b[[m]]), rstanarm:::select_median(object$algorithm)])
-    y_stanmat <- lapply(1:M, function(m) 
-      as.matrix(stanfit)[, c(nms$y[[m]], nms$y_b[[m]]), drop = FALSE])
-    y_ses <- lapply(y_stanmat, function(m) apply(m, 2L, mad))
-    y_covmat <- lapply(y_stanmat, cov)
-    for (m in 1:M) {
-      rownames(y_covmat[[m]]) <- colnames(y_covmat[[m]]) <- rownames(stan_summary)[c(nms$y[[m]], nms$y_b[[m]])]
-    }
- 
-    # Coefs and SEs for event submodel    
-    e_coefs <- stan_summary[c(nms$e, nms$a), rstanarm:::select_median(object$algorithm)]        
-    if (length(e_coefs) == 1L) names(e_coefs) <- rownames(stan_summary)[c(nms$e, nms$a)[1L]]
-    e_stanmat <- as.matrix(stanfit)[, c(nms$e, nms$a), drop = FALSE]
-    e_ses <- apply(e_stanmat, 2L, mad)    
-    e_covmat <- cov(e_stanmat)
-    rownames(e_covmat) <- colnames(e_covmat) <- rownames(stan_summary)[c(nms$e, nms$a)]
-
-    if (object$algorithm == "sampling") 
-      rstanarm:::check_rhats(stan_summary[, "Rhat"])
-  }
-  
-  # Linear predictor, fitted values
-  y_eta <- lapply(1:M, function(m) rstanarm:::linear_predictor.default(y_coefs[[m]], x[[m]], object$offset))
-  y_mu  <- lapply(1:M, function(m) family[[m]]$linkinv(y_eta[[m]]))
-
-  # Residuals
-  y_tmp <- lapply(1:M, function(m) if (is.factor(y[[m]])) rstanarm:::fac2bin(y[[m]]) else y[[m]])
-  y_residuals <- lapply(1:M, function(m) y_tmp[[m]] - y_mu[[m]])
-  for (m in 1:M) {
-    names(y_eta[[m]]) <- names(y_mu[[m]]) <- names(y_residuals[[m]]) <- y_nms[[m]]
-  }
-
-  # Remove padding
-  y_coefs <- lapply(y_coefs, unpad_reTrms.default)
-  y_ses   <- lapply(y_ses, unpad_reTrms.default)
-
-  out <- rstanarm:::nlist(
-    coefficients = list_nms(c(y_coefs, list(e_coefs)), M), 
-    ses = list_nms(c(y_ses, list(e_ses)), M),
-    fitted.values = list_nms(y_mu, M),
-    linear.predictors = list_nms(y_eta, M),
-    residuals = list_nms(y_residuals, M), 
-    df.residual = if (opt) df.residual else NA_integer_, 
-    covmat = list_nms(c(y_covmat, list(e_covmat)), M),
-    n_markers = M,
-    n_subjects = object$Npat,
-    n_grps = object$n_grps,
-    n_events = sum(d > 0),
-    n_yobs = object$y_N,
-    id_var = object$id_var,
-    time_var = object$time_var,
-    cnms = object$cnms, 
-    y_cnms = list_nms(y_cnms, M), 
-    y_flist = list_nms(y_flist, M),
-    assoc,
-    fr = list_nms(object$fr, M),
-    y = list_nms(y, M), 
-    x = list_nms(x, M), 
-    xq = list_nms(xq, M), 
-    dxdtq = if (sum(assoc$etaslope)) list_nms(dxdtq, M) else NULL,
-    eventtime, d,     
-    model = object$model, 
-    dataLong = object$dataLong,
-    dataEvent = object$dataEvent,     
-    family = list_nms(family, M), 
-    base_haz = object$base_haz,
-    df = object$df,
-    quadnodes = object$quadnodes,
-#    offset = if (any(object$offset != 0)) object$offset else NULL,
-#    weights = object$weights, 
-#    prior.weights = object$weights, 
-#    contrasts = object$contrasts, 
-    na.action = object$na.action,
-    call = object$call, 
-    formula = list_nms(object$formula, M), 
-    terms = object$terms,
-    prior.info = object$prior.info,
-    algorithm = object$algorithm,
-    stan_summary,  
-    stanfit = if (opt) stanfit$stanfit else stanfit,
-    glmod = object$glmod,
-    coxmod = object$coxmod
-  )
-  if (opt) 
-    out$asymptotic_sampling_dist <- stanmat
-  
-  structure(out, class = c("stanjm", "stanreg", "lmerMod"))
-}
+#' Fitted model object in the \pkg{rstanjm} package
+#'
+#' @name stanjm-object 
+#'
+#' @description The main model fitting function in the \pkg{rstanjm} package 
+#'   (see \code{\link{stan_jm}}) returns an object of class \code{stanjm}, which 
+#'   is a list containing the components described below.  
+#'   
+#' @return The following components must be included in a \code{stanjm} object.
+#'   In most cases the components return a named list, with each element of the list 
+#'   containing the described item (for example, coefficients, ses, residuals, etc)
+#'   for one of the longitudinal submodels or the event submodel. \cr
+#'
+#' \describe{
+#'   \item{\code{coefficients}}{
+#'   Point estimates for the longitudinal and event submodels.
+#'   As described in \code{\link{print.stanjm}}.
+#'   }
+#'   \item{\code{ses}}{
+#'   Standard errors for the longitudinal and event submodels.
+#'   Based on \code{\link[stats]{mad}}, as described in
+#'   \code{\link{print.stanjm}}.
+#'   }
+#'   \item{\code{residuals}}{
+#'   Residuals for the longitudinal submodel(s) only. Of type \code{'response'}.
+#'   }
+#'   \item{\code{fitted.values}}{
+#'   Fitted mean values for the longitudinal submodel(s) only, based on the
+#'   estimated parameters in \code{coefficients}. The fitted mean values are based
+#'   on both the fixed and random effects. For models using a non-identity link
+#'   function the linear predictors are transformed by the inverse link.
+#'   }
+#'   \item{\code{linear.predictors}}{
+#'   Linear fit on the link scale, for the longitudinal submodel(s) only. 
+#'   For linear models this is the same as \code{fitted.values}.
+#'   }
+#'   \item{\code{covmat}}{
+#'   Variance-covariance matrix for the coefficients (both fixed and random),
+#'   evaluated separately for each of the longitudinal and event submodels.
+#'   Calculation of the variance-covariance matrix is based on draws from the
+#'   posterior distribution.
+#'   }
+#'   \item{\code{n_markers}}{
+#'   The number of longitudinal markers (submodels).
+#'   }
+#'   \item{\code{n_subjects}}{
+#'   The number of individuals in the fitted model.
+#'   }
+#'   \item{\code{n_grps}}{
+#'   The number of levels for each grouping factor (will be equal to 
+#'   \code{n_subjects} if the individual-level is the only clustering level).
+#'   }
+#'   \item{\code{n_yobs}}{
+#'   The number of observations for each longitudinal submodel.
+#'   }
+#'   \item{\code{n_events}}{
+#'   The number of non-censored event times.
+#'   }   
+#'   \item{\code{id_var,time_var}}{
+#'   The names of the variables distinguishing between individuals, and 
+#'   representing time, in the longitudinal submodel.
+#'   } 
+#'   \item{\code{cnms}}{
+#'   A list of column names of the random effects according to the grouping 
+#'   factors, collapsed across all longitudinal submodels. 
+#'   See \code{\link[lme4]{mkReTrms}}. These can be obtained separately
+#'   for each longitudinal submodel through the components 
+#'   \code{object$glmod[[1]]@cnms}, \code{object$glmod[[2]]@cnms}, etc.
+#'   }
+#'   \item{\code{x}}{
+#'   The design matrix (both fixed and random parts) for each of the 
+#'   longitudinal submodels, evaluated at the observation times.
+#'   }
+#'   \item{\code{xq}}{
+#'   The design matrices for each of the longitudinal and event submodels 
+#'   evaluated at the event/censoring times and the quadrature points. 
+#'   The first \code{n_subjects} rows correpond to the event/censoring times,
+#'   the second \code{n_subjects} rows correspond to the first quadrature point,
+#'   the third \code{n_subjects} rows correspond to the second quadrature point, 
+#'   and so on. The design matrices for the longitudinal submodels
+#'   include both the fixed and random parts.
+#'   }
+#'   \item{\code{y}}{
+#'   The response for the longitudinal submodel(s).
+#'   }  
+#'   \item{\code{fr}}{
+#'   The model frame (see \code{\link[lme4]{model.frame.merMod}} or 
+#'   \code{\link[survival]{model.frame.coxph}}) for each of the longitudinal and event 
+#'   submodels, evaluated at the observation times in the original data  
+#'   (not evaluated at the quadrature points necessary for fitting the joint 
+#'   model). This component also includes the addition of the \code{id_var} and 
+#'   \code{time_var} variables in the model frame, even if they weren't 
+#'   present in the original model formula.
+#'   } 
+#'   \item{\code{eventtime,status}}{
+#'   The event (or censoring) times and the status indicator for each individual.
+#'   }   
+#'   \item{\code{dataLong,dataEvent}}{
+#'   The \code{dataLong} and \code{dataEvent} arguments.
+#'   }
+#'   \item{\code{call}}{
+#'   The matched call.
+#'   }
+#'   \item{\code{formula}}{
+#'   The model \code{\link[stats]{formula}} for each of the longitudinal
+#'   and event submodels.
+#'   }
+#'   \item{\code{family}}{
+#'   The \code{\link[stats]{family}} object used for the longitudinal
+#'   submodel(s).
+#'   }
+#'   \item{\code{base_haz}}{
+#'   A list containing information about the baseline hazard.
+#'   }
+#'   \item{\code{assoc}}{
+#'   A list containing information about the association structure for the
+#'   joint model.
+#'   }
+#'   \item{\code{quadnodes}}{
+#'   The number of Gauss-Kronrod quadrature nodes used to evaluate the 
+#'   cumulative hazard in the joint likelihood function.
+#'   }
+#'   \item{\code{quadpoints}}{
+#'   A list containing the quadrature points for each individual, based on
+#'   the event (or censoring) times and the number of \code{quadnodes}.
+#'   }   
+#'   \item{\code{prior.info}}{
+#'   A list with information about the prior distributions used.
+#'   }    
+#'   \item{\code{algorithm}}{
+#'   The estimation method used. Will be \code{"sampling"} for models
+#'   estimated using \code{stan_jm}.
+#'   }
+#'   \item{\code{stanfit,stan_summary}}{
+#'   The object of \code{\link[rstan]{stanfit-class}} returned by RStan and a
+#'   matrix of various summary statistics from the stanfit object.
+#'   }
+#'   \item{\code{glmod}}{
+#'   The fitted model object(s) returned by a call(s) to \code{\link[lme4]{lmer}}
+#'   or \code{\link[lme4]{glmer}} when estimating the separate longitudinal model(s)
+#'   prior to fitting the joint model.
+#'   }
+#'   \item{\code{coxmod}}{
+#'   The fitted model object returned by a call to \code{\link[survival]{coxph}}
+#'   when estimating the separate time-to-event model prior to fitting the joint model.
+#'   This time-to-event model is evaluated using the observed data in \code{dataEvent};
+#'   it is not evaluated at the quadrature points necessary for fitting the joint model.
+#'   }   
+#'}
+#'
+#' @seealso Objects of this class have a number of generic 
+#'   methods described in \code{\link{stanjm-methods}},
+#'   as well as \code{\link{print.stanjm}}, \code{\link{summary.stanjm}},
+#'   \code{\link{as.matrix.stanjm}}, as well as the non-generic functions
+#'   \code{\link{posterior_traj}}, \code{\link{posterior_survfit}}, 
+#'   \code{\link{posterior_predict}}, \code{\link{posterior_interval}},
+#'   \code{\link{pp_check}} and \code{\link{ps_check}}.
+#'   
+NULL

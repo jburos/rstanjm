@@ -65,7 +65,7 @@ pp_data <-
   if (NAcheck || fmla0check) return(list())
   if (is.null(newdata) && is.null(re.form)) {
     Z <- get_z(object)[[m]]
-    return(list(Zt = t(Z)))
+    return(list(Zt = Matrix::t(Z)))
   }
   else if (is.null(newdata)) {
     rfd <- mfnew <- model.frame(object)[[m]]

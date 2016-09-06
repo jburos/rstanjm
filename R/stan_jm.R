@@ -21,18 +21,11 @@
 #' Fits a shared parameter joint model for longitudinal and time-to-event 
 #' (e.g. survival) data under a Bayesian framework using Stan.
 #' 
-#' @export
-#' @template return-stanjm-object
-#' @template see-also
-#' @template args-jmpriors
-#' @template args-prior_PD
-#' @template args-adapt_delta
-#' @template args-QR
-#' 
 #' @param formulaLong A two-sided linear formula object describing both the 
 #'   fixed-effects and random-effects parts of the longitudinal submodel  
 #'   (see \code{\link[lme4]{glmer}} for details). For a multivariate joint 
-#'   model this should be a list of such formula objects, with each element
+#'   model (i.e. more than one longitudinal marker) this should 
+#'   be a list of such formula objects, with each element
 #'   of the list providing the formula for one of the longitudinal submodels.
 #' @param dataLong A data frame containing the variables specified in
 #'   \code{formulaLong}. If fitting a multivariate joint model, then this can
@@ -40,37 +33,48 @@
 #'   the longitudinal submodels, or it can be a list of data frames where each
 #'   element of the list provides the data for one of the longitudinal 
 #'   submodels.
-#' @param formulaEvent A two-sided formula object describing the time-to-event
+#' @param formulaEvent A two-sided formula object describing the event
 #'   submodel. The left hand side of the formula should be a \code{Surv()} 
 #'   object. See \code{\link[survival]{Surv}}.
 #' @param dataEvent A data frame containing the variables specified in
 #'   \code{formulaEvent}.
-#' @param time_var A character string identifying the name of the variable 
+#' @param time_var A character string specifying the name of the variable 
 #'   in \code{dataLong} which represents time.
+#' @param id_var A character string specifying the name of the variable in
+#'   \code{dataLong} which distinguishes between individuals. This can be
+#'   left unspecified if there is only one grouping factor (which is assumed
+#'   to be the individual). If there is more than one grouping factor (i.e.
+#'   clustering beyond the level of the individual) then the \code{id_var}
+#'   argument must be specified.
 #' @param family The family (and possibly also the link function) for the 
-#'   longitudinal submodel. See \code{\link[lme4]{glmer}} for details.
+#'   longitudinal submodel(s). See \code{\link[lme4]{glmer}} for details. 
+#'   If fitting a multivariate joint model, then this can optionally be a
+#'   list of families, in which case each element of the list specifies the
+#'   family for one of the longitudinal submodels.
 #' @param assoc A character string or character vector specifying the joint
 #'   model association structure. Possible association structures that can
-#'   be used (described in the \strong{Details} section below) include: "null"; 
-#'   "etavalue" (the default); "etaslope"; "muvalue"; or "shared_b". 
-#'   By default, "shared_b" includes all random effects in the shared random 
-#'   effects association structure, however, a subset of the random effects can 
-#'   be chosen by specifying their indices between parentheses as a suffix, for 
-#'   example, "shared_b(1)" or "shared_b(1:3)" or "shared_b(1,2,4)", and so on. 
-#'   For a multivariate joint model, different association structures can be used for 
-#'   each longitudinal submodel by specifying a list of character strings or character
+#'   be used include: "etavalue" (the default); "etaslope"; "muvalue"; 
+#'   "shared_b"; "shared_beta"; or "null". These are described in the 
+#'   \strong{Details} section below. For a multivariate joint model, 
+#'   different association structures can optionally be used for 
+#'   each longitudinal submodel by specifying a list of character
 #'   vectors, with each element of the list specifying the desired association 
-#'   structure for one of the longitudinal submodels. Setting \code{assoc} equal to 
-#'   \code{NULL} will fit a joint model with no association structure (equivalent  
+#'   structure for one of the longitudinal submodels. Specifying \code{assoc = NULL}
+#'   will fit a joint model with no association structure (equivalent  
 #'   to fitting separate longitudinal and time-to-event models). See the
-#'   \strong{Examples} section below for some examples.
+#'   \strong{Examples} section below.
 #' @param base_haz A character string indicating which baseline hazard to use
-#'   for the time-to-event submodel. Currently the only option allowed is 
-#'   \code{"weibull"} (the default).
-#' @param quadnodes A numeric scalar giving the number of nodes to use for 
-#'   the Gauss-Kronrod quadrature. The quadrature is used to approximate the 
-#'   integral over the cumulative hazard in the likelihood function. Options 
-#'   are 7, 11 and 15 (the default).
+#'   for the event submodel. Options are a Weibull baseline hazard
+#'   (\code{"weibull"}, the default) or an approximated baseline hazard 
+#'   using B-splines (\code{"splines"}).
+#' @param df An optional positive integer specifying the degrees of freedom 
+#'   for the cubic splines if \code{base_haz = "splines"}. The default is 3.
+#' @param knots An optional numeric vector specifying the internal knot 
+#'   locations for the cubic splines if \code{base_haz = "splines"}. Cannot be
+#'   specified if \code{df} is specified.  
+#' @param quadnodes The number of nodes to use for the Gauss-Kronrod quadrature
+#'   that is used to evaluate the cumulative hazard in the likelihood function. 
+#'   Options are 15 (the default), 11 or 7.
 #' @param subsetLong,subsetEvent Same as subset in \code{\link[stats]{glm}}.
 #'   However, if fitting a multivariate joint model and a list of data frames 
 #'   is provided in \code{dataLong} then a corresponding list of subsets 
@@ -83,43 +87,110 @@
 #'   matrix for the longitudinal submodel(s) or event submodel should be 
 #'   centred. 
 #' @param init The method for generating the initial values for the MCMC.
-#'   The default is "random" (see \code{\link[rstan]{stan}}), however, 
-#'   \code{"model_based"} initial values are also available, which uses those  
-#'   obtained from fitting separate longitudinal and time-to-event models prior  
-#'   to fitting the joint model. Other possibilities for specifying \code{init}
+#'   The default is \code{"model_based"}, which uses those obtained from 
+#'   fitting separate longitudinal and time-to-event models prior  
+#'   to fitting the joint model. Parameters that cannot be obtained from 
+#'   fitting separate longitudinal and time-to-event models are initialised 
+#'   at 0. This provides reasonable initial values which should aid the MCMC
+#'   sampler. However, it is recommended that any final analysis should be
+#'   performed with several MCMC chains each initiated from a different
+#'   set of initial values; this can be obtained by setting
+#'   \code{init = "random"}. Other possibilities for specifying \code{init}
 #'   are those described for \code{\link[rstan]{stan}}.     
 #' @param ... Further arguments passed to 
 #'   \code{\link[rstan]{sampling}} (e.g. \code{iter}, \code{chains}, 
 #'   \code{cores}, etc.).
+#' @param priorLong,priorEvent,priorAssoc The prior distributions for the 
+#'   regression coefficients in the longitudinal submodel(s), event submodel,
+#'   and the association parameter(s). 
+#'   Can be a call to \code{normal}, \code{student_t},
+#'   \code{cauchy}, \code{hs} or \code{hs_plus}. See \code{\link{priors}} for
+#'   details. To to omit a prior --- i.e., to use a flat (improper) uniform
+#'   prior --- set equal to \code{NULL}.
+#' @param priorLong_intercept,priorEvent_intercept The prior distributions  
+#'   for the intercepts in the longitudinal submodel(s) and event submodel.
+#'   Can be a call to \code{normal}, \code{student_t} or
+#'   \code{cauchy}. See \code{\link{priors}} for details. To to omit a prior
+#'   --- i.e., to use a flat (improper) uniform prior --- set
+#'   equal to \code{NULL}. (\strong{Note:} If \code{centreLong} or 
+#'   \code{centreEvent} is set to \code{TRUE} then the prior
+#'   distribution for the intercept is set so it applies to the value when all
+#'   predictors are centered).
+#' @param priorLong_ops,priorEvent_ops,priorAssoc_ops Additional options 
+#'   related to prior distributions for the longitudinal submodel(s),
+#'   event submodel, and the association parameter(s). To omit a prior on the 
+#'   dispersion parameters in the longitudinal submodel(s) set 
+#'   \code{priorLong_ops} to \code{NULL}. To omit a prior on the 
+#'   Weibull shape parameter (if \code{base_haz = "weibull"}) or the
+#'   spline coefficients (if \code{base_haz = "splines"}) set 
+#'   \code{priorEvent_ops} to \code{NULL}. Otherwise see \code{\link{priors}}. 
 #' @param prior_covariance Cannot be \code{NULL}; see \code{\link{decov}} for
 #'   more information about the default arguments.
-#'
+#' @param prior_PD A logical (defaulting to \code{FALSE}) indicating
+#'   whether to draw from the prior predictive distribution instead of
+#'   conditioning on the data.
+#' @param adapt_delta See \code{\link[rstanarm]{adapt_delta}} for details.
+#' @param QR QR decomposition of the predictor matrix. Not yet implemented.
+
 #' @details The \code{stan_jm} function can be used to fit a joint model (also 
 #'   known as a shared parameter model) for longitudinal and time-to-event data 
-#'   under a Bayesian framework using Stan, but without needing to write the 
-#'   model code or create the data list for Stan. 
+#'   under a Bayesian framework. 
 #'   The joint model may be univariate (with only one longitudinal submodel) or
-#'   multivariate (with more than one longitudinal submodel). \cr
+#'   multivariate (with more than one longitudinal submodel). Multi-level 
+#'   clustered data are allowed (e.g. patients within clinics), provided that the
+#'   individual (e.g. patient) is the lowest level of clustering. The underlying
+#'   estimation is carried out using the Bayesian C++ package Stan 
+#'   (\url{http://mc-stan.org/}). \cr
 #'   \cr 
 #'   For the longitudinal submodel a generalised linear mixed model is assumed 
 #'   with any of the \code{\link[stats]{family}} choices allowed by 
-#'   \code{\link[lme4]{glmer}} (\strong{Note:} At this stage only gaussian 
-#'   outcomes are currently implemented). For the event submodel a parametric
-#'   proportional hazards model is assumed. Currently only a Weibull baseline 
-#'   hazard is permitted. Time-varying covariates are allowed in both the 
-#'   longitudinal and event submodels. 
+#'   \code{\link[lme4]{glmer}}. \cr
+#'   \cr
+#'   For the event submodel a parametric
+#'   proportional hazards model is assumed. The baseline hazard can be estimated 
+#'   using either a Weibull distribution (\code{base_haz = "weibull"}) or 
+#'   approximated using restricted cubic splines (\code{base_haz = "splines"}). 
+#'   If cubic splines are used then the degrees of freedom for the 
+#'   splines, or the internal knot locations, can be optionally specified. If
+#'   the degrees of freedom are specified (through the \code{df} argument) then
+#'   the knot locations are automatically generated based
+#'   on the distribution of observed event times (not including censoring times)
+#'   -- see \code{\link[splines]{ns}} for details on the default knot placement. 
+#'   Otherwise the internal knot locations can be specified 
+#'   directly through the \code{knots} argument. If neither \code{df} or
+#'   \code{knots} is specified, then the default is to set \code{df} equal to 3.
+#'   It is not possible to specify both \code{df} and \code{knots}. \cr
+#'   \cr
 #'   The association structure for the joint model can be based on any of the 
 #'   following parameterisations: current value of the linear predictor in the 
-#'   longitudinal submodel; current expected value in the longitudinal 
-#'   submodel;  
-#'   first derivative (slope) in the longitudinal submodel; first derivative 
-#'   (slope) for the linear predictor in the longitudinal submodel; shared random 
-#'   effects; no association structure (equivalent to fitting separate longitudinal 
-#'   and event models). The association type is most easily specified using the 
-#'   \code{\link{assoc}} function. \cr
+#'   longitudinal submodel (\code{"etavalue"}); first derivative 
+#'   (slope) of the linear predictor in the longitudinal submodel 
+#'   (\code{"etaslope"}); current expected value of the longitudinal submodel 
+#'   (\code{"muvalue"}); shared individual-level random effects 
+#'   (\code{"shared_b"}); shared individual-level random effects which also
+#'   incorporate the corresponding fixed effect as well as any corresponding 
+#'   random effects for clustering levels higher than the individual)
+#'   (\code{"shared_beta"}); or no 
+#'   association structure (equivalent to fitting separate longitudinal 
+#'   and event models) (\code{"null"} or \code{NULL}). 
+#'   More than one association structure can be specified, however,
+#'   not all possible combinations are allowed.   
+#'   By default, \code{"shared_b"} and \code{"shared_beta"} contribute all 
+#'   random effects to the association structure; however, a subset of the random effects can 
+#'   be chosen by specifying their indices between parentheses as a suffix, for 
+#'   example, "shared_b(1)" or "shared_b(1:3)" or "shared_b(1,2,4)", and so on. \cr
 #'   \cr
-#'   Bayesian estimation is performed via MCMC. The Bayesian model includes 
-#'   independent priors on the 
+#'   Time-varying covariates are allowed in both the 
+#'   longitudinal and event submodels. These should be specified in the data 
+#'   in the same way as they normally would when fitting a separate 
+#'   longitudinal model using \code{\link[lme4]{lmer}} or a separate 
+#'   time-to-event model using \code{\link[survival]{coxph}}. These time-varying
+#'   covariates should be exogenous in nature, otherwise they would perhaps 
+#'   be better specified as an additional outcome (i.e. by including them as an 
+#'   additional longitudinal outcome/submodel in the joint model). \cr
+#'   \cr
+#'   Bayesian estimation of the joint model is performed via MCMC. The Bayesian  
+#'   model includes independent priors on the 
 #'   regression coefficients for both the longitudinal and event submodels, 
 #'   including the association parameter(s) (in much the same way as the
 #'   regression parameters in \code{\link{stan_glm}}) and
@@ -134,6 +205,20 @@
 #'   number of quadrature nodes, specified through the \code{quadnodes} 
 #'   argument. Using a higher number of quadrature nodes will result in a more 
 #'   accurate approximation.
+#'
+#' @return A \link[=stanjm-object]{stanjm} object is returned.
+#'
+#' @template author
+#' 
+#' @template reference-stan-manual
+#' 
+#' @seealso \code{\link{stanjm-object}}, \code{\link{stanjm-methods}}, 
+#'   \code{\link{print.stanjm}}, \code{\link{summary.stanjm}},
+#'   \code{\link{posterior_traj}}, \code{\link{posterior_survfit}}, 
+#'   \code{\link{posterior_predict}}, \code{\link{posterior_interval}},
+#'   \code{\link{pp_check}}, \code{\link{ps_check}}.
+#'   
+#' @template see-also-stan-url
 #'    
 #' @examples
 #' #####
@@ -145,7 +230,7 @@
 #'               dataEvent = pbcSurv,
 #'               time_var = "year",
 #'               chains = 1, iter = 1000, warmup = 500)
-#' summary(f1, digits = 3) 
+#' summary(f1) 
 #'         
 #' #####
 #' # Univariate joint model, with association structure based on the 
@@ -157,24 +242,25 @@
 #'               assoc = c("etavalue", "shared_b"),
 #'               time_var = "year",
 #'               chains = 1, iter = 1000, warmup = 500)
-#' summary(f2, digits = 3)          
+#' summary(f2)          
 #' 
 #' ######
 #' # Multivariate joint model, with association structure based 
 #' # on the current value of the linear predictor in each longitudinal 
 #' # submodel and shared random intercept from the second longitudinal 
-#' # submodel (which is the first random effect in that submodel
-#' # and is therefore indexed the "-1" suffix in the code below)
-#' mv1 <- stan_jm(formulaLong = list(
-#'         logBili ~ year + (1 | id), 
-#'         albumin ~ sex + year + (1 + year | id)),
+#' # submodel only (which is the first random effect in that submodel
+#' # and is therefore indexed the '(1)' suffix in the code below)
+#' mv1 <- stan_jm(
+#'         formulaLong = list(
+#'           logBili ~ year + (1 | id), 
+#'           albumin ~ sex + year + (1 + year | id)),
 #'         dataLong = pbcLong,
 #'         formulaEvent = Surv(futimeYears, death) ~ sex + trt, 
 #'         dataEvent = pbcSurv,
 #'         assoc = list("etavalue", c("etavalue", "shared_b(1)")), 
-#'         time_var = "year", adapt_delta = 0.75,
+#'         time_var = "year",
 #'         chains = 1, iter = 1000, warmup = 500, refresh = 25)
-#' summary(mv1, digits = 3)
+#' summary(mv1)
 #' 
 #' # To include both the random intercept and random slope in the shared 
 #' # random effects association structure for the second longitudinal 
@@ -198,24 +284,24 @@
 #'         time_var = "year",
 #'         chains = 3, iter = 1000, warmup = 500, refresh = 25,
 #'         cores = parallel::detectCores())
-#' summary(mv2, digits = 3)            
+#' summary(mv2)            
 #'
+#' @export
 #' @import data.table
 #' @importFrom rstanarm normal student_t cauchy hs hs_plus decov
-#' @importFrom survival Surv cluster
-#' @importFrom Matrix Matrix t cBind bdiag
-#' @importFrom JMbayes dns
+#' @importFrom survival Surv
+#' 
 stan_jm <- function(formulaLong, dataLong, 
                     formulaEvent, dataEvent, 
                     time_var, id_var, family = gaussian,
                     assoc = "etavalue",
-                    base_haz = c("weibull", "piecewise", "splines"), 
-                    df, quadnodes = 15, 
+                    base_haz = c("weibull", "splines"), 
+                    df, knots, quadnodes = 15, 
                     subsetLong, subsetEvent, 
                     na.action = getOption("na.action", "na.omit"),
                     weights, offset, contrasts,
                     centreLong = FALSE, centreEvent = FALSE, 
-                    init = "random", ...,				          
+                    init = "model_based", ...,				          
 					          priorLong = normal(), priorLong_intercept = normal(),
                     priorLong_ops = priorLong_options(),
                     priorEvent = normal(), priorEvent_intercept = normal(),
@@ -358,10 +444,10 @@ stan_jm <- function(formulaLong, dataLong,
     if (!(length(assoc) %in% c(1,M)))
       stop("`assoc' should be a list of length 1 or length equal to the ",
            "number of longitudinal markers")
-  } else if (is.character(assoc)) {  # if not list, then convert to list
+  } else if (is.character(assoc) || is.null(assoc)) {  # if not list, then convert to list
     assoc <- list(assoc)
   } else {  # else return error
-    stop("'assoc' should be a character string or character vector or, for a ",
+    stop("'assoc' should be NULL, a character string, a character vector or, for a ",
          "multivariate joint model, possibly a list of character strings ",
          "or character vectors. The latter is only required if using a different ",
          "association structure for linking each longitudinal submodel to the ",
@@ -447,12 +533,16 @@ stan_jm <- function(formulaLong, dataLong,
   Z             <- list()     # Z matrices
   y_cnms          <- list()   
   y_flist         <- list()   
+  y_gamma         <- c()      # initial values for intercepts
+  se_y_gamma      <- c()      
   y_gamma_unbound <- list()   # initial values for intercepts
   y_gamma_lobound <- list()   # initial values for intercepts
   y_gamma_upbound <- list()   # initial values for intercepts
   y_beta          <- list()   # initial values for coefs
+  se_y_beta       <- list()  
   y_dispersion    <- c()      # initial values for dispersion
   sd_b            <- list()   # initial values for random effect sds
+  b_Cov           <- list()  # initial values for correlation matrix
   b_Corr          <- list()   # initial values for correlation matrix
 
   for (m in 1:M) {
@@ -550,36 +640,45 @@ stan_jm <- function(formulaLong, dataLong,
     # Update formula if using splines or other data dependent predictors
     y_vars[[m]] <- get_formvars(y_mod[[m]])
 
-    # Model based initial values
-    if (init == "model_based") {
-      if (y_has_intercept_unbound[m]) {
-        y_beta[[m]] <- lme4::fixef(y_mod[[m]])[-1L]
-        markun <- sum(y_has_intercept_unbound[1:m])
-        y_gamma_unbound[[markun]] <- fixef(y_mod[[m]])[1L]
-        if (centreLong) 
-          y_gamma_unbound[[markun]] <- y_gamma_unbound[[markun]] - xbar[[m]] %*% y_beta[[m]]
-      } else if (y_has_intercept_lobound[m]) {
-        y_beta[[m]] <- lme4::fixef(y_mod[[m]])[-1L]
-        marklo <- sum(y_has_intercept_lobound[1:m])        
-        y_gamma_lobound[[marklo]] <- fixef(y_mod[[m]])[1L]
-        if (centreLong) 
-          y_gamma_lobound[[marklo]] <- y_gamma_lobound[[marklo]] - xbar[[m]] %*% y_beta[[m]]
-      } else if (y_has_intercept_upbound[m]) {
-        y_beta[[m]] <- lme4::fixef(y_mod[[m]])[-1L]
-        markup <- sum(y_has_intercept_upbound[1:m])        
-        y_gamma_upbound[[markup]] <- fixef(y_mod[[m]])[1L]
-        if (centreLong) 
-          y_gamma_upbound[[markup]] <- y_gamma_upbound[[markup]] - xbar[[m]] %*% y_beta[[m]]
-      } else {
-        y_beta[[m]] <- lme4::fixef(y_mod[[m]])
-      }
-      vc <- lme4::VarCorr(y_mod[[m]])[[1]]
-      sd_b[[m]] <- attr(vc, "stddev")
-      b_Corr[[m]] <- attr(vc, "correlation")
-      if (y_has_dispersion[m]) {
-        disp_mark <- sum(y_has_dispersion[1:m])
-        y_dispersion[disp_mark] <- sigma(y_mod[[m]])
-      }
+    # Model based initial values or informative priors
+    if (y_has_intercept_unbound[m]) {
+      y_beta[[m]] <- lme4::fixef(y_mod[[m]])[-1L]
+      se_y_beta[[m]] <- summary(y_mod[[m]])$coefficients[, "Std. Error"][-1L]
+      markun <- sum(y_has_intercept_unbound[1:m])
+      y_gamma_unbound[[markun]] <- fixef(y_mod[[m]])[1L]
+      if (centreLong) 
+        y_gamma_unbound[[markun]] <- y_gamma_unbound[[markun]] - xbar[[m]] %*% y_beta[[m]]
+    } else if (y_has_intercept_lobound[m]) {
+      y_beta[[m]] <- lme4::fixef(y_mod[[m]])[-1L]
+      se_y_beta[[m]] <- summary(y_mod[[m]])$coefficients[, "Std. Error"][-1L]
+      marklo <- sum(y_has_intercept_lobound[1:m])        
+      y_gamma_lobound[[marklo]] <- fixef(y_mod[[m]])[1L]
+      if (centreLong) 
+        y_gamma_lobound[[marklo]] <- y_gamma_lobound[[marklo]] - xbar[[m]] %*% y_beta[[m]]
+    } else if (y_has_intercept_upbound[m]) {
+      y_beta[[m]] <- lme4::fixef(y_mod[[m]])[-1L]
+      se_y_beta[[m]] <- summary(y_mod[[m]])$coefficients[, "Std. Error"][-1L]
+      markup <- sum(y_has_intercept_upbound[1:m])        
+      y_gamma_upbound[[markup]] <- fixef(y_mod[[m]])[1L]
+      if (centreLong) 
+        y_gamma_upbound[[markup]] <- y_gamma_upbound[[markup]] - xbar[[m]] %*% y_beta[[m]]
+    } else {
+      y_beta[[m]] <- lme4::fixef(y_mod[[m]])
+      se_y_beta[[m]] <- summary(y_mod[[m]])$coefficients[, "Std. Error"]
+    }
+    if (y_has_intercept[m]) {
+      tmp_gamma <- if (!centreLong) fixef(y_mod[[m]])[1L] else
+        fixef(y_mod[[m]])[1L] - xbar[[m]] %*% y_beta[[m]]
+      y_gamma <- c(y_gamma, tmp_gamma)
+      se_y_gamma <- c(se_y_gamma, summary(y_mod[[m]])$coefficients[, "Std. Error"][1L])
+    }
+    vc <- lme4::VarCorr(y_mod[[m]])[[1]]
+    b_Cov[[m]] <- vc
+    sd_b[[m]] <- attr(vc, "stddev")
+    b_Corr[[m]] <- attr(vc, "correlation")
+    if (y_has_dispersion[m]) {
+      disp_mark <- sum(y_has_dispersion[1:m])
+      y_dispersion[disp_mark] <- sigma(y_mod[[m]])
     }
 
   }
@@ -660,17 +759,36 @@ stan_jm <- function(formulaLong, dataLong,
   base_haz_weibull <- (base_haz == "weibull")
   base_haz_piecewise <- (base_haz == "piecewise")
   base_haz_splines <- (base_haz == "splines")
-  
-  if ((base_haz_splines) && (missing(df)))
-    stop("df must be specified when splines baseline hazard is used",
-         call. = FALSE)
-  if ((!base_haz_splines) && (!missing(df)))
-    stop("df can only be specified when splines baseline hazard is used",
-         call. = FALSE)
-  if (missing(df)) {
-    df <- NULL
-    splines_df <- 0L
-  } else splines_df <- df
+
+  if (!base_haz_splines) {  # not splines baseline hazard
+    if (!missing(df)) {
+      warning("'df' will be ignored since 'base_haz' was not set ",
+              "to splines.", immediate. = TRUE, call. = FALSE)
+    }
+    if (!missing(knots)) {
+      warning("'knots' will be ignored since 'base_haz' was not set ",
+              "to splines.", immediate. = TRUE, call. = FALSE)
+    }
+    df <- knots <- splines_df <- NULL    
+  } else {  # splines baseline hazard
+    if ((!missing(df)) && (!missing(knots))) {
+      # both specified
+      stop("Cannot specify both 'df' and 'knots'.", call. = FALSE)
+    } else if (missing(df) && missing(knots)) {
+      # neither specified -- use default df
+      df <- splines_df <- 3L
+      knots <- NULL
+    } else if ((!missing(df)) && (missing(knots))) {
+      # only df specified
+      splines_df <- df
+      knots <- NULL
+    } else if ((!missing(knots)) && (missing(df))) {
+      # only knots specified
+      df <- NULL
+      splines_df <- length(knots) + 1
+    } else stop("Bug found: unable to reconcile 'df' and ",
+                "'knots' arguments.", call. = FALSE)
+  }
   
   # Set up model frame for event submodel 
   e_mc[[1]] <- quote(survival::coxph) 
@@ -722,8 +840,12 @@ stan_jm <- function(formulaLong, dataLong,
     d           <- mf_event$status
     names(eventtime) <- names(d) <- flist_event
     # Unstandardised quadrature points
-    quadpoint <- lapply(quadpoints$points, FUN = function(x) 
-                          (eventtime/2) * x + (eventtime/2))    
+    quadpoint <- lapply(quadpoints$points, FUN = function(x) {
+      tmp <- (eventtime/2) * x + (eventtime/2)
+      names(tmp) <- flist_event
+      tmp
+    })
+    names(quadpoint) <- paste0("quadpoint", seq(quadnodes))
     # Design matrix evaluated at event times and quadrature points
     #   NB Here there are no time varying covariates in the event submodel and
     #   therefore the design matrix is identical at event time and at all
@@ -733,8 +855,16 @@ stan_jm <- function(formulaLong, dataLong,
   } else stop("Only 'right' or 'counting' type Surv objects are allowed 
                on the LHS of the event submodel formula")
 
+               
+  # Evaluate spline basis (knots, df, etc) based on distribution
+  # of observed event times
+  if (base_haz_splines) 
+    splines_basis <- splines::ns(eventtime[(d > 0)], df, knots)
+               
   # Incorporate intercept term (since Cox model does not have intercept)
-  e_x_quadtime  <- cbind("(Intercept)" = rep(1, NROW(e_x_quadtime)), e_x_quadtime)
+  # -- depends on baseline hazard
+  if (base_haz_weibull)
+    e_x_quadtime  <- cbind("(Intercept)" = rep(1, NROW(e_x_quadtime)), e_x_quadtime)
 
   # Centering of design matrix for event model
   e_x <- as.matrix(e_x_quadtime)  
@@ -750,10 +880,9 @@ stan_jm <- function(formulaLong, dataLong,
   eventtime_rep <- rep(eventtime, times = quadnodes)  
   weights_times_half_eventtime <- 0.5 * weights_rep * eventtime_rep   
   
-  # Model based initial values
-  if (init == "model_based") {  
-    e_beta <- e_mod$coef
-  }
+  # Model based initial values or informative priors
+  e_beta <- e_mod$coef
+  se_e_beta <- sqrt(diag(e_mod$var))
     
   # Error checks for the ID variable
   if (!identical(id_list, factor(sort(unique(flist_event)))))
@@ -804,11 +933,10 @@ stan_jm <- function(formulaLong, dataLong,
   xqtemp          <- list()   # design matrix (without intercept) for 
                               # longitudinal submodel calculated at event 
                               # and quad times, possibly centred
-  dxdtq           <- list()   # first derivative of design matrix
-  dxdtqtemp       <- list()   # first derivative of design matrix (intercept 
-                              # term removed)
+  xq_eps          <- list()   # xq with time shift of epsilon
+  xqtemp_eps      <- list()   # xqtemp with time shift of epsilon
   Zq              <- list()   # random effects matrix
-  dZdtq           <- list()   # first derivative of random effects matrix
+  Zq_eps          <- list()   # random effects matrix with time shift of epsilon
 
   # Set up a second longitudinal model frame which includes the time variable
   for (m in 1:M) {
@@ -828,7 +956,7 @@ stan_jm <- function(formulaLong, dataLong,
     y_fr[[m]] <- y_mod_wtime$fr
     
     # Update model based on predvars and obtain new model frame
-    mf <- data.table(y_mod_wtime$fr, key = c(id_var, time_var))
+    mf <- data.table::data.table(y_mod_wtime$fr, key = c(id_var, time_var))
   
     # Identify which row in longitudinal data is closest to event time
     mf_eventtime <- mf[data.table::SJ(flist_event, eventtime), 
@@ -848,7 +976,7 @@ stan_jm <- function(formulaLong, dataLong,
     mf_quadtime <- do.call(rbind, lapply(quadpoint, FUN = function(x) 
                            mf[data.table::SJ(flist_event, x), 
                            roll = TRUE, rollends = c(TRUE, TRUE)]))
-  
+    has_assoc$etaslope[m]
     # Obtain long design matrix evaluated at event times (xbind.id == 1) and  
     #   quadrature points (xbind.id == 2)
     names(mf_eventtime)[names(mf_eventtime) == "eventtime"] <- time_var
@@ -864,13 +992,18 @@ stan_jm <- function(formulaLong, dataLong,
          
     xq[[m]] <- as.matrix(y_mod_q[[m]]$X)
     xqtemp[[m]] <- if (y_has_intercept[m]) xq[[m]][, -1L, drop=FALSE] else xq[[m]]  
-    Zq[[m]] <- t(y_mod_q[[m]]$reTrms$Zt)
+    Zq[[m]] <- Matrix::t(y_mod_q[[m]]$reTrms$Zt)
       #Needs working out to appropriately deal with offsets??
       #offset_quadtime <- model.offset(mod_quadtime$fr) %ORifNULL% double(0)
 
     # Centering of design matrix for longitudinal model at event times
     # and quadrature times 
     if (centreLong) xqtemp[[m]] <- sweep(xqtemp[[m]], 2, xbar[[m]], FUN = "-")
+    
+    if (has_assoc$etaslope[m] || has_assoc$muslope[m]) {
+      mf_quadtime_eps <- mf_quadtime
+      mf_quadtime_eps[, time_var] <- mf_quadtime_eps[, time_var] + eps
+    }    
   }
 
   if(sum(has_assoc$etaslope))
@@ -927,7 +1060,7 @@ stan_jm <- function(formulaLong, dataLong,
       sel <- grepl(paste0("dns\\(.*", time_var, ".*\\)"), colnames(dxdtqtemp[[m]]))
       dxdtqtemp[[m]][, !sel] <- 0
       # Obtain new Z matrix
-      dZdtq[[m]] <- t(y_mod_q_dxdt$reTrms$Zt)
+      dZdtq[[m]] <- Matrix::t(y_mod_q_dxdt$reTrms$Zt)
       # For each grouping factor, identify which terms involve a non-zero derivative
       sel <- lapply(y_mod_q_dxdt$reTrms$cnms, function(x) grepl(paste0("dns\\(.*", time_var, ".*\\)"), x))
       # Calculate number of factor levels for each grouping factor
@@ -950,8 +1083,10 @@ stan_jm <- function(formulaLong, dataLong,
   # Prior distributions
   #=====================
  
-  ok_dists <- rstanarm:::nlist("normal", student_t = "t", "cauchy", "hs", "hs_plus")
-  ok_intercept_dists <- ok_dists[1:3]
+  ok_dists <- rstanarm:::nlist("normal", student_t = "t", "cauchy", "hs", "hs_plus",
+                               "informative_normal", informative_student_t = "informative_t",
+                               "informative_cauchy")
+  ok_intercept_dists <- if (length(ok_dists) > 5L) ok_dists[c(1:3,6:8)] else ok_dists[1:3]
 
   # Priors for longitudinal submodel(s)
   priorLong_scaled <- priorLong_ops$scaled
@@ -960,6 +1095,7 @@ stan_jm <- function(formulaLong, dataLong,
     as.array(rstanarm:::maybe_broadcast(priorLong_ops$prior_scale_for_dispersion, sum_y_has_dispersion))
   
   if (is.null(priorLong)) {
+    priorLong_informative <- FALSE
     priorLong_dist <- 0L
     priorLong_mean <- as.array(rep(0, sum_y_K))
     priorLong_scale <- priorLong_df <- as.array(rep(1, sum_y_K))
@@ -974,12 +1110,23 @@ stan_jm <- function(formulaLong, dataLong,
     if (!priorLong_dist %in% unlist(ok_dists)) {
       stop("The prior distribution for the coefficients should be one of ",
            paste(names(ok_dists), collapse = ", "))
+    } else if (priorLong_dist %in% c("informative_normal", "informative_t")) {
+      priorLong_informative <- TRUE
+      priorLong_dist <- ifelse(priorLong_dist == "informative_normal", 1L, 2L)
+      priorLong_mean <- unlist(y_beta)
+      priorLong_scale <- 
+        rstanarm:::set_prior_scale(priorLong_scale * unlist(se_y_beta), 
+                                   default = 10 * unlist(se_y_beta), 
+                                   link = family[[1]]$link)
     } else if (priorLong_dist %in% c("normal", "t")) {
+      priorLong_informative <- FALSE
       priorLong_dist <- ifelse(priorLong_dist == "normal", 1L, 2L)
       # !!! Need to change this so that link can be specific to each submodel
-      priorLong_scale <- rstanarm:::set_prior_scale(priorLong_scale, default = 2.5, 
-                                     link = family[[1]]$link)
+      priorLong_scale <- 
+        rstanarm:::set_prior_scale(priorLong_scale, default = 2.5, 
+                                   link = family[[1]]$link)
     } else {
+      priorLong_informative <- FALSE
       priorLong_dist <- ifelse(priorLong_dist == "hs", 3L, 4L)
     }
     
@@ -990,7 +1137,9 @@ stan_jm <- function(formulaLong, dataLong,
     priorLong_scale <- rstanarm:::maybe_broadcast(priorLong_scale, sum_y_K)
     priorLong_scale <- as.array(priorLong_scale)
   }
+  
   if (is.null(priorLong_intercept)) {
+    priorLong_informative_for_intercept <- FALSE
     priorLong_dist_for_intercept <- 0L
     priorLong_mean_for_intercept <- as.array(rep(0, sum_y_has_intercept))
     priorLong_scale_for_intercept <- priorLong_df_for_intercept <- as.array(rep(1, sum_y_has_intercept))
@@ -1003,14 +1152,25 @@ stan_jm <- function(formulaLong, dataLong,
     priorLong_df_for_intercept <- priorLong_intercept$df 
     priorLong_df_for_intercept[is.na(priorLong_df_for_intercept)] <- 1
     
-    if (!priorLong_dist_for_intercept %in% unlist(ok_intercept_dists))
+    if (!priorLong_dist_for_intercept %in% unlist(ok_intercept_dists)) {
       stop("The prior distribution for the intercept should be one of ",
            paste(names(ok_intercept_dists), collapse = ", "))
-    priorLong_dist_for_intercept <- 
-      ifelse(priorLong_dist_for_intercept == "normal", 1L, 2L)
-    priorLong_scale_for_intercept <- 
-      rstanarm:::set_prior_scale(priorLong_scale_for_intercept, default = 10, 
-                      link = family[[1]]$link)
+    } else if (priorLong_dist_for_intercept %in% c("informative_normal", "informative_t")) {
+      priorLong_informative_for_intercept <- TRUE
+      priorLong_dist_for_intercept <- 
+        ifelse(priorLong_dist_for_intercept == "informative_normal", 1L, 2L)
+      priorLong_mean_for_intercept <- y_gamma
+      priorLong_scale_for_intercept <- 
+        rstanarm:::set_prior_scale(priorLong_scale_for_intercept * se_y_gamma, 
+                                   default = 10 * se_y_gamma, link = family[[1]]$link)
+    } else {
+      priorLong_informative_for_intercept <- FALSE
+      priorLong_dist_for_intercept <- 
+        ifelse(priorLong_dist_for_intercept == "normal", 1L, 2L)
+      priorLong_scale_for_intercept <- 
+        rstanarm:::set_prior_scale(priorLong_scale_for_intercept, default = 10, 
+                                   link = family[[1]]$link)      
+    }
 
     priorLong_df_for_intercept <- rstanarm:::maybe_broadcast(priorLong_df_for_intercept, sum_y_has_intercept)
     priorLong_df_for_intercept <- as.array(pmin(.Machine$double.xmax, priorLong_df_for_intercept))
@@ -1024,8 +1184,12 @@ stan_jm <- function(formulaLong, dataLong,
   priorEvent_scaled <- priorEvent_ops$scaled
   priorEvent_min_prior_scale <- priorEvent_ops$min_prior_scale
   priorEvent_scale_for_weibull <- priorEvent_ops$prior_scale_for_weibull
+  priorEvent_scale_for_splines <- priorEvent_ops$prior_scale_for_splines
+  if (base_haz_splines) priorEvent_scale_for_splines <- 
+    rstanarm:::maybe_broadcast(priorEvent_scale_for_splines, splines_df)  
   
   if (is.null(priorEvent)) {
+    priorEvent_informative <- FALSE
     priorEvent_dist <- 0L
     priorEvent_mean <- as.array(rep(0, e_K))
     priorEvent_scale <- priorEvent_df <- as.array(rep(1, e_K))
@@ -1040,12 +1204,21 @@ stan_jm <- function(formulaLong, dataLong,
     if (!priorEvent_dist %in% unlist(ok_dists)) {
       stop("The prior distribution for the event model coefficients should be one of ",
            paste(names(ok_dists), collapse = ", "))
+    } else if (priorEvent_dist %in% c("informative_normal", "informative_t")) {
+      priorEvent_informative <- TRUE
+      priorEvent_dist <- ifelse(priorEvent_dist == "informative_normal", 1L, 2L)
+      priorEvent_mean <- e_beta
+      priorEvent_scale <- 
+        rstanarm:::set_prior_scale(priorEvent_scale * se_e_beta, 
+                                   default = 10 * se_e_beta, link = "none")
     } else if (priorEvent_dist %in% c("normal", "t")) {
+      priorEvent_informative <- FALSE
       priorEvent_dist <- ifelse(priorEvent_dist == "normal", 1L, 2L)
       # !!! Need to think about whether 2.5 is appropriate default value here
-      priorEvent_scale <- rstanarm:::set_prior_scale(priorEvent_scale, default = 2.5, 
+      priorEvent_scale <- rstanarm:::set_prior_scale(priorEvent_scale, default = 2, 
                                      link = "none")
     } else {
+      priorEvent_informative <- FALSE
       priorEvent_dist <- ifelse(priorEvent_dist == "hs", 3L, 4L)
     }
     
@@ -1056,6 +1229,7 @@ stan_jm <- function(formulaLong, dataLong,
     priorEvent_scale <- rstanarm:::maybe_broadcast(priorEvent_scale, e_K)
     priorEvent_scale <- as.array(priorEvent_scale)
   }
+  
   if (is.null(priorEvent_intercept)) {
     priorEvent_dist_for_intercept <- 0L
     priorEvent_mean_for_intercept <- 0 
@@ -1102,8 +1276,9 @@ stan_jm <- function(formulaLong, dataLong,
            paste(names(ok_dists), collapse = ", "))
     } else if (priorAssoc_dist %in% c("normal", "t")) {
       priorAssoc_dist <- ifelse(priorAssoc_dist == "normal", 1L, 2L)
-      # !!! Need to think about whether 2.5 is appropriate default value here
-      priorAssoc_scale <- rstanarm:::set_prior_scale(priorAssoc_scale, default = 2.5, 
+      # !!! Need to potentially have appropriate default value here depending on 
+      #     type of association structure
+      priorAssoc_scale <- rstanarm:::set_prior_scale(priorAssoc_scale, default = 2, 
                                      link = "none")      
     } else {
       priorAssoc_dist <- ifelse(priorAssoc_dist == "hs", 3L, 4L)
@@ -1116,7 +1291,7 @@ stan_jm <- function(formulaLong, dataLong,
     priorAssoc_scale <- rstanarm:::maybe_broadcast(priorAssoc_scale, a_K)
     priorAssoc_scale <- as.array(priorAssoc_scale)
   }
-  
+
   # Minimum scaling of priors for longitudinal submodel(s)
   if (priorLong_scaled && priorLong_dist > 0L) {
     for (m in 1:M) {
@@ -1130,19 +1305,22 @@ stan_jm <- function(formulaLong, dataLong,
         }
         if (is_gaussian[[m]]) {
           ss <- 2 * sd(y[[m]])
-          priorLong_scale[mark_start:mark_end] <- ss * priorLong_scale[mark_start:mark_end]
-          priorLong_scale_for_intercept[[m]] <-  ss * priorLong_scale_for_intercept[[m]]
+          if (!priorLong_informative)
+            priorLong_scale[mark_start:mark_end] <- ss * priorLong_scale[mark_start:mark_end]
+          if (!priorLong_informative_for_intercept)
+            priorLong_scale_for_intercept[[m]] <-  ss * priorLong_scale_for_intercept[[m]]
         }
         if (!QR) 
-          priorLong_scale[mark_start:mark_end] <- 
-            pmax(priorLong_min_prior_scale, priorLong_scale[mark_start:mark_end] / 
-                 apply(xtemp[[m]], 2L, FUN = function(x) {
-                   num.categories <- length(unique(x))
-                   x.scale <- 1
-                   if (num.categories == 2) x.scale <- diff(range(x))
-                   else if (num.categories > 2) x.scale <- 2 * sd(x)
-                   return(x.scale)
-                 }))      
+          if (!priorLong_informative)
+            priorLong_scale[mark_start:mark_end] <- 
+              pmax(priorLong_min_prior_scale, priorLong_scale[mark_start:mark_end] / 
+                   apply(xtemp[[m]], 2L, FUN = function(x) {
+                     num.categories <- length(unique(x))
+                     x.scale <- 1
+                     if (num.categories == 2) x.scale <- diff(range(x))
+                     else if (num.categories > 2) x.scale <- 2 * sd(x)
+                     return(x.scale)
+                   }))      
       }
 
     }
@@ -1153,7 +1331,8 @@ stan_jm <- function(formulaLong, dataLong,
 
   # Minimum scaling of priors for event submodel
   if (priorEvent_scaled && priorEvent_dist > 0L) {
-    priorEvent_scale <- pmax(priorEvent_min_prior_scale, priorEvent_scale / 
+    if (!priorEvent_informative)
+      priorEvent_scale <- pmax(priorEvent_min_prior_scale, priorEvent_scale / 
                             apply(e_xtemp, 2L, FUN = function(x) {
                               num.categories <- length(unique(x))
                               e.x.scale <- 1
@@ -1240,7 +1419,7 @@ stan_jm <- function(formulaLong, dataLong,
     basehaz_weibull = as.integer(base_haz_weibull),
     basehaz_piecewise = as.integer(base_haz_piecewise),
     basehaz_splines = as.integer(base_haz_splines),
-    splines_df = as.integer(splines_df),
+    splines_df = if (base_haz_splines) as.integer(splines_df) else 0,
     e_centre = as.integer(centreEvent),
     e_has_intercept = as.integer(e_has_intercept),
     nrow_y_Xq = NROW(xqtemp[[1]]),
@@ -1292,6 +1471,8 @@ stan_jm <- function(formulaLong, dataLong,
     priorLong_scale_for_dispersion = as.array(priorLong_scale_for_dispersion),
     priorEvent_scale_for_weibull = 
       if (base_haz_weibull) as.array(priorEvent_scale_for_weibull) else as.array(double(0)),
+    priorEvent_scale_for_splines = 
+      if (base_haz_splines) as.array(priorEvent_scale_for_splines) else as.array(double(0)),
     
     prior_PD = as.integer(prior_PD)
   )  
@@ -1403,7 +1584,8 @@ stan_jm <- function(formulaLong, dataLong,
   standata$any_fam_3 <- as.integer(any(standata$family == 3L))
   
   standata$e_ns_times <- if (base_haz_splines) 
-    as.array(splines::ns(standata$e_times, splines_df)) else as.array(matrix(0,0,0))
+    as.array(splines:::predict.ns(splines_basis, standata$e_times)) else 
+    as.array(matrix(0,0,0))
   
   #================
   # Initial values
@@ -1433,6 +1615,28 @@ stan_jm <- function(formulaLong, dataLong,
         if (p[i] > 2) 
           for (j in 3:p[i]) len_z_T <- len_z_T + p[i] - 1;
       }
+      # Not yet calculating initial values for parameters which
+      # are part of the decomposed theta_L matrix
+      tau <- c()
+      rho <- c()
+      normalised_zetas <- c()
+      rho_mark <- 1
+      for (i in 1:t) {
+        L_b_Cov <- t(chol(as.matrix(Matrix::bdiag(b_Cov))))
+        diag_L_b_Cov <- diag(L_b_Cov)
+        trace <- sum(diag_L_b_Cov)  # equal to variance of RE if only one RE
+        normalised_zetas_tmp <- diag_L_b_Cov / trace  # equal to 1 if only one random effect
+        #tau[i] <- std_dev / standata$scale[i]
+        tau[i] <- (sqrt(trace / p[i])) / standata$scale[i]
+        std_dev1 <- sqrt(L_b_Cov[1,1])
+        if (p[i] > 1) {
+          std_dev2 <- sqrt(L_b_Cov[2,2])
+          T21 <- L_b_Cov[2,1] / std_dev2
+          rho[rho_mark] <- (T21 + 1) / 2
+          rho_mark <- rho_mark + 1
+          normalised_zetas <- c(normalised_zetas, normalised_zetas_tmp)
+        }
+      }
     } else if (prior_covariance$dist == "lkjcorr") { 
       sd_b_unscaled <- (unlist(sd_b)) / prior_scale_for_sd_b
       
@@ -1446,7 +1650,7 @@ stan_jm <- function(formulaLong, dataLong,
       y_z_beta = if (sum_y_K) as.array(y_z_beta) else double(0),
       y_dispersion_unscaled = if (sum_y_has_dispersion) as.array(y_dispersion_unscaled) else double(0),
       e_gamma = if (e_has_intercept) as.array(0) else double(0),
-      splines_coefs = if (!is.null(df)) as.array(rep(0, splines_df)) else double(0),
+      splines_coefs = if (base_haz_splines) as.array(rep(0, splines_df)) else double(0),
       e_z_beta = if (e_K) as.array(e_z_beta) else double(0),
       weibull_shape_unscaled = if (base_haz_weibull) 
         as.array(runif(1, 0.5, 3) / priorEvent_scale_for_weibull) else double(0),
@@ -1463,10 +1667,10 @@ stan_jm <- function(formulaLong, dataLong,
         else matrix(0,0,0)      
       ),
       if (prior_covariance$dist == "decov") list(
-      z_T = as.array(runif(len_z_T, -0.5, 0.5)),
+      z_T = as.array(rep(0, len_z_T)),
       rho = as.array(runif(sum(p)-t)),
-      zeta = as.array(runif(standata$len_concentration)),
-      tau = as.array(runif(t))
+      zeta = if (!is.null(normalised_zetas)) as.array(normalised_zetas) else double(0),
+      tau = as.array(tau)
       ),
       if (prior_covariance$dist == "lkjcorr") list(
       sd_b_unscaled = as.array(sd_b_unscaled),
@@ -1482,7 +1686,7 @@ stan_jm <- function(formulaLong, dataLong,
   #===========
 
   # call stan() to draw from posterior distribution
-  stanfit <- stanmodels$jm
+  stanfit <- if (M == 1) stanmodels$jmuni else stanmodels$jm
   pars <- c(if (sum_y_has_intercept_unbound) "y_gamma_unbound",
             if (sum_y_has_intercept_lobound) "y_gamma_lobound",
             if (sum_y_has_intercept_upbound) "y_gamma_upbound",
@@ -1571,20 +1775,24 @@ stan_jm <- function(formulaLong, dataLong,
   names(n_grps) <- cnms_nms  # n_grps is num. of levels within each grouping factor
   names(p) <- cnms_nms       # p is num. of variables within each grouping factor
   
+  splines_attr <- if (base_haz_splines) 
+    attributes(splines_basis)[c("degree", "knots", "Boundary.knots", "intercept")] else NULL
+  base_haz_attr <- list(type = base_haz, splines_attr = splines_attr)
+  
   #colnames(Z) <- b_names(names(stanfit), value = TRUE)
   fit <- rstanarm:::nlist(stanfit, family, formula = c(formulaLong, formulaEvent), 
-                          id_var, time_var, offset = NULL, base_haz, quadnodes,
-                          df = if (base_haz_splines) splines_df else NULL,
+                          id_var, time_var, offset = NULL, quadnodes,
+                          base_haz = base_haz_attr,
                           M, cnms, y_N, y_cnms, y_flist, Npat, n_grps, assoc = has_assoc, 
                           fr = c(y_fr, list(e_fr)),
                           x = lapply(1:M, function(i) 
-                            if (getRversion() < "3.2.0") cBind(x[[i]], Z[[i]]) else cbind2(x[[i]], Z[[i]])),
+                            if (getRversion() < "3.2.0") Matrix::cBind(x[[i]], Z[[i]]) else cbind2(x[[i]], Z[[i]])),
                           xq = lapply(1:M, function(i) 
-                            if (getRversion() < "3.2.0") cBind(xq[[i]], Zq[[i]]) else cbind2(xq[[i]], Zq[[i]])),                 
+                            if (getRversion() < "3.2.0") Matrix::cBind(xq[[i]], Zq[[i]]) else cbind2(xq[[i]], Zq[[i]])),                 
                           dxdtq = lapply(1:M, function(i) 
                             if (getRversion() < "3.2.0") 
-                              cBind(dxdtqtemp[[i]], dZdtq[[i]]) else cbind2(dxdtqtemp[[i]], dZdtq[[i]])),                          
-                          y = y, e_x, eventtime, d,
+                              Matrix::cBind(dxdtqtemp[[i]], dZdtq[[i]]) else cbind2(dxdtqtemp[[i]], dZdtq[[i]])),                          
+                          y = y, e_x, eventtime, d, quadpoints = quadpoint,
                           standata, dataLong, dataEvent, call, terms = NULL, model = NULL,                          
                           prior.info = rstanarm:::get_prior_info(call, formals()),
                           na.action, algorithm = "sampling", init, glmod = y_mod, coxmod = e_mod)
@@ -1654,7 +1862,7 @@ check_id_list <- function(id_var, y_flist) {
 validate_assoc <- function(x, supported_assocs) {
   
   # Identify which association types were specified
-  x_tmp <- gsub("^shared_b.*", "shared_b", x)
+  x_tmp <- if (!is.null(x)) gsub("^shared_b.*", "shared_b", x) else x
   assoc <- sapply(supported_assocs, function(y) y %in% x_tmp, simplify = FALSE)
   if (is.null(x_tmp)) {
     assoc$null <- TRUE
@@ -1663,7 +1871,7 @@ validate_assoc <- function(x, supported_assocs) {
       stop("An unsupported association type has been specified. The ",
            "'assoc' argument can only include the following association ", 
            "types: ", paste(supported_assocs, collapse = ", "), call. = FALSE)
-    if ((assoc$null) && (length(assoc) > 1L))
+    if ((assoc$null) && (length(x_tmp) > 1L))
       stop("In 'assoc' argument, 'null' cannot be specified in ",
            "conjuction with another association type", call. = FALSE)
     if (assoc$etavalue && assoc$muvalue)
@@ -1956,19 +2164,19 @@ pad_reTrms <- function(Z, cnms, flist) {
   n <- nrow(Z)
   mark <- length(p) - 1L
   if (getRversion() < "3.2.0") {
-    Z <- cBind(Z, Matrix(0, nrow = n, ncol = p[length(p)], sparse = TRUE))
+    Z <- Matrix::cBind(Z, Matrix::Matrix(0, nrow = n, ncol = p[length(p)], sparse = TRUE))
     for (i in rev(head(last, -1))) {
-      Z <- cBind(cBind(Z[, 1:i, drop = FALSE],
-                       Matrix(0, n, p[mark], sparse = TRUE)),
+      Z <- Matrix::cBind(Matrix::cBind(Z[, 1:i, drop = FALSE],
+                       Matrix::Matrix(0, n, p[mark], sparse = TRUE)),
                  Z[, (i+1):ncol(Z), drop = FALSE])
       mark <- mark - 1L
     }
   }
   else {
-    Z <- cbind2(Z, Matrix(0, nrow = n, ncol = p[length(p)], sparse = TRUE))
+    Z <- cbind2(Z, Matrix::Matrix(0, nrow = n, ncol = p[length(p)], sparse = TRUE))
     for (i in rev(head(last, -1))) {
       Z <- cbind(Z[, 1:i, drop = FALSE],
-                 Matrix(0, n, p[mark], sparse = TRUE),
+                 Matrix::Matrix(0, n, p[mark], sparse = TRUE),
                  Z[, (i+1):ncol(Z), drop = FALSE])
       mark <- mark - 1L
     }
