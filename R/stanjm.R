@@ -30,7 +30,7 @@ stanjm <- function(object) {
   y          <- object$y
   x          <- object$x
   xq         <- object$xq
-  dxdtq      <- object$dxdtq  
+  xq_eps     <- object$xq_eps  
   e_x        <- object$e_x
   eventtime  <- object$eventtime
   d          <- object$d  
@@ -103,7 +103,7 @@ stanjm <- function(object) {
     fr = list_nms(object$fr, M),
     x = list_nms(x, M), 
     xq = list_nms(xq, M), 
-    dxdtq = if (sum(assoc$etaslope)) list_nms(dxdtq, M) else NULL,
+    xq_eps = if (sum(assoc$etaslope) || sum(assoc$muslope)) list_nms(xq_eps, M) else NULL,
     y = list_nms(y, M), 
     eventtime, 
     status = d,     

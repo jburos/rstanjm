@@ -54,7 +54,7 @@
 #' @param assoc A character string or character vector specifying the joint
 #'   model association structure. Possible association structures that can
 #'   be used include: "etavalue" (the default); "etaslope"; "muvalue"; 
-#'   "shared_b"; "shared_beta"; or "null". These are described in the 
+#'   "shared_b"; "shared_coef"; or "null". These are described in the 
 #'   \strong{Details} section below. For a multivariate joint model, 
 #'   different association structures can optionally be used for 
 #'   each longitudinal submodel by specifying a list of character
@@ -170,12 +170,12 @@
 #'   (\code{"shared_b"}); shared individual-level random effects which also
 #'   incorporate the corresponding fixed effect as well as any corresponding 
 #'   random effects for clustering levels higher than the individual)
-#'   (\code{"shared_beta"}); or no 
+#'   (\code{"shared_coef"}); or no 
 #'   association structure (equivalent to fitting separate longitudinal 
 #'   and event models) (\code{"null"} or \code{NULL}). 
 #'   More than one association structure can be specified, however,
 #'   not all possible combinations are allowed.   
-#'   By default, \code{"shared_b"} and \code{"shared_beta"} contribute all 
+#'   By default, \code{"shared_b"} and \code{"shared_coef"} contribute all 
 #'   random effects to the association structure; however, a subset of the random effects can 
 #'   be chosen by specifying their indices between parentheses as a suffix, for 
 #'   example, "shared_b(1)" or "shared_b(1:3)" or "shared_b(1,2,4)", and so on. \cr
@@ -309,7 +309,8 @@ stan_jm <- function(formulaLong, dataLong,
 					          priorAssoc = normal(),
 					          priorAssoc_ops = priorAssoc_options(),
                     prior_covariance = decov(), prior_PD = FALSE,
-                    adapt_delta = 0.75, QR = FALSE) {
+                    adapt_delta = 0.75, QR = FALSE, 
+					          algorithm = c("sampling", "meanfield", "fullrank")) {
 
 
   #=============================
@@ -321,10 +322,10 @@ stan_jm <- function(formulaLong, dataLong,
 #    stop("Weights not yet supported by stan_jm")
   if (!missing(offset)) 
     stop("Offsets not yet supported by stan_jm")
-#  algorithm <- match.arg(algorithm)
-#  if (algorithm %in% c("meanfield", "fullrank"))
-#    stop ("Meanfield and fullrank algorithms not yet implemented",
-#          "for stan_jm")
+  algorithm <- match.arg(algorithm)
+  if (algorithm %in% c("meanfield", "fullrank"))
+    stop ("Meanfield and fullrank algorithms not yet implemented",
+          "for stan_jm")
   if (QR) 
     stop("QR decomposition not yet implemented for stan_jm")     
 #  if ((init == "model_based") && any(unlist(c(centreLong, centreEvent)))) 
@@ -894,30 +895,28 @@ stan_jm <- function(formulaLong, dataLong,
   # Data for association structure
   #================================
   
+  # Time shift used for numerically calculating derivative of linear predictor 
+  # or expected value of longitudinal outcome using one-sided difference
+  eps <- 1E-5
+  
   # Check association structure
-  supported_assocs <- c("null", "etavalue", "etaslope", "muvalue", "muslope", "shared_b")
-  assoc <- lapply(assoc, validate_assoc, supported_assocs)
+  supported_assocs <- c("null", "etavalue", "muvalue", "etaslope", 
+                        "muslope", "shared_b", "shared_coef")
+  assoc <- lapply(1:M, validate_assoc, 
+                  assoc, y_cnms, supported_assocs, id_var, x)
 
   # Indicator of each association type, for each longitudinal submodel
   has_assoc <- sapply(supported_assocs, function(x) 
     sapply(assoc, function(y) as.integer(y[[x]])), simplify = FALSE)
   
-  # Shared random effects
   which_b <- lapply(1:M, function(m) assoc[[m]]$which_b)
-  if (any(has_assoc$shared_b)) {
-    max_which_b <- sapply(y_cnms, function(x) length(x[[id_var]]))
-    for (m in 1:M) {
-      if ((has_assoc$shared_b[m]) && (!length(which_b[[m]]))) 
-        which_b[[m]] <- seq_len(max_which_b[m])
-      if (any(which_b[[m]] > max_which_b[m]))
-        stop(paste0("The indices specified for the shared random effects association ",
-                    "structure are greater than the number of subject-specific random ", 
-                    "effects (this error was encountered for longitudinal submodel ", m,
-                    ")"), call. = FALSE)
-    }
-  }
+  which_beta <- lapply(1:M, function(m) assoc[[m]]$which_beta)
+  which_beta_xpart <- lapply(1:M, function(m) assoc[[m]]$which_beta_xpart)
   size_which_b <- sapply(which_b, length)
-  a_K <- get_num_assoc_pars(has_assoc, which_b)
+  size_which_beta <- sapply(which_beta, length)
+  size_which_beta_xpart <- unlist(lapply(which_beta_xpart, function(x) 
+    if (length(x)) sapply(x, length) else numeric(0)))
+  a_K <- get_num_assoc_pars(has_assoc, which_b, which_beta)
 
 
   #====================================================================
@@ -933,9 +932,10 @@ stan_jm <- function(formulaLong, dataLong,
   xqtemp          <- list()   # design matrix (without intercept) for 
                               # longitudinal submodel calculated at event 
                               # and quad times, possibly centred
-  xq_eps          <- list()   # xq with time shift of epsilon
-  xqtemp_eps      <- list()   # xqtemp with time shift of epsilon
   Zq              <- list()   # random effects matrix
+  y_mod_q_eps     <- list()   # fitted long. submodels under time shift of epsilon
+  xq_eps          <- list()   # xq with time shift of epsilon
+  xqtemp_eps      <- list()   # xqtemp with time shift of epsilon  
   Zq_eps          <- list()   # random effects matrix with time shift of epsilon
 
   # Set up a second longitudinal model frame which includes the time variable
@@ -1000,84 +1000,21 @@ stan_jm <- function(formulaLong, dataLong,
     # and quadrature times 
     if (centreLong) xqtemp[[m]] <- sweep(xqtemp[[m]], 2, xbar[[m]], FUN = "-")
     
-    if (has_assoc$etaslope[m] || has_assoc$muslope[m]) {
+    # If association structure is based on slope, then calculate design 
+    # matrices under a time shift of epsilon
+    if (sum(has_assoc$etaslope, has_assoc$muslope)) {
       mf_quadtime_eps <- mf_quadtime
-      mf_quadtime_eps[, time_var] <- mf_quadtime_eps[, time_var] + eps
+      mf_quadtime_eps[[time_var]] <- mf_quadtime_eps[[time_var]] + eps
+      m_mc_temp_eps <- m_mc_temp
+      m_mc_temp_eps$data    <- mf_quadtime_eps
+      y_mod_q_eps[[m]] <- eval(m_mc_temp_eps, parent.frame())
+      xq_eps[[m]] <- as.matrix(y_mod_q_eps[[m]]$X)
+      xqtemp_eps[[m]] <- if (y_has_intercept[m]) xq_eps[[m]][, -1L, drop=FALSE] else xq_eps[[m]]  
+      if (centreLong) xqtemp_eps[[m]] <- sweep(xqtemp_eps[[m]], 2, xbar[[m]], FUN = "-")
+      Zq_eps[[m]] <- Matrix::t(y_mod_q_eps[[m]]$reTrms$Zt)
     }    
   }
-
-  if(sum(has_assoc$etaslope))
-    cat("\nSlope association structure based on the following first derivatives:")
-  for (m in 1:M) {
-    if (has_assoc$etaslope[m]) {
-      sel_lin <- lapply(y_vars[[m]]$predvars, function(x) 
-                       grep(paste0("^", time_var, "$"), x, value = FALSE))
-      sel_ns <- lapply(y_vars[[m]]$predvars, function(x) 
-                       grep(paste0("^ns\\(.*", time_var, ".*\\)"), x, value = FALSE))
-      # Replace those variables with their first derivative
-      formvars_deriv <- y_vars[[m]]$formvars      
-      predvars_deriv <- y_vars[[m]]$predvars
-      for (i in 1:length(sel_lin)) {
-        formvars_deriv$fixed[sel_lin$fixed] <- 
-          gsub(paste0("^", time_var, "$"), "1", formvars_deriv$fixed[sel_lin$fixed])
-        formvars_deriv$random[sel_lin$random] <- 
-          gsub(paste0("^", time_var, "$"), "1", formvars_deriv$random[sel_lin$random])
-        predvars_deriv$fixed[sel_lin$fixed] <- 
-          gsub(paste0("^", time_var, "$"), "1", predvars_deriv$fixed[sel_lin$fixed])
-        predvars_deriv$random[sel_lin$random] <- 
-          gsub(paste0("^", time_var, "$"), "1", predvars_deriv$random[sel_lin$random])
-      }
-      for (i in 1:length(sel_ns)) {
-        formvars_deriv$fixed[sel_ns$fixed] <- 
-          gsub("^ns\\(", "dns(", formvars_deriv$fixed[sel_ns$fixed])
-        formvars_deriv$random[sel_ns$random] <- 
-          gsub("^ns\\(", "dns(", formvars_deriv$random[sel_ns$random])
-        predvars_deriv$fixed[sel_ns$fixed] <- 
-          gsub("^ns\\(", "dns(", predvars_deriv$fixed[sel_ns$fixed])
-        predvars_deriv$random[sel_ns$random] <- 
-          gsub("^ns\\(", "dns(", predvars_deriv$random[sel_ns$random])      
-      }      
-      # Tell user which variables have been replaced
-      cat(paste0("\n  Submodel ", m, ": "), 
-          paste0(y_vars[[m]]$formvars$fixed[c(sel_lin$fixed, sel_ns$fixed)], " -> ", 
-                 formvars_deriv$fixed[c(sel_lin$fixed, sel_ns$fixed)], collapse = "; "),
-          paste0(y_vars[[m]]$formvars$random[c(sel_lin$random, sel_ns$random)], " -> ", 
-                 formvars_deriv$random[c(sel_lin$random, sel_ns$random)], collapse = "; "))
-      # Replace variables in model formula
-      m_mc_temp$formula <- substitute_vars(y_mod_q[[m]], y_vars[[m]]$predvars, predvars_deriv)
-      if ((family[[m]]$family == "gaussian") && (family[[m]]$link == "identity")) {
-        m_mc_temp$control <- get_control_args(norank = TRUE)
-      } else {
-        m_mc_temp$control <- get_control_args(glmer = TRUE, norank = TRUE)      
-      }
-      # Evaluate X and Z using derivatives
-      y_mod_q_dxdt <- eval(m_mc_temp, parent.frame())
-      # Obtain new X matrix
-      dxdtq[[m]] <- as.matrix(y_mod_q_dxdt$X)
-      dxdtqtemp[[m]] <- if (y_has_intercept[m]) dxdtq[[m]][, -1L, drop=FALSE] else dxdtq[[m]]
-      # Identify columns in X which have a non-zero derivative and replace all
-      # other columns with a value of zero
-      sel <- grepl(paste0("dns\\(.*", time_var, ".*\\)"), colnames(dxdtqtemp[[m]]))
-      dxdtqtemp[[m]][, !sel] <- 0
-      # Obtain new Z matrix
-      dZdtq[[m]] <- Matrix::t(y_mod_q_dxdt$reTrms$Zt)
-      # For each grouping factor, identify which terms involve a non-zero derivative
-      sel <- lapply(y_mod_q_dxdt$reTrms$cnms, function(x) grepl(paste0("dns\\(.*", time_var, ".*\\)"), x))
-      # Calculate number of factor levels for each grouping factor
-      len_flist <- sapply(y_mod_q_dxdt$reTrms$flist, function(x) length(unique(x)))
-      # Using the selection of terms, and the number of factor levels, create a 
-      # vector indicating which columns of Z have a non-zero derivative and 
-      # replace all other columns with a value of zero
-      sel_vec <- unlist(lapply(seq_along(sel), function(x) rep(sel[[x]], len_flist[x])))
-      dZdtq[[m]][, !sel_vec] <- 0 
-    } else {
-      dxdtqtemp[[m]] <- matrix(0, ncol = ncol(xqtemp[[m]]), nrow = nrow(xqtemp[[m]]))
-      dZdtq[[m]] <- Matrix::sparseMatrix(dims = c(nrow(Zq[[m]]),ncol(Zq[[m]])), i={}, j={}, x = 0)
-    }
-  }
-  if(sum(has_assoc$etaslope))
-    cat("\nAny interactions involving these variables will also be preserved.")
-
+  
 
   #=====================
   # Prior distributions
@@ -1444,7 +1381,13 @@ stan_jm <- function(formulaLong, dataLong,
     sum_size_which_b = as.integer(sum(size_which_b)),
     size_which_b = as.array(size_which_b),
     which_b = as.array(unlist(which_b)),
-
+    sum_size_which_beta = as.integer(sum(size_which_beta)),
+    size_which_beta = as.array(size_which_beta),
+    which_beta = as.array(unlist(which_beta)),
+    sum_size_which_beta_xpart = as.integer(sum(size_which_beta_xpart)),
+    size_which_beta_xpart = as.array(size_which_beta_xpart),
+    which_beta_xpart = as.array(unlist(which_beta_xpart)),
+    
     # priors
     priorLong_dist = priorLong_dist, 
     priorLong_dist_for_intercept = priorLong_dist_for_intercept,  
@@ -1541,7 +1484,7 @@ stan_jm <- function(formulaLong, dataLong,
   standata$num_non_zero <- as.integer(length(parts$w))
   standata$w <- parts$w
   standata$v <- parts$v
-  standata$u <- parts$u
+  standata$u <- as.array(parts$u)
  
   # data for random effects in GK quadrature
   Zqmerge <- Matrix::bdiag(Zq)
@@ -1549,16 +1492,18 @@ stan_jm <- function(formulaLong, dataLong,
   standata$num_non_zero_Zq <- as.integer(length(parts_Zq$w))
   standata$w_Zq <- parts_Zq$w
   standata$v_Zq <- parts_Zq$v
-  standata$u_Zq <- parts_Zq$u
+  standata$u_Zq <- as.array(parts_Zq$u)
 
   # data for calculating eta slope in GK quadrature 
-  standata$y_dXdtq = as.array(as.matrix(Matrix::bdiag(dxdtqtemp)))
-  dZdtqmerge <- Matrix::bdiag(dZdtq)
-  parts_dZdtq <- rstan::extract_sparse_parts(dZdtqmerge)
-  standata$num_non_zero_dZdtq <- as.integer(length(parts_dZdtq$w))
-  standata$w_dZdtq <- parts_dZdtq$w
-  standata$v_dZdtq <- parts_dZdtq$v
-  standata$u_dZdtq <- parts_dZdtq$u    
+  standata$eps <- eps  # time shift for numerically calculating derivative
+  standata$y_Xq_eps <- if (sum(has_assoc$etaslope, has_assoc$muslope))
+    as.array(as.matrix(Matrix::bdiag(xqtemp_eps))) else as.array(matrix(0,0,sum_y_K))
+  Zq_eps_merge <- if (length(Zq_eps)) Matrix::bdiag(Zq_eps) else matrix(0,0,0)
+  parts_Zq_eps <- rstan::extract_sparse_parts(Zq_eps_merge)
+  standata$num_non_zero_Zq_eps <- as.integer(length(parts_Zq_eps$w))
+  standata$w_Zq_eps <- parts_Zq_eps$w
+  standata$v_Zq_eps <- parts_Zq_eps$v
+  standata$u_Zq_eps <- as.array(parts_Zq_eps$u)    
   
   # hyperparameters for random effects model
   decov_args <- prior_covariance
@@ -1650,10 +1595,10 @@ stan_jm <- function(formulaLong, dataLong,
       y_z_beta = if (sum_y_K) as.array(y_z_beta) else double(0),
       y_dispersion_unscaled = if (sum_y_has_dispersion) as.array(y_dispersion_unscaled) else double(0),
       e_gamma = if (e_has_intercept) as.array(0) else double(0),
-      splines_coefs = if (base_haz_splines) as.array(rep(0, splines_df)) else double(0),
       e_z_beta = if (e_K) as.array(e_z_beta) else double(0),
       weibull_shape_unscaled = if (base_haz_weibull) 
         as.array(runif(1, 0.5, 3) / priorEvent_scale_for_weibull) else double(0),
+      splines_coefs_unscaled = if (base_haz_splines) as.array(rep(0, splines_df)) else double(0),
       a_z_beta = if (a_K) as.array(rep(0, a_K)) else double(0),
       z_b = as.array(runif(standata$len_b, -0.5, 0.5)),
       y_global = as.array(runif(y_hs)),
@@ -1686,7 +1631,7 @@ stan_jm <- function(formulaLong, dataLong,
   #===========
 
   # call stan() to draw from posterior distribution
-  stanfit <- if (M == 1) stanmodels$jmuni else stanmodels$jm
+  stanfit <- if (M == 0) stanmodels$jmuni else stanmodels$jm
   pars <- c(if (sum_y_has_intercept_unbound) "y_gamma_unbound",
             if (sum_y_has_intercept_lobound) "y_gamma_lobound",
             if (sum_y_has_intercept_upbound) "y_gamma_upbound",
@@ -1739,8 +1684,8 @@ stan_jm <- function(formulaLong, dataLong,
   a_nms <- character()  
   for (m in 1:M) {
     if (has_assoc$etavalue[m]) a_nms <- c(a_nms, paste0("Assoc|Long", m,":eta value"))
-    if (has_assoc$etaslope[m]) a_nms <- c(a_nms, paste0("Assoc|Long", m,":eta slope"))
     if (has_assoc$muvalue[m]) a_nms <- c(a_nms, paste0("Assoc|Long", m,":mu value"))
+    if (has_assoc$etaslope[m]) a_nms <- c(a_nms, paste0("Assoc|Long", m,":eta slope"))
     if (has_assoc$muslope[m]) a_nms <- c(a_nms, paste0("Assoc|Long", m,":mu slope"))
   }
   if (sum(size_which_b)) {
@@ -1789,10 +1734,13 @@ stan_jm <- function(formulaLong, dataLong,
                             if (getRversion() < "3.2.0") Matrix::cBind(x[[i]], Z[[i]]) else cbind2(x[[i]], Z[[i]])),
                           xq = lapply(1:M, function(i) 
                             if (getRversion() < "3.2.0") Matrix::cBind(xq[[i]], Zq[[i]]) else cbind2(xq[[i]], Zq[[i]])),                 
-                          dxdtq = lapply(1:M, function(i) 
-                            if (getRversion() < "3.2.0") 
-                              Matrix::cBind(dxdtqtemp[[i]], dZdtq[[i]]) else cbind2(dxdtqtemp[[i]], dZdtq[[i]])),                          
-                          y = y, e_x, eventtime, d, quadpoints = quadpoint,
+                          xq_eps = lapply(1:M, function(i) 
+                            if (has_assoc$etaslope[m] || has_assoc$muslope[m]) {
+                              if (getRversion() < "3.2.0") 
+                                Matrix::cBind(xq_eps[[i]], Zq_eps[[i]]) else cbind2(xq_eps[[i]], Zq_eps[[i]])
+                            } else NULL),                          
+                          y = y, e_x, eventtime, d, quadpoints = quadpoint, 
+                          epsilon = if (sum(has_assoc$etaslope, has_assoc$muslope)) eps else NULL,
                           standata, dataLong, dataEvent, call, terms = NULL, model = NULL,                          
                           prior.info = rstanarm:::get_prior_info(call, formals()),
                           na.action, algorithm = "sampling", init, glmod = y_mod, coxmod = e_mod)
@@ -1854,15 +1802,22 @@ check_id_list <- function(id_var, y_flist) {
 # types. The function returns a list with logicals specifying which association
 # type have been requested.
 # 
+# @param m Integer specifying the longitudinal submodel 
 # @param x The assoc argument specified by the user -- should be a character 
 #   vector or NULL
+# @param y_cnms The RE component names for each of the longitudinal submodels 
 # @param supported_assocs A character vector showing the supported
 #   association types
+# @param id_var The name of the id variable 
 # @return A list of logicals indicating the desired association types
-validate_assoc <- function(x, supported_assocs) {
+validate_assoc <- function(m, x, y_cnms, supported_assocs, id_var, xmat) {
   
   # Identify which association types were specified
-  x_tmp <- if (!is.null(x)) gsub("^shared_b.*", "shared_b", x) else x
+  x_tmp <- x[[m]]
+  if (!is.null(x_tmp)) {
+    x_tmp <- gsub("^shared_b.*", "shared_b", x_tmp) 
+    x_tmp <- gsub("^shared_coef\\(.*", "shared_coef", x_tmp) 
+  }
   assoc <- sapply(supported_assocs, function(y) y %in% x_tmp, simplify = FALSE)
   if (is.null(x_tmp)) {
     assoc$null <- TRUE
@@ -1886,18 +1841,64 @@ validate_assoc <- function(x, supported_assocs) {
   }
   
   # Identify which subset of shared random effects were specified
-  val <- grep("^shared_b.*", x, value = TRUE)
-  if (length(val)) {
-    val <- unlist(strsplit(val, "shared_b"))[-1]
-  }
-  if (length(val)) {
-    assoc$which_b <- tryCatch(eval(parse(text = paste0("c", val))), 
-                            error = function(x) 
-                              stop("Incorrect specification of the 'shared_b' ",
-                                   "association structure. See Examples in help ",
-                                   "file.", call. = FALSE))
+  x <- x[[m]]
+  max_which_b <- length(y_cnms[[m]][[id_var]])
+  val_b <- grep("^shared_b.*", x, value = TRUE)
+  val_beta <- grep("^shared_coef.*", x, value = TRUE)
+  
+  if (length(val_b)) {
+    val_b <- unlist(strsplit(val_b, "shared_b"))[-1]
+    if (length(val_b)) {
+      assoc$which_b <- tryCatch(eval(parse(text = paste0("c", val_b))), 
+                              error = function(x) 
+                                stop("Incorrect specification of the 'shared_b' ",
+                                     "association structure. See Examples in help ",
+                                     "file.", call. = FALSE))
+    } else assoc$which_b <- seq_len(max_which_b)
+    if (any(assoc$which_b > max_which_b))
+      stop(paste0("The indices specified for the shared random effects association ",
+                  "structure are greater than the number of subject-specific random ", 
+                  "effects (this error was encountered for longitudinal submodel ", m,
+                  ")"), call. = FALSE)
   } else assoc$which_b <- numeric(0)
 
+  if (length(val_beta)) {
+    val_beta <- unlist(strsplit(val_beta, "shared_coef"))[-1]
+    if (length(val_beta)) {
+      assoc$which_beta <- tryCatch(eval(parse(text = paste0("c", val_beta))), 
+                                error = function(x) 
+                                  stop("Incorrect specification of the 'shared_coef' ",
+                                       "association structure. See Examples in help ",
+                                       "file.", call. = FALSE))
+    } else assoc$which_beta <- seq_len(max_which_b)
+    if (any(assoc$which_beta > max_which_b))
+      stop(paste0("The indices specified for the shared random effects association ",
+                  "structure are greater than the number of subject-specific random ", 
+                  "effects (this error was encountered for longitudinal submodel ", m,
+                  ")"), call. = FALSE)
+  } else assoc$which_beta <- numeric(0)  
+
+  if (length(intersect(assoc$which_b, assoc$which_beta)))
+    stop("The same random effects indices should not be specified in both ",
+         "'shared_b' and 'shared_coef'. Specifying indices in 'shared_coef' ",
+         "will include both the fixed and random components.", call. = FALSE)
+
+  if (length(assoc$which_beta)) {
+    if (length(y_cnms[[m]]) > 1L)
+      stop("'shared_coef' association structure cannot be used when there is ",
+           "clustering at levels other than the individual-level.", call. = FALSE)
+    b_nms <- y_cnms[[m]][[id_var]][assoc$which_beta]
+    beta_nms <- colnames(xmat[[m]])
+    assoc$which_beta_xpart <- lapply(b_nms, function(x, beta_nms) {
+      beta_i <- grep(x, beta_nms, fixed = TRUE)
+      vals <- strsplit(grep(x, beta_nms, fixed = TRUE, value = TRUE), ":")
+      sel <- sapply(vals, function(y, x) any(grepl(glob2rx(x), y)), x)
+      beta_i[sel]
+    }, beta_nms)
+  } else {
+    assoc$which_beta_xpart <- numeric(0)
+  }
+  
   assoc
 }
 
@@ -2141,10 +2142,10 @@ check_for_dispersion <- function(family) {
 # @param which_b A list of numeric vectors indicating the random effects from each
 #   longitudinal submodel that are to be used in the shared_b association structure
 # @return Integer indicating the number of association parameters in the model 
-get_num_assoc_pars <- function(has_assoc, which_b) {
+get_num_assoc_pars <- function(has_assoc, which_b, which_beta) {
   sel <- c("etavalue", "etaslope", "muvalue", "muslope")
   a_K <- sum(unlist(has_assoc[sel]))
-  a_K <- a_K + length(unlist(which_b))
+  a_K <- a_K + length(unlist(which_b)) + length(unlist(which_beta))
   return(a_K)
 }
 

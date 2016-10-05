@@ -92,7 +92,7 @@ ps_check <- function(object, check = "survival",
                        lb = km$lower, ub = km$upper)
   
   # Plot estimated survival function with KM curve overlaid
-  graph <- plot.survfit.stanjm(dat, ci = ci, limits = limits, ...)
+  graph <- plot.survfit.stanjm(dat, ci = ci, ids = NULL, ...)
   kmgraph <- geom_step(data = kmdat, 
                        mapping = aes_string(x = "times", y = "surv"))
   graph + kmgraph
