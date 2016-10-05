@@ -114,7 +114,8 @@ pp_data <-
     if (length(nms_i) == 1) {
       Z_names <- c(Z_names, paste0("Long", m, "|", nms_i, ":", levels(ReTrms$flist[[nm]])))
     } else {
-      Z_names <- c(Z_names, c(t(sapply("Long", m, "|", nms_i, paste0, ":", new_levels[[nm]]))))
+      Z_names <- c(Z_names, c(t(sapply(nms_i, function(x) 
+        paste0("Long", m, "|", x, ":", new_levels[[nm]])))))
     }
   }
   z <- rstanarm:::nlist(Zt = ReTrms$Zt, Z_names)

@@ -30,27 +30,26 @@
 #' 
 #' @importFrom ggplot2 ggplot aes_string geom_line geom_ribbon 
 #'   facet_wrap labs coord_cartesian
-plot.survfit.stanjm <- function(object, ci = TRUE, limits = c(.025, .975), ids = NULL, ...) {
+plot.survfit.stanjm <- function(object, ids = NULL, ci = TRUE,  
+                                xlab = NULL, ylab = NULL, ...) {
 
   marginalised <- attr(object, "marginalised")
   n_increments <- attr(object, "n_increments")
+  id_var <- attr(object, "id_var")
+  time_var <- attr(object, "time_var")
+  if (is.null(xlab)) xlab <- paste0("Time (", time_var, ")")
+  if (is.null(ylab)) ylab <- "Event free probability"
   if (!is.null(ids)) {
-    times <- lapply(object$times, function(x) 
-      x[names(x) %in% ids])
-    survprobs <- lapply(object$survprobs, function(x) 
-      x[, colnames(x) %in% ids, drop = FALSE])
+    ids_missing <- which(!ids %in% object[[id_var]])
+    if (length(ids_missing))
+      stop("The following 'ids' are not present in the survfit.stanjm object: ",
+           paste(ids[[ids_missing]], collapse = ", "), call. = FALSE)
+    object <- object[(object[[id_var]] %in% ids), , drop = FALSE]
   } else {
-    ids <- attr(object, "ids")
-    times <- object$times
-    survprobs <- object$survprobs
+    ids <- if (!marginalised) attr(object, "ids") else NULL
   }
-  
-  times <- do.call(cbind, times)
-  if (NROW(times) == 1L) 
-    times <- as.vector(times)  
-  survprob_median <- sapply(survprobs, function(x) apply(x, 2, median))
-  survprob_lb <- sapply(survprobs, function(x) apply(x, 2, quantile, limits[1])) 
-  survprob_ub <- sapply(survprobs, function(x) apply(x, 2, quantile, limits[2])) 
+  object$id <- object[[id_var]]
+  object$time <- object[[time_var]]
   
   defaults <- list(color = "black")
   geom_args <- rstanarm:::set_geom_args(defaults, ...)  
@@ -60,47 +59,28 @@ plot.survfit.stanjm <- function(object, ci = TRUE, limits = c(.025, .975), ids =
          "estimate marginal survival probabilities by using 'posterior_survfit' ",
          "with 'marginalised' set to TRUE.")
   } else if ((!marginalised) && (length(ids) > 1L)) {
-    dats <- list(times, survprob_median, survprob_lb, survprob_ub)
-    v_names <- c("times", "med", "lb", "ub")
-    plot_dats <- mapply(prep_for_facetwrap, dats,
-                        v_names, n_increments, SIMPLIFY = FALSE)
-    plot_dat <- Reduce(function(...) merge(...), plot_dats)
-    graph <- ggplot(plot_dat, aes_string(x = "times", y = "med")) +
+    graph <- ggplot(object, aes_string(x = "time", y = "survpred")) +
       theme_bw() +
       do.call("geom_line", geom_args) +
       coord_cartesian(ylim = c(0, 1)) +      
-      labs(x = "Time", y = "Event free probability") +
       facet_wrap(~ id, scales = "free")
     if (ci) {
-      graph_limits <- geom_ribbon(aes_string(ymin = "lb", ymax = "ub"), 
+      graph_limits <- geom_ribbon(aes_string(ymin = "ci_lb", ymax = "ci_ub"), 
                                   alpha = 0.3)      
     } else graph_limits <- NULL
   } else {
-    plot_dat <- data.frame(times = times, med = survprob_median,
-                           lb = survprob_lb, ub = survprob_ub)
-    graph <- ggplot(plot_dat, aes_string(x = "times", y = "med")) + 
+    graph <- ggplot(object, aes_string(x = "time", y = "survpred")) + 
       theme_bw() +
       do.call("geom_line", geom_args) + 
-      coord_cartesian(ylim = c(0, 1)) +
-      labs(x = "Time", y = "Event free probability")
+      coord_cartesian(ylim = c(0, 1))
     if (ci) {
-      graph_limits <- geom_ribbon(aes_string(ymin = "lb", ymax = "ub"), 
+      graph_limits <- geom_ribbon(aes_string(ymin = "ci_lb", ymax = "ci_ub"), 
                                   alpha = 0.3)      
     } else graph_limits <- NULL
 
   }    
 
-  graph + graph_limits
-}
-
-
-# reshape data for facet_wrap
-prep_for_facetwrap <- function(x, v_names, n_increments, ...) {
-  x <- as.data.frame(x)
-  x$id <- rownames(x)
-  x <- reshape(x, direction = "long", varying = paste0("increment", 0:n_increments), 
-               v.names = v_names, timevar = "obs", idvar = "id", ...)
-  x
+  graph + graph_limits + labs(x = xlab, y = ylab) 
 }
 
 

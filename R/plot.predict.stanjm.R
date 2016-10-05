@@ -30,15 +30,19 @@
 #' 
 #' @importFrom ggplot2 ggplot aes aes_string geom_line geom_smooth geom_ribbon 
 #'   geom_point facet_wrap geom_vline labs ggplot_build theme_bw
-plot.predict.stanjm <- function(object, ids = NULL, ci = TRUE, limits = c(.025, .975), 
-                                xlab = "Time", ylab = "Longitudinal response", 
+plot.predict.stanjm <- function(object, ids = NULL, limits = c("ci", "pi", "none"), 
+                                xlab = NULL, ylab = NULL, 
                                 abline = TRUE, plot_observed = TRUE, facet_scales = "free_x", 
                                 ci_geom_args = NULL, ...) {
   
+  limits <- match.arg(limits)
+  if (!(limits == "none")) ci <- (limits == "ci")
   y_var <- attr(object, "y_var")
   id_var <- attr(object, "id_var")
   time_var <- attr(object, "time_var")
   obs_dat <- attr(object, "observed_data")
+  if (is.null(ylab)) ylab <- paste0("Long. response (", y_var, ")")
+  if (is.null(xlab)) xlab <- paste0("Time (", time_var, ")")
   if (!is.null(ids)) {
     last_time <- attr(object, "last_time")[as.character(ids)]
     plot_dat <- object[object[[id_var]] %in% ids, , drop = FALSE]
@@ -71,41 +75,45 @@ plot.predict.stanjm <- function(object, ids = NULL, ci = TRUE, limits = c(.025, 
          "estimate marginal longitudinal trajectories or those based on ",
          "specifying the 'newdata' argument.")
   } else if (length(ids) > 1L) {
-    geom_mapp <- list(mapping = aes_string(x = "time", y = "ypred_median"), 
+    geom_mapp <- list(mapping = aes_string(x = "time", y = "ypred"), 
                       data = plot_dat)
     graph <- ggplot() + theme_bw() +
                do.call("geom_smooth", c(geom_mapp, geom_args)) +
                facet_wrap(~ id, scales = facet_scales)
-    if (ci) {
+    if (!(limits == "none")) {
       graph_smoothlim <- ggplot(plot_dat) + 
-        geom_smooth(aes_string(x = "time", y = "ypred_lb"), method = "loess", se = FALSE) +
-        geom_smooth(aes_string(x = "time", y = "ypred_ub"), method = "loess", se = FALSE) +
+        geom_smooth(aes_string(x = "time", y = if (ci) "ci_lb" else "pi_lb"), 
+                    method = "loess", se = FALSE) +
+        geom_smooth(aes_string(x = "time", y = if (ci) "ci_ub" else "pi_ub"), 
+                    method = "loess", se = FALSE) +
         facet_wrap(~ id, scales = facet_scales)
       build_smoothlim <- ggplot_build(graph_smoothlim)
       df_smoothlim <- data.frame(PANEL = build_smoothlim$data[[1]]$PANEL,
                                  time = build_smoothlim$data[[1]]$x,
-                                 ypred_lb = build_smoothlim$data[[1]]$y,
-                                 ypred_ub = build_smoothlim$data[[2]]$y)
+                                 lb = build_smoothlim$data[[1]]$y,
+                                 ub = build_smoothlim$data[[2]]$y)
       panel_id_map <- build_smoothlim$panel$layout[, c("PANEL", "id"), drop = FALSE]
       df_smoothlim <- merge(df_smoothlim, panel_id_map)
-      lim_mapp <- list(mapping = aes_string(x = "time", ymin = "ypred_lb", ymax = "ypred_ub"), 
+      lim_mapp <- list(mapping = aes_string(x = "time", ymin = "lb", ymax = "ub"), 
                        data = df_smoothlim)
       graph_limits <- do.call("geom_ribbon", c(lim_mapp, lim_args))
     } else graph_limits <- NULL
   } else {
-    geom_mapp <- list(mapping = aes_string(x = "time", y = "ypred_median"), 
+    geom_mapp <- list(mapping = aes_string(x = "time", y = "ypred"), 
                       data = plot_dat)
     graph <- ggplot() + theme_bw() + 
                do.call("geom_smooth", c(geom_mapp, geom_args))
-    if (ci) {
+    if (!(limits == "none")) {
       graph_smoothlim <- ggplot(plot_dat) + 
-        geom_smooth(aes_string(x = "time", y = "ypred_lb"), method = "loess", se = FALSE) +
-        geom_smooth(aes_string(x = "time", y = "ypred_ub"), method = "loess", se = FALSE)
+        geom_smooth(aes_string(x = "time", y = if (ci) "ci_lb" else "pi_lb"), 
+                    method = "loess", se = FALSE) +
+        geom_smooth(aes_string(x = "time", y = if (ci) "ci_ub" else "pi_ub"), 
+                    method = "loess", se = FALSE)
       build_smoothlim <- ggplot_build(graph_smoothlim)
       df_smoothlim <- data.frame(time = build_smoothlim$data[[1]]$x,
-                                 ypred_lb = build_smoothlim$data[[1]]$y,
-                                 ypred_ub = build_smoothlim$data[[2]]$y) 
-      lim_mapp <- list(mapping = aes_string(x = "time", ymin = "ypred_lb", ymax = "ypred_ub"), 
+                                 lb = build_smoothlim$data[[1]]$y,
+                                 ub = build_smoothlim$data[[2]]$y) 
+      lim_mapp <- list(mapping = aes_string(x = "time", ymin = "lb", ymax = "ub"), 
                        data = df_smoothlim)
       graph_limits <- do.call("geom_ribbon", c(lim_mapp, lim_args))
     } else graph_limits <- NULL
@@ -117,7 +125,7 @@ plot.predict.stanjm <- function(object, ids = NULL, ci = TRUE, limits = c(.025, 
   } else graph_obs <- NULL
   if (abline) {
     graph_abline <- geom_vline(aes_string(xintercept = "last_time"), 
-                               data.frame(id = names(last_time), last_time = last_time), 
+                               data.frame(id = ids, last_time = last_time), 
                                linetype = 2)
   } else graph_abline <- NULL
     

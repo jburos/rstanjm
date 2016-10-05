@@ -112,7 +112,7 @@ posterior_traj <- function(object, m = 1, newdata = NULL, ids,
     fun <- match.fun(fun)
   
   mf <- model.frame(object)[[m]]
-
+  
   if (!is.null(newdata)) {      
     obsdata <- newdata <- as.data.frame(newdata)
     if (any(is.na(newdata))) 
@@ -131,11 +131,15 @@ posterior_traj <- function(object, m = 1, newdata = NULL, ids,
     last_time <- object$eventtime
     if (!is.null(ids)) {
       newdata <- newdata[newdata[[id_var]] %in% ids,]
+      obsdata <- obsdata[obsdata[[id_var]] %in% ids,]
       last_time <- last_time[as.character(ids)]
     }     
   }
   
   # Time sequence across which to generate the longitudinal trajectory
+  id_list <- names(last_time)
+  id_class <- class(newdata[[id_var]])
+  class(id_list) <- id_class
   max_time <- max(object$eventtime)
   prop <- extrapolate_args$prop
   iinc <- interpolate_args$increments
@@ -148,7 +152,7 @@ posterior_traj <- function(object, m = 1, newdata = NULL, ids,
     # if there is only one patient then need to transform
     if (is.vector(inter_time_seq)) {
       inter_time_seq <- t(inter_time_seq)
-      rownames(inter_time_seq) <- names(last_time)
+      rownames(inter_time_seq) <- id_list
     }
   }  
   if (extrapolate) {  
@@ -160,7 +164,7 @@ posterior_traj <- function(object, m = 1, newdata = NULL, ids,
     # if there is only one patient then need to transform
     if (is.vector(extra_time_seq)) {
       extra_time_seq <- t(extra_time_seq)
-      rownames(extra_time_seq) <- names(last_time)
+      rownames(extra_time_seq) <- id_list
     }
   }
   if (interpolate && extrapolate) {
@@ -172,11 +176,13 @@ posterior_traj <- function(object, m = 1, newdata = NULL, ids,
   }
   time_seq <- as.data.frame(time_seq)
   n_obs <- NCOL(time_seq)
+  colnames(time_seq) <- paste0("V", 1:n_obs)
   time_seq$id <- rownames(time_seq)
   time_seq <- reshape(time_seq, direction = "long", varying = paste0("V", 1:n_obs), 
                  v.names = time_var, timevar = "obs", idvar = id_var)
-  
-  newdata[[id_var]] <- as.character(newdata[[id_var]])
+  class(time_seq[[id_var]]) <- id_class
+  class(newdata[[id_var]]) <- id_class
+  newdata[[time_var]] <- as.numeric(newdata[[time_var]])
   newdata <- data.table::data.table(newdata, key = c(id_var, time_var))
   newdata <- newdata[data.table::SJ(time_seq[[id_var]], time_seq[[time_var]]),
                          roll = TRUE, rollends = c(TRUE, TRUE)]  
@@ -191,31 +197,39 @@ posterior_traj <- function(object, m = 1, newdata = NULL, ids,
   ppargs <- pp_args(object, data = pp_eta(object, dat, m, draws), m)
   if (rstanarm:::is.binomial(family(object)[[m]]$family))
     ppargs$trials <- pp_binomial_trials(object, newdata)
-  
+
   ppfun <- pp_fun(object, m)
   ytilde <- do.call(ppfun, ppargs)
   if (!is.null(newdata) && nrow(newdata) == 1L) 
     ytilde <- t(ytilde)
   if (!is.null(fun)) 
     ytilde <- do.call(fun, list(ytilde))
-  
   ytilde_med <- apply(ytilde, 2, median)
   ytilde_lb <- apply(ytilde, 2, quantile, limits[1]) 
   ytilde_ub <- apply(ytilde, 2, quantile, limits[2]) 
-  
+
+  mutilde <- ppargs$mu
+  if (!is.null(newdata) && nrow(newdata) == 1L) 
+    mutilde <- t(mutilde)
+  mutilde_med <- apply(mutilde, 2, median)
+  mutilde_lb <- apply(mutilde, 2, quantile, limits[1]) 
+  mutilde_ub <- apply(mutilde, 2, quantile, limits[2])   
+    
   Terms <- terms(mf)
   yvar <- rownames(attr(Terms, "factors"))[attr(Terms, "response")]
   xvars <- rownames(attr(Terms, "factors"))[-attr(Terms, "response")]
   dat <- if (length(xvars)) as.data.frame(newdata)[, xvars, drop = FALSE] else NULL
-  out <- data.frame(cbind(dat, ypred_median = ytilde_med, 
-                          ypred_lb = ytilde_lb, ypred_ub = ytilde_ub))
+  class(dat[[id_var]]) <- id_class
+  out <- data.frame(cbind(dat, ypred = ytilde_med, 
+                          ci_lb = mutilde_lb, ci_ub = mutilde_ub,
+                          pi_lb = ytilde_lb, pi_ub = ytilde_ub))
   
   class(out) <- c("predict.stanjm", "data.frame")
   structure(out, observed_data = obsdata, 
             y_var = yvar, id_var = id_var, time_var = time_var,
             interpolate = interpolate, interpolate_args = interpolate_args,
             extrapolate = extrapolate, extrapolate_args = extrapolate_args, 
-            ids = rownames(last_time), last_time = last_time, 
+            ids = id_list, last_time = last_time, 
             draws = draws, fun = fun, seed = seed)  
 }
 

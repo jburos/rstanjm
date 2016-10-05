@@ -789,9 +789,16 @@ functions {
       for (m in 1:M) {
         if (size_which_b[m] > 0) {
           int shift;  // num. subject-specific ranefs in prior submodels
-          if (m == 1) shift = 0;
-          else shift = sum(pmat[t_i, 1:(m-1)]);
-          for (j in 1:size_which_b[m]) {
+          int j_shift; // shift in indexing of which_b vector
+          if (m == 1) {
+            shift = 0;
+            j_shift = 0;
+          }
+          else {
+            shift = sum(pmat[t_i, 1:(m-1)]);
+            j_shift = sum(size_which_b[1:(m-1)]);
+          }
+          for (j in (j_shift+1):(j_shift+size_which_b[m])) {
             int item_collect;   // subject-specific ranefs to select for current submodel
             item_collect = start_collect + shift + which_b[j];
             temp[i,mark] = b[item_collect];
@@ -894,11 +901,15 @@ data {
   int<lower=0> size_which_b[M];            // num. of shared random effects for each long submodel
   int<lower=1> which_b[sum_size_which_b];  // which random effects are shared for each long submodel
 
-  matrix[(M*nrow_y_Xq),sum_y_K] y_dXdtq; // derivative of predictor matrix (long submodel) at quadpoints              
-  int<lower=0> num_non_zero_dZdtq;       // number of non-zero elements in the dZdt matrix (at quadpoints)
-  vector[num_non_zero_dZdtq] w_dZdtq;    // non-zero elements in the implicit dZdt matrix (at quadpoints)
-  int<lower=0> v_dZdtq[num_non_zero_dZdtq]; // column indices for w (at quadpoints)
-  int<lower=0> u_dZdtq[(M*nrow_y_Xq+1)];    // where the non-zeros start in each row (at quadpoints)
+  // data for calculating slope
+  real<lower=0> eps;  // time shift used for numerically calculating derivative
+  matrix[(M*nrow_y_Xq*((sum_has_assoc_es + sum_has_assoc_cs) > 0)),sum_y_K] 
+    y_Xq_eps; // predictor matrix (long submodel) at quadpoints plus time shift of epsilon              
+  int<lower=0> num_non_zero_Zq_eps;        // number of non-zero elements in the Zq_eps matrix (at quadpoints plus time shift of epsilon)
+  vector[num_non_zero_Zq_eps] w_Zq_eps;    // non-zero elements in the implicit Zq_eps matrix (at quadpoints plus time shift of epsilon)
+  int<lower=0> v_Zq_eps[num_non_zero_Zq_eps]; // column indices for w (at quadpoints plus time shift of epsilon)
+  int<lower=0> u_Zq_eps[(M*nrow_y_Xq*((sum_has_assoc_es + sum_has_assoc_cs) > 0) + 1)]; 
+    // where the non-zeros start in each row (at quadpoints plus time shift of epsilon)
 
   // data for random effects model
   int<lower=1> t;     	        // num. of grouping factors
@@ -936,6 +947,7 @@ data {
   vector<lower=0>[a_K]   priorAssoc_df;
   vector<lower=0>[sum_y_has_dispersion] priorLong_scale_for_dispersion;
   real<lower=0> priorEvent_scale_for_weibull[basehaz_weibull];
+  vector<lower=0>[splines_df] priorEvent_scale_for_splines;
  
   // hyperparameters for random effects model
   vector<lower=0>[t] shape; 
@@ -1085,7 +1097,7 @@ parameters {
   real e_gamma[e_has_intercept];          // intercept (event model)
   vector[e_K] e_z_beta;                   // primative coefs (event submodel)
   real<lower=0> weibull_shape_unscaled[basehaz_weibull];  // unscaled weibull shape parameter 
-  vector[splines_df] splines_coefs;       // coefs for cubic splines baseline hazard
+  vector[splines_df] splines_coefs_unscaled;       // unscaled coefs for cubic splines baseline hazard
  
   // parameters for association structure
   vector[a_K] a_z_beta;   // primative coefs
@@ -1114,11 +1126,12 @@ transformed parameters {
   // parameters for event submodel
   vector[e_K] e_beta; 
   real weibull_shape[basehaz_weibull];
+  vector[splines_df] splines_coefs;     
   
   // parameters for GK quadrature  
   vector[(M*nrow_y_Xq)] y_eta_q;          // linear predictor (all long submodels) evaluated at quadpoints
-  vector[(M*nrow_y_Xq)*(sum_has_assoc_es > 0)] 
-    dydt_eta_q;       // slope of linear predictor (all long submodels) evaluated at quadpoints
+  vector[(M*nrow_y_Xq)*((sum_has_assoc_es + sum_has_assoc_cs) > 0)] y_eta_q_eps; 
+    // linear predictor (all long submodels) evaluated at quadpoints plus time shift of epsilon
   vector[nrow_e_Xq] e_eta_q;      // linear predictor (event submodel) evaluated at quadpoints
   vector[nrow_e_Xq] log_basehaz;      // baseline hazard evaluated at quadpoints
   vector[nrow_e_Xq] ll_haz_q;     // log hazard contribution to the log likelihood for the event model at event time and quad points
@@ -1209,6 +1222,8 @@ transformed parameters {
     if (priorEvent_scale_for_weibull[1] > 0)
       weibull_shape[1] = priorEvent_scale_for_weibull[1] * weibull_shape_unscaled[1];
     else weibull_shape[1] = weibull_shape_unscaled[1];
+  } else if (basehaz_splines == 1) {
+    splines_coefs = priorEvent_scale_for_splines .* splines_coefs_unscaled;
   }   
   
   // parameters for association structure
@@ -1250,34 +1265,19 @@ transformed parameters {
   // GK quadrature
   //===============
  
+ 
   // Longitudinal submodel(s): linear predictor at event and quad times
   if (sum_y_K > 0) y_eta_q = y_Xq * y_beta;
   else y_eta_q = rep_vector(0.0, (M*nrow_y_Xq));
   //if (y_has_offset == 1) y_eta_q = y_eta_q + y_offset;
   y_eta_q = y_eta_q + csr_matrix_times_vector((M*nrow_y_Xq), len_b, w_Zq, v_Zq, u_Zq, b_by_model);
-  for (m in 1:M) {
-    if (y_has_intercept[m] == 1) {
-      if (y_has_intercept_unbound[m] == 1) 
-        y_eta_q = y_eta_q +
-                           y_gamma_unbound[sum(y_has_intercept_unbound[1:m])];
-      else if (y_has_intercept_lobound[m] == 1)
-        y_eta_q = y_eta_q - min(y_eta_q) + 
-                           y_gamma_lobound[sum(y_has_intercept_lobound[1:m])];
-	  else if (y_has_intercept_upbound[m] == 1)
-        y_eta_q = y_eta_q - max(y_eta_q) + 
-                           y_gamma_lobound[sum(y_has_intercept_lobound[1:m])];
-    }
-    else if (y_centre == 1) {
-      // correction to eta if model has no intercept (and X is centered)
-      y_eta_q = y_eta_q + dot_product(y_xbar, y_beta); 
-    }
-  }
+
   // Longitudinal submodel(s): slope of linear predictor at event and quad times
-  if (sum_has_assoc_es > 0) {
-    if (sum_y_K > 0) dydt_eta_q = y_dXdtq * y_beta;
-    else dydt_eta_q = rep_vector(0.0, (M*nrow_y_Xq));
-    // !!! if (y_has_offset == 1) y_eta_q = y_eta_q + y_offset; # ignore offset in derivative?
-    dydt_eta_q = dydt_eta_q + csr_matrix_times_vector((M*nrow_y_Xq), len_b, w_dZdtq, v_dZdtq, u_dZdtq, b_by_model);
+  if ((sum_has_assoc_es > 0) || (sum_has_assoc_cs > 0)) {
+    if (sum_y_K > 0) y_eta_q_eps = y_Xq_eps * y_beta;
+    else y_eta_q_eps = rep_vector(0.0, (M*nrow_y_Xq));
+    // !!! if (y_has_offset == 1) y_eta_q_eps = y_eta_q_eps + y_offset; # ignore offset in derivative?
+    y_eta_q_eps = y_eta_q_eps + csr_matrix_times_vector((M*nrow_y_Xq), len_b, w_Zq_eps, v_Zq_eps, u_Zq_eps, b_by_model);
   }
   // Event submodel: linear predictor at event and quad times
   if (e_K > 0) e_eta_q = e_Xq * e_beta;
@@ -1289,38 +1289,113 @@ transformed parameters {
     // correction to eta if model has no intercept (because X is centered)
     e_eta_q = e_eta_q + dot_product(e_xbar, e_beta); 
   }
+  
   if (assoc == 1) {
     int mark;
 	  mark = 0;
     for (m in 1:M) {
+      vector[nrow_y_Xq] ysep_q;         // expected long. outcome at event and quad times   
+      vector[nrow_y_Xq] ysep_q_eps;     // expected long. outcome at event and quad times plus time shift of epsilon 
+      
+      # Prep work for association structures
+      
+      # Linear predictor
+      if (y_has_intercept[m] == 1) {
+        if (y_has_intercept_unbound[m] == 1) 
+          y_eta_q = y_eta_q +
+                             y_gamma_unbound[sum(y_has_intercept_unbound[1:m])];
+        else if (y_has_intercept_lobound[m] == 1)
+          y_eta_q = y_eta_q - min(y_eta_q) + 
+                             y_gamma_lobound[sum(y_has_intercept_lobound[1:m])];
+  	  else if (y_has_intercept_upbound[m] == 1)
+          y_eta_q = y_eta_q - max(y_eta_q) + 
+                             y_gamma_lobound[sum(y_has_intercept_lobound[1:m])];
+      }
+      else if (y_centre == 1) {
+        int mark_beg;
+        int mark_end;
+        if (m == 1) mark_beg = 1;
+        else mark_beg = sum(y_K[1:(m-1)]) + 1;
+        mark_end = sum(y_K[1:m]);   
+        // correction to eta if model has no intercept (and X is centered)
+        y_eta_q = y_eta_q + 
+              dot_product(y_xbar[mark_beg:mark_end], y_beta[mark_beg:mark_end]); 
+      }
+      
+      # Linear predictor at time plus epsilon
+      if ((has_assoc_es[m] == 1) || (has_assoc_cs[m] == 1)) {
+        if (y_has_intercept[m] == 1) {
+          if (y_has_intercept_unbound[m] == 1) 
+            y_eta_q_eps = y_eta_q_eps +
+                               y_gamma_unbound[sum(y_has_intercept_unbound[1:m])];
+          else if (y_has_intercept_lobound[m] == 1)
+            y_eta_q_eps = y_eta_q_eps - min(y_eta_q_eps) + 
+                               y_gamma_lobound[sum(y_has_intercept_lobound[1:m])];
+    	    else if (y_has_intercept_upbound[m] == 1)
+            y_eta_q_eps = y_eta_q_eps - max(y_eta_q_eps) + 
+                               y_gamma_lobound[sum(y_has_intercept_lobound[1:m])];
+        }
+        else if (y_centre == 1) {
+          int mark_beg;
+          int mark_end;
+          if (m == 1) mark_beg = 1;
+          else mark_beg = sum(y_K[1:(m-1)]) + 1;
+          mark_end = sum(y_K[1:m]);   
+          // correction to eta if model has no intercept (and X is centered)
+          y_eta_q_eps = y_eta_q_eps + 
+                dot_product(y_xbar[mark_beg:mark_end], y_beta[mark_beg:mark_end]); 
+        }
+      } 
+      
+      # Expected value 
+      if ((has_assoc_cv[m] == 1) || (has_assoc_cs[m] == 1)) {
+        if (family[m] == 1) 
+          ysep_q = linkinv_gauss(y_eta_q, link[m]);
+        else if (family[m] == 2) 
+          ysep_q = linkinv_gamma(y_eta_q, link[m]);
+        else if (family[m] == 3)
+          ysep_q = linkinv_inv_gaussian(y_eta_q, link[m]);
+        else if (family[m] == 4)
+          ysep_q = linkinv_bern(y_eta_q, link[m]);	
+        else if (family[m] == 5)		  
+		      ysep_q = linkinv_binom(y_eta_q, link[m]); 
+      }	      
+      
+      # Expected value at time plus epsilon
+       if (has_assoc_cs[m] == 1) {
+        if (family[m] == 1) 
+          ysep_q_eps = linkinv_gauss(y_eta_q_eps, link[m]);
+        else if (family[m] == 2) 
+          ysep_q_eps = linkinv_gamma(y_eta_q_eps, link[m]);
+        else if (family[m] == 3)
+          ysep_q_eps = linkinv_inv_gaussian(y_eta_q_eps, link[m]);
+        else if (family[m] == 4)
+          ysep_q_eps = linkinv_bern(y_eta_q_eps, link[m]);	
+        else if (family[m] == 5)		  
+		      ysep_q_eps = linkinv_binom(y_eta_q_eps, link[m]); 
+      }	     
+
+      # Evaluate association structures
       if (has_assoc_ev[m] == 1) {
         mark = mark + 1;
 	      e_eta_q = e_eta_q + a_beta[mark] * y_eta_q;
       }	
-      if (has_assoc_es[m] == 1) {
-        mark = mark + 1;
-	      e_eta_q = e_eta_q + a_beta[mark] * dydt_eta_q[m]; 
-      }	
       if (has_assoc_cv[m] == 1) {
-        vector[nrow_y_Xq] y_q;  // expected long. outcome at event and quad times   
         mark = mark + 1;
-        if (family[m] == 1) 
-          y_q = linkinv_gauss(y_eta_q, link[m]);
-        else if (family[m] == 2) 
-          y_q = linkinv_gamma(y_eta_q, link[m]);
-        else if (family[m] == 3)
-          y_q = linkinv_inv_gaussian(y_eta_q, link[m]);
-        else if (family[m] == 4)
-          y_q = linkinv_bern(y_eta_q, link[m]);	
-        else if (family[m] == 5)		  
-		  y_q = linkinv_binom(y_eta_q, link[m]); 
-        e_eta_q = e_eta_q + a_beta[mark] * y_q; 
-      }				
+        e_eta_q = e_eta_q + a_beta[mark] * ysep_q; 
+      }	
+      if (has_assoc_es[m] == 1) {
+        vector[nrow_y_Xq] dydt_eta_q;
+        dydt_eta_q = (y_eta_q_eps - y_eta_q) / eps;
+        mark = mark + 1;
+        e_eta_q = e_eta_q + a_beta[mark] * dydt_eta_q;          
+      }
       if (has_assoc_cs[m] == 1) {
+        vector[nrow_y_Xq] dydt_q;
+        dydt_q = (ysep_q_eps - ysep_q) / eps;
         mark = mark + 1;
-	      // NEED TO CALCULATE SLOPE
-	      //e_eta_q = e_eta_q + a_beta[mark] * dydtsep_q[m];
-      }				
+        e_eta_q = e_eta_q + a_beta[mark] * dydt_q;          
+      }	
     }
   	if (sum_size_which_b > 0) {
   	  int mark_end;  // used to define segment of a_beta
@@ -1636,7 +1711,11 @@ model {
   // Log-prior for Weibull shape
   if (basehaz_weibull == 1) 
     target += cauchy_lpdf(weibull_shape_unscaled | 0, 1);   
-  
+    
+  // Log-prior for baseline hazard spline coefficients 
+  if (basehaz_splines == 1) 
+    target += normal_lpdf(splines_coefs_unscaled | 0, 1);
+    
   // Prior for random effects model
   if (t > 0) decov_lp(z_b, z_T, rho, zeta, tau, 
                       regularization, delta, shape, t, p);

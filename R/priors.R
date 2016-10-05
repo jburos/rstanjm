@@ -76,7 +76,8 @@ priorEvent_options <- function(prior_scale_for_weibull = 5,
                                scaled = TRUE) {
   rstanarm:::validate_parameter_value(prior_scale_for_weibull)
   rstanarm:::validate_parameter_value(min_prior_scale)
-  rstanarm:::nlist(scaled, min_prior_scale, prior_scale_for_weibull)
+  rstanarm:::nlist(scaled, min_prior_scale, prior_scale_for_weibull, 
+                   prior_scale_for_splines)
 }
 
 #' @rdname priors

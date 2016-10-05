@@ -115,9 +115,10 @@
 #'   It is ignored if \code{marginalised} is set to \code{TRUE}.
 #' 
 posterior_survfit <- function(object, newdataEvent = NULL, newdataLong = NULL, ids,  
-                              times = NULL, condition = TRUE, extrapolate = TRUE, 
+                              times = NULL, limits = c(.025, .975), 
+                              condition = TRUE, extrapolate = TRUE, 
                               extrapolate_args = list(dist = NULL, prop = 0.5, 
-                                                      increments = 25), 
+                                                      increments = 15), 
                               marginalised = FALSE, 
                               draws = NULL, fun = NULL, seed = NULL, ...) {
   validate_stanjm_object(object)
@@ -237,6 +238,7 @@ posterior_survfit <- function(object, newdataEvent = NULL, newdataLong = NULL, i
 
   # List of ordered ids
   id_list <- unique(newdataEvent[[id_var]])
+  id_class <- class(id_list)
   
   surv <- lapply(time_seq, function(x) {
     dat <- ps_data(object,
@@ -264,23 +266,36 @@ posterior_survfit <- function(object, newdataEvent = NULL, newdataLong = NULL, i
     #  surv <- do.call(fun, list(surv))
     surv
   })
-  # If marginal survprob then time_seq is same for all ids
-  if (marginalised) {
-    time_seq <- lapply(time_seq, unique)
-  }
   # Optionally condition on first survprob matrix (increment 0)
   if (condition) {
     surv <- lapply(surv, function(x) x / surv[[1]])
   }
-  names(surv) <- names(time_seq) <- paste0("increment", 0:inc)
-  #if (length(time_seq) == 1L) {
-  #  time_seq <- unlist(time_seq)
-  #  survprobs <- unlist(survprobs)    
-  #}
-
-  out <- list(times = time_seq, survprobs = surv)
-  class(out) <- "survfit.stanjm"
-  structure(out, n_increments = inc,
+  # Summarise posterior draws to get median and ci
+  out <- do.call("rbind", 
+    lapply(seq_along(surv), function(x, limits, id_list, marginalised, 
+                                     id_var, time_var) {
+      surv_med <- apply(surv[[x]], 2, median)
+      surv_lb <- apply(surv[[x]], 2, quantile, limits[1]) 
+      surv_ub <- apply(surv[[x]], 2, quantile, limits[2])  
+      out <- cbind(IDVAR = if (!marginalised) id_list, 
+                   TIMEVAR = if (!marginalised) time_seq[[x]] else unique(time_seq[[x]]),
+                   surv_med, surv_lb, surv_ub)
+      out
+    }, limits = limits, id_list = id_list, marginalised = marginalised, 
+       id_var = id_var, time_var = time_var))
+  rownames(out) <- NULL
+  colnames(out) <- c(if ("IDVAR" %in% colnames(out)) id_var,
+                     time_var, "survpred", "ci_lb", "ci_ub")    
+  if (id_var %in% colnames(out)) {  # data has id column -- sort by id and time
+    out <- out[order(out[, id_var, drop = F], out[, time_var, drop = F]), , drop = F]
+  } else { # data does not have id column -- sort by time only
+    out <- out[order(out[, time_var, drop = F]), , drop = F]
+  }
+  out <- data.frame(out)
+  if (id_var %in% names(out)) class(out[[id_var]]) <- id_class
+  
+  class(out) <- c("survfit.stanjm", "data.frame")
+  structure(out, id_var = id_var, time_var = time_var,
             marginalised = marginalised, condition = condition,
             extrapolate = extrapolate, extrapolate_args = extrapolate_args, 
             ids = id_list, draws = draws, fun = fun, seed = seed)
@@ -388,7 +403,7 @@ ps_survcalc <- function(object, data, draws = NULL) {
   }
 
   # Baseline hazard
-  if (object$base_haz == "weibull") {
+  if (object$base_haz$type == "weibull") {
     shape <- stanmat[, nms$e_extra, drop = FALSE]
     if (some_draws) 
       shape <- shape[samp, , drop = FALSE] 
@@ -396,13 +411,15 @@ ps_survcalc <- function(object, data, draws = NULL) {
       # returns S x Npat matrix
       as.vector(log(shape)) + (shape - 1) %*% matrix(log(x), nrow = 1)
     })
-  } else if (object$base_haz == "splines") {
+  } else if (object$base_haz$type == "splines") {
     coefs <- stanmat[, nms$e_extra, drop = FALSE]
     if (some_draws) 
       coefs <- coefs[samp, , drop = FALSE] 
     log_basehaz <- lapply(t_and_tQ, function(x) {
       # returns S x Npat matrix
-      coefs %*% t(ns(x, object$df)) # !!! needs to accept df or knots
+      coefs %*% t(ns(x, knots = object$base_haz$splines_attr$knots,
+                     intercept = object$base_haz$splines_attr$intercept,
+                     Boundary.knots = object$base_haz$splines_attr$Boundary.knots))
     })
   }
   log_haz <- mapply(function(x,y) x + y, 
