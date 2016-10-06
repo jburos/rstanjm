@@ -123,4 +123,9 @@ informative_cauchy <- function(scaling = 5) {
   informative_student_t(df = 1, scaling = scaling)
 }
 
-
+#' @rdname priors
+#' @export
+#' 
+lkjcorr <- function(shape = 1, scale = 5) {
+  list(dist = "lkjcorr", shape = shape, scale = scale)
+}
