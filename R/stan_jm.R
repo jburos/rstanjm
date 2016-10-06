@@ -327,7 +327,7 @@ stan_jm <- function(formulaLong, dataLong,
     stop ("Meanfield and fullrank algorithms not yet implemented",
           "for stan_jm")
   if (QR) 
-    stop("QR decomposition not yet implemented for stan_jm")     
+    stop("QR decomposition not yet implemented for stan_jm") 
 #  if ((init == "model_based") && any(unlist(c(centreLong, centreEvent)))) 
 #    stop("Cannot use model based initial values when 'centreLong = TRUE'",
 #         " or 'centreEvent = TRUE'.")  
@@ -455,6 +455,9 @@ stan_jm <- function(formulaLong, dataLong,
          "event outcome.")
   }
   if (length(assoc) != M) assoc <- rep(assoc, M)
+  if ((M > 1) && (prior_covariance$dist == "lkjcorr"))
+    stop("LKJ prior cannot be used for models with more than one ",
+         "clustering level.", call. = FALSE)
   
   # Check family and link
   supported_families <- c("binomial", "gaussian", "Gamma", "inverse.gaussian",
@@ -1506,15 +1509,21 @@ stan_jm <- function(formulaLong, dataLong,
   standata$u_Zq_eps <- as.array(parts_Zq_eps$u)    
   
   # hyperparameters for random effects model
-  decov_args <- prior_covariance
-  standata$shape <- as.array(rstanarm:::maybe_broadcast(decov_args$shape, t))
-  standata$scale <- as.array(rstanarm:::maybe_broadcast(decov_args$scale, t))
-  standata$len_concentration <- sum(p[p > 1])
-  standata$concentration <- 
-    as.array(rstanarm:::maybe_broadcast(decov_args$concentration, sum(p[p > 1])))
-  standata$len_regularization <- sum(p > 1)
-  standata$regularization <- 
-    as.array(rstanarm:::maybe_broadcast(decov_args$regularization, sum(p > 1))) 
+  if (prior_covariance$dist == "decov") {
+    decov_args <- prior_covariance
+    standata$shape <- as.array(rstanarm:::maybe_broadcast(decov_args$shape, t))
+    standata$scale <- as.array(rstanarm:::maybe_broadcast(decov_args$scale, t))
+    standata$len_concentration <- sum(p[p > 1])
+    standata$concentration <- 
+      as.array(rstanarm:::maybe_broadcast(decov_args$concentration, sum(p[p > 1])))
+    standata$len_regularization <- sum(p > 1)
+    standata$regularization <- 
+      as.array(rstanarm:::maybe_broadcast(decov_args$regularization, sum(p > 1))) 
+  } else if (prior_covariance$dist == "lkjcorr") {
+    lkj_args <- prior_covariance
+    standata$lkj_shape <- as.array(rstanarm:::maybe_broadcast(lkj_args$shape, t))
+    standata$prior_scale_for_sd_b <- as.array(rstanarm:::maybe_broadcast(lkj_args$scale, sum(p)))
+  }
 
   standata$family <- as.array(sapply(1:M, function(x) {
                        return_fam <- switch(family[[x]]$family, 
@@ -1583,8 +1592,7 @@ stan_jm <- function(formulaLong, dataLong,
         }
       }
     } else if (prior_covariance$dist == "lkjcorr") { 
-      sd_b_unscaled <- (unlist(sd_b)) / prior_scale_for_sd_b
-      
+      sd_b_unscaled <- (unlist(sd_b)) / standata$prior_scale_for_sd_b
     }
     
     model_based_inits <- Filter(function(x) (!is.null(x)), c(
@@ -1631,7 +1639,7 @@ stan_jm <- function(formulaLong, dataLong,
   #===========
 
   # call stan() to draw from posterior distribution
-  stanfit <- if (M == 0) stanmodels$jmuni else stanmodels$jm
+  stanfit <- if (prior_covariance$dist == "lkjcorr") stanmodels$jmlkjcorr else stanmodels$jm
   pars <- c(if (sum_y_has_intercept_unbound) "y_gamma_unbound",
             if (sum_y_has_intercept_lobound) "y_gamma_lobound",
             if (sum_y_has_intercept_upbound) "y_gamma_upbound",
