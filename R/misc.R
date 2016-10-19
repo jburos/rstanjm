@@ -63,7 +63,7 @@ collect_nms <- function(x, M, ...) {
       grep(paste0("^Long", m, "\\|overdispersion"), x, ...)))             
   y <- lapply(1:M, function(m) setdiff(y[[m]], y_extra[[m]]))
   e <- grep(mod2rx("^Event"), x, ...)     
-  e_extra <- c(grep("^Event\\|weibull\\sshape|^Event\\|basehaz\\scoef", x, ...))         
+  e_extra <- c(grep("^Event\\|weibull-shape|^Event\\|basehaz-coef", x, ...))         
   e <- setdiff(e, e_extra)
   a <- grep(mod2rx("^Assoc"), x, ...)
   b <- b_names(x, ...)

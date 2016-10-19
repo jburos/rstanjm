@@ -32,7 +32,7 @@
 #'   geom_point facet_wrap geom_vline labs ggplot_build theme_bw
 plot.predict.stanjm <- function(object, ids = NULL, limits = c("ci", "pi", "none"), 
                                 xlab = NULL, ylab = NULL, 
-                                abline = TRUE, plot_observed = TRUE, facet_scales = "free_x", 
+                                abline = FALSE, plot_observed = FALSE, facet_scales = "free_x", 
                                 ci_geom_args = NULL, ...) {
   
   limits <- match.arg(limits)
@@ -75,7 +75,7 @@ plot.predict.stanjm <- function(object, ids = NULL, limits = c("ci", "pi", "none
          "estimate marginal longitudinal trajectories or those based on ",
          "specifying the 'newdata' argument.")
   } else if (length(ids) > 1L) {
-    geom_mapp <- list(mapping = aes_string(x = "time", y = "ypred"), 
+    geom_mapp <- list(mapping = aes_string(x = "time", y = "yfit"), 
                       data = plot_dat)
     graph <- ggplot() + theme_bw() +
                do.call("geom_smooth", c(geom_mapp, geom_args)) +
@@ -99,7 +99,7 @@ plot.predict.stanjm <- function(object, ids = NULL, limits = c("ci", "pi", "none
       graph_limits <- do.call("geom_ribbon", c(lim_mapp, lim_args))
     } else graph_limits <- NULL
   } else {
-    geom_mapp <- list(mapping = aes_string(x = "time", y = "ypred"), 
+    geom_mapp <- list(mapping = aes_string(x = "time", y = "yfit"), 
                       data = plot_dat)
     graph <- ggplot() + theme_bw() + 
                do.call("geom_smooth", c(geom_mapp, geom_args))

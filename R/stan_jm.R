@@ -288,6 +288,7 @@
 #'
 #' @export
 #' @import data.table
+#' @importFrom lme4 glmer
 #' @importFrom rstanarm normal student_t cauchy hs hs_plus decov
 #' @importFrom survival Surv
 #' 
@@ -309,7 +310,7 @@ stan_jm <- function(formulaLong, dataLong,
 					          priorAssoc = normal(),
 					          priorAssoc_ops = priorAssoc_options(),
                     prior_covariance = decov(), prior_PD = FALSE,
-                    adapt_delta = 0.75, QR = FALSE, 
+					          adapt_delta = 0.75, max_treedepth = 10L, QR = FALSE, 
 					          algorithm = c("sampling", "meanfield", "fullrank")) {
 
 
@@ -345,7 +346,8 @@ stan_jm <- function(formulaLong, dataLong,
     mc$priorAssoc <- mc$priorAssoc_ops <-
     mc$prior_covariance <- mc$prior_PD <- mc$algorithm <- mc$scale <- 
     mc$concentration <- mc$shape <-
-    mc$adapt_delta <- mc$... <- mc$QR <- NULL
+    mc$adapt_delta <- mc$max_treedepth <- 
+    mc$... <- mc$QR <- NULL
   
   # Create call for longitudinal submodel  
   y_mc <- mc
@@ -558,6 +560,10 @@ stan_jm <- function(formulaLong, dataLong,
       m_mc[[m]][[1]] <- quote(lme4::lmer)
       m_mc[[m]]$family <- NULL
       m_mc[[m]]$control <- get_control_args()
+    } else if (family[[m]]$family == "neg_binomial_2") {
+      m_mc[[m]][[1]] <- quote(lme4::glmer.nb)
+      m_mc[[m]]$family <- NULL
+      m_mc[[m]]$control <- get_control_args(glmer = TRUE)               
     } else {
       m_mc[[m]][[1]] <- quote(lme4::glmer)
       m_mc[[m]]$control <- get_control_args(glmer = TRUE)               
@@ -796,7 +802,7 @@ stan_jm <- function(formulaLong, dataLong,
   e_mc$x <- TRUE
   e_mod <- eval(e_mc, parent.frame())
   e_fr <- e_mf <- expand.model.frame(e_mod, id_var, na.expand = TRUE)
-  e_mf <- cbind(unclass(e_mf[,1]), e_mf)
+  e_mf <- cbind(unclass(e_mf[,1]), e_mf[,-1])
 
   # Check ID sorting
   e_id_list <- factor(unique(e_mf[, id_var]))
@@ -817,8 +823,9 @@ stan_jm <- function(formulaLong, dataLong,
     d           <- mf_event$status
     names(eventtime) <- names(d) <- flist_event
     
-    e_mf           <- data.table(cbind(e_y, e_mf), key = c(id_var, "start"))
-    e_mf_eventtime <- e_mf[, .SD[.N], by = e_mf[, id_var]]
+    e_mf           <- data.table(e_mf, key = c(id_var, "start"))
+    e_mf_eventtime <- e_mf[, .SD[.N], by = get(id_var)]
+    e_mf_eventtime <- e_mf_eventtime[, get := NULL]
     # Unstandardised quadrature points
     quadpoint <- lapply(quadpoints$points, FUN = function(x) 
                           (eventtime/2) * x + (eventtime/2))
@@ -832,7 +839,8 @@ stan_jm <- function(formulaLong, dataLong,
     # Design matrix evaluated at event times and quadrature points
     #   NB Here there are time varying covariates in the event submodel and
     #   therefore the design matrix differs depending on the quadrature point 
-    e_x_quadtime   <- update(e_mod, data = e_mf_quadtime)$x
+    fm_RHS <- delete.response(terms(e_mod))
+    e_x_quadtime   <- model.matrix(fm_RHS, data = e_mf_quadtime)
   } else if (attr(e_y, "type") == "right") {
     tvc         <- FALSE 
     mf_event    <- e_mf
@@ -864,7 +872,7 @@ stan_jm <- function(formulaLong, dataLong,
                
   # Incorporate intercept term (since Cox model does not have intercept)
   # -- depends on baseline hazard
-  if (base_haz_weibull)
+  if (base_haz_weibull & (!"(Intercept)" %in% colnames(e_x_quadtime)))
     e_x_quadtime  <- cbind("(Intercept)" = rep(1, NROW(e_x_quadtime)), e_x_quadtime)
 
   # Centering of design matrix for event model
@@ -1521,10 +1529,10 @@ stan_jm <- function(formulaLong, dataLong,
                             gaussian = 1L, 
                             Gamma = 2L,
                             inverse.gaussian = 3L,
-                            binomial = 4L,
+                            binomial = 5L,
                             poisson = 6L,
                             "neg_binomial_2" = 7L)
-                       if (is_bernoulli[[x]]) return_fam <- 5L
+                       if (is_bernoulli[[x]]) return_fam <- 4L
                        return_fam}))
   standata$any_fam_3 <- as.integer(any(standata$family == 3L))
   
@@ -1645,21 +1653,24 @@ stan_jm <- function(formulaLong, dataLong,
             if (Npat) "b_by_model",
             "y_dispersion", 
             if (base_haz_weibull) "weibull_shape",
-            if (base_haz_splines) "splines_coefs")
-           #"mean_PPD"
+            if (base_haz_splines) "splines_coefs",
+            #"mean_PPD",
+            "theta_L")
 
   #cat("\n--> Fitting joint model now...")
   cat("\nPlease note the warmup phase may be much slower than",
       "later iterations!\n")             
   sampling_args <- rstanarm:::set_sampling_args(
     object = stanfit, 
-    prior = priorLong, # determines default adapt_delta value?
+    prior = NULL, # determines default adapt_delta value
     user_dots = list(...), 
-    user_adapt_delta = adapt_delta, 
+    user_adapt_delta = adapt_delta,
     data = standata, 
     pars = pars, 
     init = init,
     show_messages = FALSE)
+  sampling_args$control$max_treedepth <- max_treedepth  
+  sampling_args$save_warmup <- TRUE
   stanfit <- do.call(sampling, sampling_args)
 
   if (QR) {  # not yet implemented for stan_jm
@@ -1677,16 +1688,16 @@ stan_jm <- function(formulaLong, dataLong,
   int_nms <- unlist(lapply(1:M, function(x) 
                     if (y_has_intercept[x]) paste0("Long", x, "|(Intercept)")))
   y_nms   <- unlist(lapply(1:M, function(x) 
-                    paste0("Long", x, "|", colnames(xtemp[[x]]))))
-  e_nms   <- paste0("Event|", colnames(e_x))    
+                    if (ncol(xtemp[[x]])) paste0("Long", x, "|", colnames(xtemp[[x]]))))
+  e_nms   <- if (ncol(e_x)) paste0("Event|", colnames(e_x))    
   
   # Names for vector of association parameters
   a_nms <- character()  
   for (m in 1:M) {
-    if (has_assoc$etavalue[m]) a_nms <- c(a_nms, paste0("Assoc|Long", m,":eta value"))
-    if (has_assoc$muvalue[m]) a_nms <- c(a_nms, paste0("Assoc|Long", m,":mu value"))
-    if (has_assoc$etaslope[m]) a_nms <- c(a_nms, paste0("Assoc|Long", m,":eta slope"))
-    if (has_assoc$muslope[m]) a_nms <- c(a_nms, paste0("Assoc|Long", m,":mu slope"))
+    if (has_assoc$etavalue[m]) a_nms <- c(a_nms, paste0("Assoc|Long", m,":eta-value"))
+    if (has_assoc$muvalue[m]) a_nms <- c(a_nms, paste0("Assoc|Long", m,":mu-value"))
+    if (has_assoc$etaslope[m]) a_nms <- c(a_nms, paste0("Assoc|Long", m,":eta-slope"))
+    if (has_assoc$muslope[m]) a_nms <- c(a_nms, paste0("Assoc|Long", m,":mu-slope"))
   }
   if (sum(size_which_b)) {
     temp_g_nms <- lapply(1:M, FUN = function(m) {
@@ -1710,9 +1721,10 @@ stan_jm <- function(formulaLong, dataLong,
                  a_nms,                   
                  if (length(group)) c(paste0("b[", b_nms, "]")),
                  d_nms,
-                 if (base_haz_weibull) "Event|weibull shape",               
-                 if (base_haz_splines) paste0("Event|basehaz coef", seq(splines_df)),               
-                #"mean_PPD", 
+                 if (base_haz_weibull) "Event|weibull-shape",               
+                 if (base_haz_splines) paste0("Event|basehaz-coef", seq(splines_df)),               
+                #"mean_PPD",
+                 paste0("theta_L", seq(standata$len_theta_L)),
                  "log-posterior")
   stanfit@sim$fnames_oi <- new_names
   
