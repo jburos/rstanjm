@@ -64,9 +64,7 @@
 #'   be set to \code{TRUE} if \code{marginalised} is set to \code{TRUE}.
 #' @param extrapolate A logical specifying whether to extrapolate the estimated 
 #'   survival function beyond the times specified in the \code{times} argument
-#'   (which will default to the latest observation time -- measurement, event or
-#'   censoring time -- if left equal to \code{NULL} and \code{marginalised = FALSE}).
-#'   If set to \code{TRUE} then the predictions can be further controlled using
+#'   If \code{TRUE} then the extrapolation can be further controlled using
 #'   the \code{extrapolate_args} argument.
 #' @param extrapolate_args A named list with parameters controlling extrapolation 
 #'   of the estimated survival function when \code{extrapolate = TRUE}. The list
@@ -128,8 +126,8 @@ posterior_survfit <- function(object, newdataEvent = NULL, newdataLong = NULL, i
   if (missing(ids)) ids <- NULL
   if (marginalised) {
     if (condition || extrapolate)
-      cat("'marginalised' survival predictions were requested, therefore, ",
-          "'condition' and 'extrapolate' will both automatically be set ",
+      cat("'marginalised' survival predictions were requested, therefore",
+          "'condition' and 'extrapolate' will both automatically be set",
           "to FALSE.")
       condition <- extrapolate <- FALSE
     if ((!is.null(times)) && (length(times) > 1L))
@@ -177,9 +175,11 @@ posterior_survfit <- function(object, newdataEvent = NULL, newdataLong = NULL, i
       if (!id_var %in% colnames(x))
         stop("id_var from the original model call must appear in all ",
              "newdata data frames.")
+    }) 
+    lapply(newdataLong, function(x) {
       if (!time_var %in% colnames(x))
         stop("time_var from the original model call must appear in all ",
-             "newdata data frames.")
+             "newdataLong data frames.")
     })    
     if (!is.null(ids)) {
       newdataEvent <- newdataEvent[newdataEvent[[id_var]] %in% ids,]
@@ -190,7 +190,7 @@ posterior_survfit <- function(object, newdataEvent = NULL, newdataLong = NULL, i
     lapply(newdataLong, function(x) 
       if (any(is.na(x)))
         stop("Currently NAs are not allowed in 'newdataLong'."))
-    ids_and_times <- do.call(rbind, lapply(c(newdataLong, list(newdataEvent)), 
+    ids_and_times <- do.call(rbind, lapply(newdataLong, 
                        function(x) x[, c(id_var, time_var)]))
     # Latest known observation time for each individual
     lasttime <- tapply(ids_and_times[[time_var]], ids_and_times[[id_var]], FUN = max)
@@ -268,7 +268,10 @@ posterior_survfit <- function(object, newdataEvent = NULL, newdataLong = NULL, i
   })
   # Optionally condition on first survprob matrix (increment 0)
   if (condition) {
-    surv <- lapply(surv, function(x) x / surv[[1]])
+    surv <- lapply(surv, function(x) {
+      vec <- x / surv[[1]]
+      vec[is.na(vec)] <- 1
+      vec})
   }
   # Summarise posterior draws to get median and ci
   out <- do.call("rbind", 

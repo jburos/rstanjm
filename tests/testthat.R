@@ -1,5 +1,6 @@
-# Part of the rstanarm package for estimating model parameters
-# Copyright (C) 2015, 2016 Trustees of Columbia University
+# Part of the rstanjm package
+# Copyright (C) 2015 Trustees of Columbia University
+# Copyright (C) 2016 Sam Brilleman
 # 
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -15,17 +16,8 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
-.onLoad <- function(libname, pkgname) { # nocov start
-  #if (!("methods" %in% .packages())) attachNamespace("methods")
-  #loadRcppModules()
-  modules <- paste0("stan_fit4", names(stanmodels), "_mod")
-  for (m in modules) loadModule(m, what = TRUE)
-} # nocov end
-
-.onAttach <- function(...) {
-  rstanjmLib <- dirname(system.file(package = "rstanjm"))
-  pkgdesc <- utils::packageDescription("rstanjm", lib.loc = rstanjmLib)
-  builddate <- gsub(';.*$', '', pkgdesc$Packaged)
-  packageStartupMessage(paste("rstanjm (Version ", pkgdesc$Version, ", packaged: ", builddate, ")", sep = ""))
-}
-
+library(testthat)
+library(rstanjm)
+Sys.unsetenv("R_TESTS")
+example(example_jm)
+if (!grepl("^sparc",  R.version$platform)) test_check("rstanjm")

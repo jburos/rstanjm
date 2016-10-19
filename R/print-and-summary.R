@@ -187,7 +187,7 @@ print.stanjm <- function(x, digits = 3, ...) {
 #'
 #' # Only show the association parameter for the current
 #' # value of the linear predictor from the longitudinal submodel
-#' summary(example_jm, pars = "Assoc|Long1:eta value")
+#' summary(example_jm, pars = "Assoc|Long1:eta-value")
 #' # or since there is only one association parameter in the 
 #' # model we can just use the following shortcut
 #' summary(example_jm, pars = "assoc")

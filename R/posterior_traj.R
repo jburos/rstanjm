@@ -220,7 +220,7 @@ posterior_traj <- function(object, m = 1, newdata = NULL, ids,
   xvars <- rownames(attr(Terms, "factors"))[-attr(Terms, "response")]
   dat <- if (length(xvars)) as.data.frame(newdata)[, xvars, drop = FALSE] else NULL
   class(dat[[id_var]]) <- id_class
-  out <- data.frame(cbind(dat, ypred = ytilde_med, 
+  out <- data.frame(cbind(dat, yfit = mutilde_med, 
                           ci_lb = mutilde_lb, ci_ub = mutilde_ub,
                           pi_lb = ytilde_lb, pi_ub = ytilde_ub))
   

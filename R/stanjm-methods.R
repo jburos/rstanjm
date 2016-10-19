@@ -139,7 +139,11 @@ fitted.stanjm <- function(object, ...)  {
 #' @param ... Arguments to methods. For example the
 #'   \code{\link[=stanjm-methods]{stanjm}} method accepts the arguments
 #'   \code{newdataLong} and \code{newdataEvent}.
-#' @return Pointwise log-likelihood matrix.
+#' @return The \eqn{S} by \eqn{N} pointwise log-likelihood matrix,
+#'   where \eqn{S} is the size of the posterior sample and \eqn{N} is the number
+#'   of individuals in the fitted model. The likelihood for a single individual 
+#'   is therefore the sum of the likelihood contributions from their observed
+#'   longitudinal measurements and their event time data.
 #' @seealso \code{\link{log_lik.stanjm}}
 #' 
 log_lik <- function(object, ...) UseMethod("log_lik")
@@ -150,17 +154,30 @@ log_lik <- function(object, ...) UseMethod("log_lik")
 #'   of new data (e.g. holdout data) to use when evaluating the log-likelihood. 
 #'   See the description of \code{newdataLong} and \code{newdataEvent} for 
 #'   \code{\link{posterior_survfit}}.
-log_lik.stanjm <- function(object, newdata = NULL, ...) {
-  stop("'loglik' method not yet implemented")
-  if (!is.null(newdata)) {
-    newdata <- as.data.frame(newdata)
+log_lik.stanjm <- function(object, newdataLong = NULL, newdataEvent = NULL, ...) {
+  
+  M <- object$n_markers
+  
+  if (!is.null(newdataLong)) {
+    stop("'loglik' method not yet implemented for new data.", call. = FALSE)
+    if (!is(newdataLong, "list")) 
+      newdataLong <- list(newdataLong)
+    newdataLong <- lapply(newdataLong, function(x) {
+      x <- as.data.frame(x)
+      if (any(is.na(x))) 
+        stop("Currently NAs are not allowed in 'newdataLong'.") 
+      x})
+    if ((length(newdataLong) == 1L) && (M > 1))
+      newdataLong <- rep(newdataLong, M)
+  } else newdataLong <- rep(list(NULL), M)
+  
+  if (!is.null(newdataEvent)) {
+    stop("'loglik' method not yet implemented for new data.", call. = FALSE)
+    newdataEvent <- as.data.frame(newdataEvent)
+    if (any(is.na(newdataEvent))) 
+      stop("Currently NAs are not allowed in 'newdataEvent'.") 
   }
-  fun <- ll_fun(object)
-  args <- ll_args(object, newdata)
-  sapply(seq_len(args$N), function(i) {
-    as.vector(fun(i = i, data = args$data[i, , drop = FALSE], 
-                  draws = args$draws))
-  })
+  
 }
 
 #' @rdname stanjm-methods

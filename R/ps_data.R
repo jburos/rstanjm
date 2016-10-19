@@ -120,6 +120,8 @@ ps_data <-
   } else {  
     # newdata was specified by user, and therefore must have included 
     # time_var as one of the variables in the data frame
+    if (!time_var %in% colnames(newdata)) 
+      newdata[[time_var]] <- rep(0, nrow(newdata))
     newdata <- data.table::data.table(newdata, key = c(id_var, time_var))
   }
   # Expand newdata based on a rolling merge between newdata at observation
