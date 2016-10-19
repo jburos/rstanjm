@@ -310,7 +310,7 @@ stan_jm <- function(formulaLong, dataLong,
 					          priorAssoc = normal(),
 					          priorAssoc_ops = priorAssoc_options(),
                     prior_covariance = decov(), prior_PD = FALSE,
-					          adapt_delta = 0.75, max_treedepth = 10L, QR = FALSE, 
+					          adapt_delta = 0.75, max_treedepth = 9L, QR = FALSE, 
 					          algorithm = c("sampling", "meanfield", "fullrank")) {
 
 
@@ -548,8 +548,9 @@ stan_jm <- function(formulaLong, dataLong,
   se_y_beta       <- list()  
   y_dispersion    <- c()      # initial values for dispersion
   sd_b            <- list()   # initial values for random effect sds
-  b_Cov           <- list()  # initial values for correlation matrix
+  b_Cov           <- list()   # initial values for correlation matrix
   b_Corr          <- list()   # initial values for correlation matrix
+  ord             <- list()   # ordering of y vector, only present if outcome is bernoulli
 
   for (m in 1:M) {
   
@@ -633,11 +634,12 @@ stan_jm <- function(formulaLong, dataLong,
     
     # Reorder y, X, Z if bernoulli (zeros first)
     if (rstanarm:::is.binomial(family[[m]]$family) && all(y[[m]] %in% 0:1)) {      
-      y[[m]] <- y[[m]][order(y[[m]])]
-      trials[[m]] <- trials[[m]][order(y[[m]])]
-      y_weights[[m]] <- y_weights[[m]][order(y[[m]])]
-      xtemp[[m]] <- xtemp[[m]][order(y[[m]]), , drop = FALSE]  
-      Z[[m]] <- Z[[m]][order(y[[m]]), , drop = FALSE]
+      ord[[m]] <- order(y[[m]])
+      y[[m]] <- y[[m]][ord[[m]]]
+      trials[[m]] <- trials[[m]][ord[[m]]]
+      y_weights[[m]] <- y_weights[[m]][ord[[m]]]
+      xtemp[[m]] <- xtemp[[m]][ord[[m]], , drop = FALSE]  
+      Z[[m]] <- Z[[m]][ord[[m]], , drop = FALSE]
       y_N01[[m]] <- sapply(0:1, function(x) sum(y[[m]] == x))
     } else y_N01[[m]] <- rep(0L, 2)  # dud entry if not bernoulli
     
@@ -1743,6 +1745,17 @@ stan_jm <- function(formulaLong, dataLong,
   splines_attr <- if (base_haz_splines) 
     attributes(splines_basis)[c("degree", "knots", "Boundary.knots", "intercept")] else NULL
   base_haz_attr <- list(type = base_haz, splines_attr = splines_attr)
+  
+  # Undo ordering of matrices if bernoulli
+  for (m in 1:M) {
+    if (is_bernoulli[[m]]) {
+      y[[m]] <- y[[m]][order(ord[[m]])]
+      trials[[m]] <- trials[[m]][order(ord[[m]])]
+      y_weights[[m]] <- y_weights[[m]][order(ord[[m]])]
+      xtemp[[m]] <- xtemp[[m]][order(ord[[m]]), , drop = FALSE]  
+      Z[[m]] <- Z[[m]][order(ord[[m]]), , drop = FALSE]
+    }
+  }
   
   #colnames(Z) <- b_names(names(stanfit), value = TRUE)
   fit <- rstanarm:::nlist(stanfit, family, formula = c(formulaLong, formulaEvent), 

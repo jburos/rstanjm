@@ -13,5 +13,5 @@ RnwWeave: knitr
 LaTeX: pdfLaTeX
 
 BuildType: Package
-PackageInstallArgs: --no-multiarch --with-keep.source --preclean
+PackageInstallArgs: --no-multiarch --with-keep.source --precleanO
 PackageRoxygenize: rd,collate,namespace
