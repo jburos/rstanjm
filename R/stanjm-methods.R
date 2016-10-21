@@ -430,7 +430,7 @@ ranef.stanjm <- function(object, ...) {
                  check.names = FALSE)
     })
     names(ans) <- names(fl)
-    structure(ans, class = "ranef.mer")
+    class(ans) <- c("ranef.mer")
     ans
   })
   ans_list <- list_nms(ans_list, M)

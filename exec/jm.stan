@@ -970,7 +970,7 @@ data {
   int<lower=0,upper=1> y_has_intercept_unbound[M];  // intercept unbounded
   int<lower=0,upper=1> y_has_intercept_lobound[M];  // intercept lower bound at 0
   int<lower=0,upper=1> y_has_intercept_upbound[M];  // intercept upper bound at 0
-  int<lower=0,upper=1> y_has_weights[M];    // 1 = Yes
+  int<lower=0,upper=1> has_weights;    // 1 = Yes
   //int<lower=0,upper=1> y_has_offset;     // 1 = Yes
   int<lower=0,upper=1> y_has_dispersion[M];    // 1 = Yes
   vector[sum_y_real_N] y_real;           // outcome vector, reals                
@@ -1004,6 +1004,8 @@ data {
   vector[num_non_zero_Zq] w_Zq;  // non-zero elements in the implicit Z matrix (at quadpoints)
   int<lower=0> v_Zq[num_non_zero_Zq]; // column indices for w (at quadpoints)
   int<lower=0> u_Zq[(M*nrow_y_Xq+1)]; // where the non-zeros start in each row (at quadpoints)
+  vector[Npat] e_weights;           // weights, set to zero if not used
+  vector[Npat_times_quadnodes] e_weights_rep;   // repeated weights, set to zero if not used
   vector[Npat_times_quadnodes] quadweight_times_half_eventtime;
     
   // data for association structure
@@ -1554,6 +1556,7 @@ transformed parameters {
   // NB assumes Weibull baseline hazard
   if (basehaz_weibull == 1) 
 	  log_basehaz = log(weibull_shape[1]) + (weibull_shape[1] - 1) * e_log_times;
+  // NB assumes splines baseline hazard
   else if (basehaz_splines == 1)
 	  log_basehaz = e_ns_times * splines_coefs;	
   ll_haz_q = e_d .* (log_basehaz + e_eta_q);
@@ -1567,8 +1570,14 @@ transformed parameters {
   ll_surv_eventtime = quadweight_times_half_eventtime .* exp(ll_haz_quadtime);        
 
   // Log likelihood for event model
-  sum_ll_haz_eventtime = sum(ll_haz_eventtime);
-  sum_ll_surv_eventtime = sum(ll_surv_eventtime);
+  if (has_weights == 0) {  # unweighted log likelihood
+    sum_ll_haz_eventtime = sum(ll_haz_eventtime);
+    sum_ll_surv_eventtime = sum(ll_surv_eventtime);
+  } 
+  else {  # weighted log likelihood
+    sum_ll_haz_eventtime = sum(e_weights .* ll_haz_eventtime);
+    sum_ll_surv_eventtime = sum(e_weights_rep .* ll_surv_eventtime);
+  }
   ll_event = sum_ll_haz_eventtime - sum_ll_surv_eventtime;				  
 
 }
@@ -1627,7 +1636,7 @@ model {
 #    }    
     
     // Log-likelihood for longitudinal submodel(s)
-    if (y_has_weights[m] == 0 && prior_PD == 0) { # unweighted log-likelihoods
+    if (has_weights == 0 && prior_PD == 0) { # unweighted log-likelihoods
       if (family[m] == 1) {
         if (link[m] == 1)      target += normal_lpdf(y_real[y_real_beg[m]:y_real_end[m]] | y_eta_tmp, y_dispersion[disp_mark]);
         else if (link[m] == 2) target += lognormal_lpdf(y_real[y_real_beg[m]:y_real_end[m]] | y_eta_tmp, y_dispersion[disp_mark]);
@@ -1718,9 +1727,10 @@ model {
 #    if (y_has_noise[m] == 1)      nois_mark = nois_mark + 1;
   }  
                            
-  // Log-likelihood for event submodel   
-  if (prior_PD == 0) target += ll_event; 
-
+  // Log-likelihood for event submodel  
+  // NB weights already incorporated in ll calculation in transformed param block
+  if (prior_PD == 0) target += ll_event;  
+  
   // Log-priors for coefficients in longitudinal submodel(s)
   if (priorLong_dist == 1) y_z_beta ~ normal(0, 1);
   else if (priorLong_dist == 2) {

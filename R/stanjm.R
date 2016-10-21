@@ -64,8 +64,13 @@ stanjm <- function(object) {
     e_covmat <- cov(e_stanmat)
     rownames(e_covmat) <- colnames(e_covmat) <- rownames(stan_summary)[c(nms$e, nms$a)]
 
+    # Check Rhats for all parameters
     if (object$algorithm == "sampling") 
       rstanarm:::check_rhats(stan_summary[, "Rhat"])
+    
+    # Covariance matrix for fixed effects                    
+    stanmat <- as.matrix(stanfit)[, c(nms$alpha, nms$beta), drop = FALSE]
+    covmat <- cov(stanmat)
   }
   
   # Linear predictor, fitted values
@@ -89,7 +94,7 @@ stanjm <- function(object) {
     fitted.values = list_nms(y_mu, M),
     linear.predictors = list_nms(y_eta, M),
     residuals = list_nms(y_residuals, M), 
-    covmat = list_nms(c(y_covmat, list(e_covmat)), M),
+    covmat = covmat,
     n_markers = M,
     n_subjects = object$Npat,
     n_grps = object$n_grps,

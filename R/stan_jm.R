@@ -81,8 +81,14 @@
 #'   must be provided in \code{subsetLong}.
 #' @param na.action,contrasts Same as \code{\link[stats]{glm}}, but rarely 
 #'   specified.
-#' @param weights,offset Same as \code{\link[stats]{glm}}. Not currently 
-#'   allowed.
+#' @param weights Experimental and should be used with caution. 
+#'   The user can optionally supply a 2-column data frame containing a set of
+#'   'prior weights' to be used in the estimation process. The data frame should
+#'   contain two columns: the first containing the IDs for each individual, and 
+#'   the second containing the corresponding weights. The data frame should only
+#'   have one row for each individual; that is, weights should be constant 
+#'   within individuals.
+#' @param offset Not yet implemented. Same as \code{\link[stats]{glm}}. 
 #' @param centreLong,centreEvent A logical specifying whether the predictor
 #'   matrix for the longitudinal submodel(s) or event submodel should be 
 #'   centred. 
@@ -319,10 +325,8 @@ stan_jm <- function(formulaLong, dataLong,
   #=============================  
   
   # Check for arguments not yet implemented
-#  if (!missing(weights)) 
-#    stop("Weights not yet supported by stan_jm")
   if (!missing(offset)) 
-    stop("Offsets not yet supported by stan_jm")
+    stop("Offsets are not yet implemented for stan_jm")
   algorithm <- match.arg(algorithm)
   if (algorithm %in% c("meanfield", "fullrank"))
     stop ("Meanfield and fullrank algorithms not yet implemented",
@@ -332,6 +336,7 @@ stan_jm <- function(formulaLong, dataLong,
 #  if ((init == "model_based") && any(unlist(c(centreLong, centreEvent)))) 
 #    stop("Cannot use model based initial values when 'centreLong = TRUE'",
 #         " or 'centreEvent = TRUE'.")  
+  if (missing(weights)) weights <- NULL
   if (missing(id_var)) id_var <- NULL
   if (missing(subsetLong)) subsetLong <- NULL
 
@@ -348,6 +353,7 @@ stan_jm <- function(formulaLong, dataLong,
     mc$concentration <- mc$shape <-
     mc$adapt_delta <- mc$max_treedepth <- 
     mc$... <- mc$QR <- NULL
+  mc$weights <- NULL
   
   # Create call for longitudinal submodel  
   y_mc <- mc
@@ -401,32 +407,6 @@ stan_jm <- function(formulaLong, dataLong,
          "model and using a different subset of data for each ",
          "longitudinal submodel.")
   }
-  
-  # Is weights a list?
-  if (is.null(y_mc$weights)) {
-    y_weights_list <- NULL
-  } else if (is.list(eval(y_mc$weights))) {
-    y_weights_list <- TRUE
-    if (length(eval(y_mc$weights)) != M)
-      stop("weights argument appears to be a list of the incorrect length")
-  } else if (is.vector(eval(y_mc$weights))) {
-    y_weights_list <- FALSE
-  } else {
-    stop("'weights' argument should be a numeric vector or possibly a list of ",
-         "vectors. The latter is required if fitting a multivariate joint ",
-         "model and using different weights for each longitudinal submodel. ",
-         "If supplying a list then NULL should be specified for those submodels ",
-         "that do not require weights.")
-  }
-  if (is.null(y_weights_list)) {
-    y_weights <- rep(list(NULL), M)
-  } else if (!y_weights_list) {
-    y_weights <- list(weights)
-    if (length(y_weights) < M) y_weights <- rep(y_weights, M)
-  } else {
-    y_weights <- weights
-  }
-  lapply(y_weights, rstanarm:::validate_weights)
   
   # Is family a list?
   if (is.null(eval(y_mc$family))) {
@@ -486,6 +466,9 @@ stan_jm <- function(formulaLong, dataLong,
   if (any(lapply(link, length) == 0L)) 
     stop("'link' must be one of ", paste(supported_links, collapse = ", "))
 
+  # Check for weights
+  has_weights <- (!is.null(weights))
+  
   # Create call for each longitudinal submodel separately
   m_mc <- list()  # list containing matched calls for each marker
   for (m in 1:M) {
@@ -494,8 +477,6 @@ stan_jm <- function(formulaLong, dataLong,
     m_mc[[m]]$data    <- if (data_list)    y_mc$data[[(1+m)]]    else y_mc$data
     if (!is.null(y_subset_list))   
       m_mc[[m]]$subset  <- if (y_subset_list) y_mc$subset[[(1+m)]]  else y_mc$subset
-    if (!is.null(y_weights_list))   
-      m_mc[[m]]$weights  <- if (y_weights_list) y_mc$weights[[(1+m)]]  else y_mc$weights
     if (!is.null(family_list))   
       m_mc[[m]]$family  <- if (family_list)   y_mc$family[[(1+m)]]  else y_mc$family    
   }
@@ -528,13 +509,13 @@ stan_jm <- function(formulaLong, dataLong,
   y_has_intercept_unbound <- c()    # has unbounded intercept
   y_has_intercept_lobound <- c()    # has lower bounded intercept
   y_has_intercept_upbound <- c()    # has upper bounded intercept
-  y_has_weights <- c()        # submodel has weights
   y_has_dispersion <- c()     # submodel has dispersion term
   y_N           <- c()        # num. observations
   y_N01         <- list()     # num. 0 and 1 observations if bernoulli
   y_real_N      <- c()        # num. observations, for real outcomes
   y_int_N       <- c()        # num. observations, for integer outcomes
   y_K           <- c()        # num. predictors (excluding intercept)
+  y_weights     <- list()     # prior weights
   y_offset      <- list()     # offsets
   Z             <- list()     # Z matrices
   y_cnms          <- list()   
@@ -574,6 +555,12 @@ stan_jm <- function(formulaLong, dataLong,
     }
     y_mod[[m]] <- eval(m_mc[[m]], parent.frame())      
 
+    # Error check: time_var is one of the longitudinal covariates
+    fm_nobars <- lme4::subbars(formula(y_mod[[m]]))
+    if (!time_var %in% rownames(attr(terms(fm_nobars), "factors")))
+      stop(paste0("Variable '", time_var, "' does not appear in the ",
+                  "regression equation for the longitudinal submodel"))
+    
     # Indicator of real or integer response vector
     y_is_real[m] <- check_response_real(family[[m]]$family)
     
@@ -613,12 +600,6 @@ stan_jm <- function(formulaLong, dataLong,
       }
     } else trials[[m]] <- rep(0L, length(y[[m]]))
 
-    # Falsify weights vector if weights are not included
-    if (!length(y_weights[[m]])) {
-      y_weights[[m]] <- rep(0.0, length(y[[m]]))
-      y_has_weights[m] <- 0L
-    } else y_has_weights[m] <- 1L
-    
     # Random effect terms
     Z[[m]]     <- lme4::getME(y_mod[[m]], "Z")
     y_cnms[[m]]  <- lme4::getME(y_mod[[m]], "cnms")
@@ -631,7 +612,7 @@ stan_jm <- function(formulaLong, dataLong,
       xbar[[m]] <- colMeans(xtemp[[m]])
       xtemp[[m]] <- sweep(xtemp[[m]], 2, xbar[[m]], FUN = "-")
     }
-    
+
     # Reorder y, X, Z if bernoulli (zeros first)
     if (rstanarm:::is.binomial(family[[m]]$family) && all(y[[m]] %in% 0:1)) {      
       ord[[m]] <- order(y[[m]])
@@ -717,7 +698,47 @@ stan_jm <- function(formulaLong, dataLong,
   # Additional error checks
   id_var <- check_id_var(id_var, y_cnms)
   id_list <- check_id_list(id_var, y_flist)
-  
+
+  # Construct weights
+  if (has_weights) {
+    if ((!is.data.frame(weights)) || (!ncol(weights) == 2))
+      stop("'weights' argument should be a data frame with two columns: the first ",
+           "containing patient IDs, the second containing their corresponding ",
+           "weights.", call. = FALSE)
+    if (!id_var %in% colnames(weights))
+      stop("The data frame supplied in the 'weights' argument should have a ",
+           "column named ", id_var, call. = FALSE)
+    weight_var <- setdiff(colnames(weights), id_var)
+    
+    wts <- weights[[weight_var]]
+    if (!is.numeric(wts)) 
+      stop("The weights supplied must be numeric.", call. = FALSE)
+    if (any(wts < 0)) 
+      stop("Negative weights are not allowed.", call. = FALSE)
+
+    # Check only one weight per ID
+    n_weights_per_id <- tapply(weights[[weight_var]], weights[[id_var]], length)
+    if (!all(n_weights_per_id == 1L))
+      stop("The data frame supplied in the 'weights' argument should only have ",
+           "one row (ie, one weight) per patient ID.", call. = FALSE)
+    
+    # Check for IDs with no weight supplied
+    sel <- which(!id_list %in% factor(weights[[id_var]]))
+    if (length(sel)) {
+      if (length(sel) > 30L) sel <- sel[1:30]
+      stop(paste0("The following patient IDs are used in fitting the model, but ",
+                  "do not have weights supplied via the 'weights' argument: ",
+                  paste(id_list[sel], collapse = ", ")), call. = FALSE)
+    }
+    for (m in 1:M) {
+      # Obtain length and ordering of weights vector using flist
+      flist_df <- data.frame(id = y_flist[[m]][[id_var]])
+      weights_df <- merge(flist_df, weights, 
+                          by.x = "id", by.y = id_var, sort = FALSE)
+      y_weights[[m]] <- weights_df[[weight_var]]    
+    }
+  } else y_weights <- lapply(1:M, function(m) rep(0.0, length(y[[m]])))
+    
   # Construct single cnms list for all longitudinal submodels
   y_cnms_nms <- lapply(y_cnms, names)
   cnms_nms <- unique(unlist(y_cnms_nms))
@@ -802,7 +823,10 @@ stan_jm <- function(formulaLong, dataLong,
                 "'knots' arguments.", call. = FALSE)
   }
   
-  # Set up model frame for event submodel 
+  # Set up model frame for event submodel
+  if (!id_var %in% colnames(dataEvent))
+    stop(paste0("Variable '", id_var, "' must be appear in dataEvent"),
+         call. = FALSE)
   e_mc[[1]] <- quote(survival::coxph) 
   e_mc$x <- TRUE
   e_mod <- eval(e_mc, parent.frame())
@@ -869,7 +893,6 @@ stan_jm <- function(formulaLong, dataLong,
   } else stop("Only 'right' or 'counting' type Surv objects are allowed 
                on the LHS of the event submodel formula")
 
-               
   # Evaluate spline basis (knots, df, etc) based on distribution
   # of observed event times
   if (base_haz_splines) 
@@ -893,7 +916,19 @@ stan_jm <- function(formulaLong, dataLong,
   weights_rep <- rep(quadpoints$weights, each = Npat)  
   eventtime_rep <- rep(eventtime, times = quadnodes)  
   weights_times_half_eventtime <- 0.5 * weights_rep * eventtime_rep   
-  
+
+  # Construct weights for event submodel
+  if (has_weights) {
+    flist_df <- data.frame(id = flist_event)
+    weights_df <- merge(flist_df, weights, 
+                        by.x = "id", by.y = id_var)
+    e_weights <- weights_df[[weight_var]]
+    e_weights_rep <- rep(e_weights, times = quadnodes)
+  } else {
+    e_weights <- rep(0.0, Npat)
+    e_weights_rep <- rep(0.0, Npat * quadnodes)
+  }
+ 
   # Model based initial values or informative priors
   e_beta <- e_mod$coef
   se_e_beta <- sqrt(diag(e_mod$var))
@@ -902,7 +937,11 @@ stan_jm <- function(formulaLong, dataLong,
   if (!identical(id_list, factor(sort(unique(flist_event)))))
     stop("The patient IDs (levels of the grouping factor) included ",
          "in the longitudinal and event submodels do not match")
-
+  if (!identical(length(id_list), length(eventtime)))
+    stop("The number of patients differs between the longitudinal and ",
+         "event submodels. Perhaps you intended to use 'start/stop' notation ",
+         "for the Surv() object.")
+    
 
   #================================
   # Data for association structure
@@ -1342,6 +1381,7 @@ stan_jm <- function(formulaLong, dataLong,
     sum_y_has_intercept_lobound = as.integer(sum_y_has_intercept_lobound), 
     sum_y_has_intercept_upbound = as.integer(sum_y_has_intercept_upbound), 
     sum_y_has_dispersion = as.integer(sum_y_has_dispersion),
+    has_weights = as.integer(has_weights),
     
     # data for longitudinal submodel(s)
     link = as.array(link),
@@ -1350,7 +1390,6 @@ stan_jm <- function(formulaLong, dataLong,
     y_has_intercept_unbound = as.array(y_has_intercept_unbound),
     y_has_intercept_lobound = as.array(y_has_intercept_lobound),
     y_has_intercept_upbound = as.array(y_has_intercept_upbound),
-    y_has_weights = as.array(y_has_weights),
     y_has_dispersion = as.array(as.numeric(y_has_dispersion)),
     y_real = as.array(as.numeric(unlist(y[y_is_real]))),
     y_int = as.array(as.integer(unlist(y[!y_is_real]))),
@@ -1379,6 +1418,8 @@ stan_jm <- function(formulaLong, dataLong,
     e_times = c(eventtime, unlist(quadpoint)),
     e_d = c(d, rep(1, length(unlist(quadpoint)))),
     e_xbar = if (centreEvent) as.array(e_xbar) else double(0),
+    e_weights = as.array(e_weights),
+    e_weights_rep = as.array(e_weights_rep),
     quadweight_times_half_eventtime = weights_times_half_eventtime,
     
     # data for association structure
