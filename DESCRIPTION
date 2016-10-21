@@ -46,5 +46,5 @@ LinkingTo: StanHeaders (>= 2.9.0), rstan (>= 2.9.0-3), BH (>= 1.58.0), Rcpp (>=
 VignetteBuilder: knitr
 LazyData: true
 NeedsCompilation: yes
-RcppModules: stan_fit4jm_mod, stan_fit4jmuni_mod
+RcppModules: stan_fit4jm_mod
 RoxygenNote: 5.0.1
