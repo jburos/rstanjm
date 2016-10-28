@@ -136,8 +136,14 @@
 #'   whether to draw from the prior predictive distribution instead of
 #'   conditioning on the data.
 #' @param adapt_delta See \code{\link[rstanarm]{adapt_delta}} for details.
+#' @param max_treedepth A positive integer specifying the maximum treedepth 
+#'   for the non-U-turn sampler. See the \code{control} argument in 
+#'   \code{\link[rstan]{stan}}.
 #' @param QR QR decomposition of the predictor matrix. Not yet implemented.
-
+#' @param algorithm Character string (possibly abbreviated) indicating the 
+#'   estimation approach to use. Currently, only "sampling" (for MCMC) is 
+#'   allowed.
+#'   
 #' @details The \code{stan_jm} function can be used to fit a joint model (also 
 #'   known as a shared parameter model) for longitudinal and time-to-event data 
 #'   under a Bayesian framework. 
@@ -588,7 +594,7 @@ stan_jm <- function(formulaLong, dataLong,
         if (is.numeric(y[[m]]) || is.logical(y[[m]])) 
           y[[m]] <- as.integer(y[[m]])
         if (is.factor(y[[m]])) 
-          y[[m]] <- fac2bin(y[[m]])
+          y[[m]] <- rstanarm:::fac2bin(y[[m]])
         if (!all(y[[m]] %in% c(0L, 1L))) 
           stop("y values must be 0 or 1 for bernoulli regression.")
         trials[[m]] <- rep(0L, length(y[[m]]))
@@ -1503,7 +1509,8 @@ stan_jm <- function(formulaLong, dataLong,
            "must be the same in each of the longitudinal submodels")
   }
   qmat <- l * pmat
-  q <- l * p
+  q1 <- rowSums(qmat)
+  q2 <- colSums(qmat)
   
   # Names of clustering variables
   group_nms <- lapply(y_cnms, names)
@@ -1530,7 +1537,8 @@ stan_jm <- function(formulaLong, dataLong,
   standata$p <- as.array(p)
   standata$l <- as.array(l)
   standata$qmat <- as.array(qmat)
-  standata$q <- as.array(q)
+  standata$q1 <- as.array(q1)
+  standata$q2 <- as.array(q2)
   standata$len_theta_L <- sum(choose(p, 2), p)
   Zmerge <- Matrix::bdiag(Z)
   standata$len_b <- as.integer(ncol(Zmerge))
@@ -1724,16 +1732,16 @@ stan_jm <- function(formulaLong, dataLong,
   sampling_args$save_warmup <- TRUE
   stanfit <- do.call(sampling, sampling_args)
 
-  if (QR) {  # not yet implemented for stan_jm
-    thetas <- extract(stanfit, pars = "beta", inc_warmup = TRUE, 
-                      permuted = FALSE)
-    betas <- apply(thetas, 1:2, FUN = function(theta) R_inv %*% theta)
-    end <- tail(dim(betas), 1L)
-    for (chain in 1:end) for (param in 1:nrow(betas)) {
-      stanfit@sim$samples[[chain]][[has_intercept + param]] <-
-        if (ncol(xtemp) > 1) betas[param, , chain] else betas[param, chain]
-    }
-  }
+#  if (QR) {  # not yet implemented for stan_jm
+#    thetas <- extract(stanfit, pars = "beta", inc_warmup = TRUE, 
+#                      permuted = FALSE)
+#    betas <- apply(thetas, 1:2, FUN = function(theta) R_inv %*% theta)
+#    end <- utils::tail(dim(betas), 1L)
+#    for (chain in 1:end) for (param in 1:nrow(betas)) {
+#      stanfit@sim$samples[[chain]][[has_intercept + param]] <-
+#        if (ncol(xtemp) > 1) betas[param, , chain] else betas[param, chain]
+#    }
+#  }
 
   # Names for coefs from submodel(s)
   int_nms <- unlist(lapply(1:M, function(x) 
@@ -1966,7 +1974,7 @@ validate_assoc <- function(m, x, y_cnms, supported_assocs, id_var, xmat) {
     assoc$which_beta_xpart <- lapply(b_nms, function(x, beta_nms) {
       beta_i <- grep(x, beta_nms, fixed = TRUE)
       vals <- strsplit(grep(x, beta_nms, fixed = TRUE, value = TRUE), ":")
-      sel <- sapply(vals, function(y, x) any(grepl(glob2rx(x), y)), x)
+      sel <- sapply(vals, function(y, x) any(grepl(utils::glob2rx(x), y)), x)
       beta_i[sel]
     }, beta_nms)
   } else {
@@ -2240,7 +2248,7 @@ pad_reTrms <- function(Z, cnms, flist) {
   mark <- length(p) - 1L
   if (getRversion() < "3.2.0") {
     Z <- Matrix::cBind(Z, Matrix::Matrix(0, nrow = n, ncol = p[length(p)], sparse = TRUE))
-    for (i in rev(head(last, -1))) {
+    for (i in rev(utils::head(last, -1))) {
       Z <- Matrix::cBind(Matrix::cBind(Z[, 1:i, drop = FALSE],
                        Matrix::Matrix(0, n, p[mark], sparse = TRUE)),
                  Z[, (i+1):ncol(Z), drop = FALSE])
@@ -2249,7 +2257,7 @@ pad_reTrms <- function(Z, cnms, flist) {
   }
   else {
     Z <- cbind2(Z, Matrix::Matrix(0, nrow = n, ncol = p[length(p)], sparse = TRUE))
-    for (i in rev(head(last, -1))) {
+    for (i in rev(utils::head(last, -1))) {
       Z <- cbind(Z[, 1:i, drop = FALSE],
                  Matrix::Matrix(0, n, p[mark], sparse = TRUE),
                  Z[, (i+1):ncol(Z), drop = FALSE])

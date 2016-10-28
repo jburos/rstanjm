@@ -30,9 +30,12 @@
 #' 
 #' @export
 #' @templateVar stanjmArg object
-#' @templateVar mArg object
+#' @templateVar mArg m
+#' @templateVar idsArg ids
 #' @template args-stanjm-object
 #' @template args-m
+#' @template args-ids 
+#' 
 #' @param newdata Optionally, a data frame in which to look for variables with 
 #'   which to predict. If omitted, the model matrix is used. If \code{newdata} 
 #'   is provided and any variables were transformed (e.g. rescaled) in the data 
@@ -42,6 +45,37 @@
 #'   transformations were specified inside the model formula. Also see the Note
 #'   section below for a note about using the \code{newdata} argument with with
 #'   binomial models.
+#' @param extrapolate A logical specifying whether to extrapolate the estimated 
+#'   longitudinal trajectory beyond the time of the last longitudinal measurement.
+#'   If \code{TRUE} then the extrapolation can be further controlled using
+#'   the \code{extrapolate_args} argument.
+#' @param extrapolate_args A named list with parameters controlling extrapolation 
+#'   of the estimated longitudinal trajectory when \code{extrapolate = TRUE}. The 
+#'   list can contain the following named elements: 
+#'   \code{dist}, a positive scalar specifying the amount of time across which to 
+#'   extrapolate the longitudinal trajectory; 
+#'   \code{prop}, a positive scalar between 0 and 1 specifying the 
+#'   amount of time across which to extrapolate the longitudinal trajectory but
+#'   represented as a proportion of the total observed follow up time for each
+#'   individual;
+#'   \code{increments}, a positive integer specifying the number of increments in 
+#'   time at which to calculate the estimated longitudinal response. 
+#'   See the \strong{Examples} below.
+#' @param interpolate A logical specifying whether to interpolate the estimated 
+#'   longitudinal trajectory in between the observation times. This can be used
+#'   to achieve a smooth estimate of the longitudinal trajectory across the 
+#'   entire follow up time.
+#'   If \code{TRUE} then the interpolation can be further controlled using
+#'   the \code{interpolate_args} argument.
+#' @param interpolate_args A named list with parameters controlling interpolation 
+#'   of the estimated longitudinal trajectory when \code{interpolate = TRUE}. The 
+#'   list can contain the following named elements: 
+#'   \code{increments}, a positive integer specifying the number of increments in 
+#'   time at which to calculate the estimated longitudinal response. 
+#'   See the \strong{Examples} below.
+#' @param last_time A scalar or    
+#' @param limits A numeric vector of length 2 specifying the limits to use
+#'   for both the credible and prediction intervals.
 #' @param draws An integer indicating the number of draws to return. The default
 #'   and maximum number of draws is the size of the posterior sample.
 #' @param re.form If \code{object} contains \code{\link[=stan_glmer]{group-level}}

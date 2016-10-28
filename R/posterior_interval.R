@@ -42,14 +42,14 @@
 #' @template reference-morey
 #' 
 #' @examples 
-#' if (!exists("example_jm")) example(example_jm)
-#' posterior_interval(example_jm)
-#' posterior_interval(example_jm, regex_pars = "Long1")
-#' posterior_interval(example_jm, regex_pars = c("Event", "Assoc"))
-#' posterior_interval(example_jm, regexpars = "b[", prob = 0.95)
-#' posterior_interval(example_jm, pars = "Long1|(Intercept)", prob = 0.5)
+#' if (!exists("examplejm")) example(examplejm)
+#' posterior_interval(examplejm)
+#' posterior_interval(examplejm, regex_pars = "Long1")
+#' posterior_interval(examplejm, regex_pars = c("Event", "Assoc"))
+#' posterior_interval(examplejm, regexpars = "b[", prob = 0.95)
+#' posterior_interval(examplejm, pars = "Long1|(Intercept)", prob = 0.5)
 #' 
 posterior_interval <- function(object, ...) {
   validate_stanjm_object(object)
-  rstanarm:::posterior_interval(object = object, ...)
+  rstanarm::posterior_interval(object = object, ...)
 }

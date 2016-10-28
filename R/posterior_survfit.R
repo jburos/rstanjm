@@ -31,15 +31,10 @@
 #' @export
 #' @templateVar stanjmArg object
 #' @template args-stanjm-object
-#' @param newdata Optionally, a data frame in which to look for variables with 
-#'   which to predict. If omitted, the model matrix is used. If \code{newdata} 
-#'   is provided and any variables were transformed (e.g. rescaled) in the data 
-#'   used to fit the model, then these variables must also be transformed in 
-#'   \code{newdata}. This only applies if variables were transformed before 
-#'   passing the data to one of the modeling functions and \emph{not} if 
-#'   transformations were specified inside the model formula. Also see the Note
-#'   section below for a note about using the \code{newdata} argument with with
-#'   binomial models.
+#' @param newdataLong,newdataEvent Optionally, new data frames in which to look 
+#'   for variables with which to predict. The data should be provided in the same
+#'   format as for the original call to the estimation function 
+#'   \code{\link{stan_jm}}.
 #' @param ids An optional character vector containing the IDs of individuals for 
 #'   whom the estimated survival probabilites should be obtained. This defaults 
 #'   to \code{NULL} which returns predictions for all individuals in the original 
@@ -55,6 +50,8 @@
 #'   \code{marginalised = TRUE}, then the default behaviour is to calculate
 #'   the marginal survival probability at \code{n_increments} time points between
 #'   baseline and the latest observation or event/censoring time for all individuals.
+#' @param limits A numeric vector of length 2 specifying the limits to use
+#'   for the credible interval.
 #' @param condition A logical specifying whether the estimated subject-specific
 #'   survival probabilities at time \code{t} should be conditioned on 
 #'   survival up to a fixed time point \code{u}. The default is to condition
@@ -420,7 +417,7 @@ ps_survcalc <- function(object, data, draws = NULL) {
       coefs <- coefs[samp, , drop = FALSE] 
     log_basehaz <- lapply(t_and_tQ, function(x) {
       # returns S x Npat matrix
-      coefs %*% t(ns(x, knots = object$base_haz$splines_attr$knots,
+      coefs %*% t(splines::ns(x, knots = object$base_haz$splines_attr$knots,
                      intercept = object$base_haz$splines_attr$intercept,
                      Boundary.knots = object$base_haz$splines_attr$Boundary.knots))
     })

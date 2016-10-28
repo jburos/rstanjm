@@ -20,8 +20,8 @@
 #' 
 #' A model for use in \pkg{rstanjm} examples. 
 #' 
-#' @name example_jm
-#' @format Calling \code{example("example_jm")} will run the model in the 
+#' @name examplejm
+#' @format Calling \code{example("examplejm")} will run the model in the 
 #'   Examples section, below, and the resulting stanjm object will then be
 #'   available in the global environment. The \code{chains} and \code{iter}
 #'   arguments are specified to make this example be small in size. In practice,
@@ -32,7 +32,7 @@
 #'   executed.
 #'   
 #' @examples
-#' example_jm <- 
+#' examplejm <- 
 #'   stan_jm(formulaLong = logBili ~ year + (1 | id), 
 #'           dataLong = pbcLong,
 #'           formulaEvent = Surv(futimeYears, death) ~ sex + trt, 

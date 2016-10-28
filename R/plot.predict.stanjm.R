@@ -27,30 +27,66 @@
 #' 
 #' @method plot predict.stanjm
 #' @export
-#' 
 #' @importFrom ggplot2 ggplot aes aes_string geom_line geom_smooth geom_ribbon 
 #'   geom_point facet_wrap geom_vline labs ggplot_build theme_bw
-plot.predict.stanjm <- function(object, ids = NULL, limits = c("ci", "pi", "none"), 
-                                xlab = NULL, ylab = NULL, 
-                                abline = FALSE, plot_observed = FALSE, facet_scales = "free_x", 
+#'    
+#' @templateVar idsArg ids
+#' @templateVar labsArg xlab,ylab
+#' @templateVar scalesArg facet_scales
+#' @templateVar cigeomArg ci_geom_args
+#' @template args-ids
+#' @template args-labs
+#' @template args-scales
+#' @template args-ci-geom-args
+#' 
+#' @param x A data frame and x of class \code{predict.stanjm}
+#'   returned by a call to the function \code{\link{posterior_traj}}.
+#'   The x contains point estimates and uncertainty interval limits
+#'   for fitted values of the longitudinal response.
+#' @param limits A quoted character string specifying the type of limits to
+#'   include in the plot. Can be one of: \code{"ci"} for the Bayesian
+#'   posterior uncertainty interval (often known as a credible interval);
+#'   \code{"pi"} for the prediction interval; or \code{"none"} for no
+#'   interval limits.
+#' @param abline A logical. If \code{TRUE} then a vertical dashed line
+#'   is added to the plot indicating the event or censoring time for
+#'   the individual. Can only be used if each plot within the figure
+#'   is for a single individual.
+#' @param plot_observed A logical. If \code{TRUE} then the observed
+#'   longitudinal measurements are overlaid on the plot.
+#' @param ... Optional arguments passed to 
+#'   \code{\link[ggplot2]{geom_smooth}} and used to control features
+#'   of the plotted trajectory.
+#'   
+#' @return A \code{ggplot} x, also of class \code{plot.predict.stanjm}.
+#'   This x can be further customised using the \pkg{ggplot2} package.
+#'   It can also be passed to the function \code{\link{plot_stack}}.
+#'   
+#' @seealso \code{\link{posterior_traj}}, \code{\link{plot_stack}}
+#'     
+#' @examples 
+#' 
+plot.predict.stanjm <- function(x, ids = NULL, limits = c("ci", "pi", "none"), 
+                                xlab = NULL, ylab = NULL, abline = FALSE, 
+                                plot_observed = FALSE, facet_scales = "free_x", 
                                 ci_geom_args = NULL, ...) {
   
   limits <- match.arg(limits)
   if (!(limits == "none")) ci <- (limits == "ci")
-  y_var <- attr(object, "y_var")
-  id_var <- attr(object, "id_var")
-  time_var <- attr(object, "time_var")
-  obs_dat <- attr(object, "observed_data")
+  y_var <- attr(x, "y_var")
+  id_var <- attr(x, "id_var")
+  time_var <- attr(x, "time_var")
+  obs_dat <- attr(x, "observed_data")
   if (is.null(ylab)) ylab <- paste0("Long. response (", y_var, ")")
   if (is.null(xlab)) xlab <- paste0("Time (", time_var, ")")
   if (!is.null(ids)) {
-    last_time <- attr(object, "last_time")[as.character(ids)]
-    plot_dat <- object[object[[id_var]] %in% ids, , drop = FALSE]
+    last_time <- attr(x, "last_time")[as.character(ids)]
+    plot_dat <- x[x[[id_var]] %in% ids, , drop = FALSE]
     obs_dat <- obs_dat[obs_dat[[id_var]] %in% ids, , drop = FALSE]
   } else {
-    ids <- attr(object, "ids")
-    last_time <- attr(object, "last_time")
-    plot_dat <- object
+    ids <- attr(x, "ids")
+    last_time <- attr(x, "last_time")
+    plot_dat <- x
   }
   
   plot_dat$time <- plot_dat[[time_var]]
@@ -130,6 +166,10 @@ plot.predict.stanjm <- function(object, ids = NULL, limits = c("ci", "pi", "none
   } else graph_abline <- NULL
     
   
-  graph + graph_limits + graph_obs + graph_abline + labs(x = xlab, y = ylab) 
+  ret <- graph + graph_limits + graph_obs + graph_abline + labs(x = xlab, y = ylab) 
+  class_ret <- class(ret)
+  class(ret) <- c("plot.predict.stanjm", class_ret)
+  ret
+  
 }
 
