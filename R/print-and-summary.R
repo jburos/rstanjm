@@ -31,7 +31,7 @@
 #' 
 #' @export
 #' @method print stanjm
-#' @templateVar stanjm_arg x
+#' @templateVar stanjmArg x
 #' @template args-stanjm-object
 #' @param digits Number of digits to use for formatting numbers.
 #' @param ... Ignored.
@@ -125,7 +125,7 @@ print.stanjm <- function(x, digits = 3, ...) {
 #' @export
 #' @method summary stanjm
 #' 
-#' @templateVar stanjm_arg object
+#' @templateVar stanjmArg object
 #' @template args-stanjm-object
 #' @template args-regex-pars
 #' 
@@ -170,35 +170,35 @@ print.stanjm <- function(x, digits = 3, ...) {
 #' @seealso \code{\link{print.stanjm}}, \code{\link{stanjm-methods}}
 #' 
 #' @examples
-#' if (!exists("example_jm")) example(example_jm)
+#' if (!exists("examplejm")) example(examplejm)
 #' 
 #' # Only showing 10th and 90th percentile   
-#' summary(example_jm, probs = c(0.1, 0.9))
+#' summary(examplejm, probs = c(0.1, 0.9))
 #' 
 #' # These produce the same output for this example, 
 #' # but the first method can be used for any model
-#' summary(example_jm, pars = c("long"))
-#' summary(example_jm, pars = c("Long1|(Intercept)",
+#' summary(examplejm, pars = c("long"))
+#' summary(examplejm, pars = c("Long1|(Intercept)",
 #'                              "Long1|year", 
 #'                              "Long1|sigma")) 
 #' 
 #' # Only show parameters for event submodel
-#' summary(example_jm, pars = "event")
+#' summary(examplejm, pars = "event")
 #'
 #' # Only show the association parameter for the current
 #' # value of the linear predictor from the longitudinal submodel
-#' summary(example_jm, pars = "Assoc|Long1:eta-value")
+#' summary(examplejm, pars = "Assoc|Long1:eta-value")
 #' # or since there is only one association parameter in the 
 #' # model we can just use the following shortcut
-#' summary(example_jm, pars = "assoc")
+#' summary(examplejm, pars = "assoc")
 #'   
 #' # Only show random effects parameters
-#' summary(example_jm, pars = "b")
+#' summary(examplejm, pars = "b")
 #' as.data.frame(summary(example_model, pars = "b"))
 #'  
 #' # To obtain only the random intercepts we could also use a
 #' # regular expression in the regex argument as follows
-#' summary(example_jm, pars = NULL,
+#' summary(examplejm, pars = NULL,
 #'         regex_pars = "\\(Intercept\\)\\sid")
 #'  
 #' @importMethodsFrom rstan summary

@@ -30,7 +30,7 @@
 #' 
 #' @export
 #' @templateVar stanjmArg object
-#' @templateVar mArg object
+#' @templateVar mArg m
 #' @template args-stanjm-object
 #' @template args-m
 #' @param newdata Optionally, a data frame in which to look for variables with 
@@ -136,7 +136,7 @@ posterior_predict <- function(object, m = 1, newdata = NULL,
 # @param m Integer specifying the longitudinal submodel
 pp_fun <- function(object, m) {
   suffix <- family(object)[[m]]$family
-  getFromNamespace(paste0(".pp_", suffix), "rstanarm")
+  utils::getFromNamespace(paste0(".pp_", suffix), "rstanarm")
 }
 
 

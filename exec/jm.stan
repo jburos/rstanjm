@@ -707,39 +707,71 @@ functions {
   *   elements are ordered in the following nested way: factor level, within
   *   grouping factor, within longitudinal submodel
   */ 
-  vector reorder_b(vector b, int[] p, int[,] pmat, int[] q, 
+  vector reorder_b(vector b, int[] p, int[,] pmat, int[] q1, int[] q2, 
                    int[,] qmat, int[] l, int M) {
     vector[rows(b)] b_new;
-    int nq_mark;
-    nq_mark = 1;
-    for (i in 1:size(p)) { // loop over grouping factors 
-      int np;  // num. of random effects for grouping factor
-      int nq;  // num. of random coefs for grouping factor
-      vector[q[i]] b_i;
-      np = p[i];
-      nq = q[i];
-      b_i = segment(b, nq_mark, nq);
-      nq_mark = nq_mark + nq;
-      for (m in 1:M) { // loop over markers
-        int shift_collect;
-        int shift_store;
-        int start_collect;
-        int start_store;
-        int end_store;
-        if (m == 1) shift_collect = 0;
-        else shift_collect = sum(pmat[i, 1:(m-1)]);
-        if (m == 1) shift_store = 0;
-        else shift_store = sum(qmat[i, 1:(m-1)]);    
-        for (j in 1:l[i]) {
-        start_collect = (j - 1) * pmat[i,m] + shift_collect + 1;
-        start_store   = (j - 1) * pmat[i,m] + shift_store + 1;
-        end_store     = (j - 1) * pmat[i,m] + shift_store + pmat[i,m];        
-        b_new[start_store:end_store] = segment(b_i, start_collect, pmat[i,m]);
+    # in the loops below:
+    #   i = grouping factors, j = levels, m = models
+    #   there are sum(q) random coefficients (ie, values within 
+    #   vector b)
+    
+    # collection is ascending in terms of:
+    #   sum q over 1:(i-1)
+    #   sum q over 1:(j-1) within i 
+    #   sum q over 1:(m-1) within j within i 
+    for (i in 1:size(p)) { 
+      int i_beg;
+      int i_end;
+      vector[q1[i]] b_i;
+      if (i == 1) i_beg = 1;
+      else i_beg = sum(q1[1:(i-1)]) + 1;
+      i_end = sum(q1[1:i]);
+      b_i = b[i_beg:i_end];
+      
+      for (j in 1:l[i]) {
+        int j_beg;
+        int j_end;
+        vector[p[i]] b_ij;
+        if (j == 1) j_beg = 1;
+        else j_beg = (j-1) * p[i] + 1;
+        j_end = j * p[i];
+        b_ij = b_i[j_beg:j_end];
+        
+        for (m in 1:M) {
+          int m_beg;
+          int m_end;
+          vector[pmat[i,m]] b_ijm;
+          if (pmat[i,m] > 0) {
+            int m_sum;
+            int i_sum;
+            int j_sum;
+            int store_beg;
+            int store_end;
+            if (m == 1) m_beg = 1;
+            else m_beg = sum(pmat[i, 1:(m-1)]) + 1;
+            m_end = sum(pmat[i, 1:m]);
+            b_ijm = b_ij[m_beg:m_end];
+          
+            # storage is ascending in terms of:
+            #   sum q over 1:(m-1)
+            #   sum q over 1:(i-1) within m 
+            #   sum q over 1:(j-1) within i within m
+            if (m == 1) m_sum = 0;
+            else m_sum = sum(q2[1:(m-1)]);
+            if (i == 1) i_sum = 0;
+            else i_sum = sum(qmat[1:(i-1),m]);
+            if (j == 1) j_sum = 0;
+            else j_sum = (j-1) * pmat[i,m];
+            store_beg = m_sum + i_sum + j_sum + 1;
+            store_end = m_sum + i_sum + j_sum + pmat[i,m];
+            b_new[store_beg:store_end] = b_ijm;          
+          }
         }
-      }
-    }  
+      }  
+    }
     return b_new;
-  }
+  }  
+  
   
   /** 
   * Create a design matrix for a shared random effects association
@@ -1045,7 +1077,8 @@ data {
   int<lower=0> p[t];            // total num. random effects for each grouping factor (t) (rowsums of pmat)
   int<lower=1> l[t];            // num. levels for each grouping factor
   int<lower=0> qmat[t,M];       // = l * pmat --> num. random coefs for each grouping factor in each submodel
-  int<lower=0> q[t];            // = l * p --> num. random coefs for each grouping factor
+  int<lower=0> q1[t];           // = l * p --> num. random coefs for each grouping factor
+  int<lower=0> q2[M];           // num. random coefs for each submodel
   int<lower=0> len_theta_L;     // length of the theta_L vector
   int<lower=0> len_b;           // length of the b vector
 
@@ -1384,14 +1417,14 @@ transformed parameters {
   if (t > 0) {
     theta_L = make_theta_L(len_theta_L, p, 1.0, tau, scale, zeta, rho, z_T);
     b = make_b(z_b, theta_L, p, l);
-    if (M > 1) b_by_model = reorder_b(b, p, pmat, q, qmat, l, M);
+    if (M > 1) b_by_model = reorder_b(b, p, pmat, q1, q2, qmat, l, M);
 	  else b_by_model = b;
   }
   
   //===============
   // GK quadrature
   //===============
- 
+
   // Longitudinal submodel(s): linear predictor at event and quad times
   if (sum_y_K > 0) y_eta_q = y_Xq * y_beta;
   else y_eta_q = rep_vector(0.0, (M*nrow_y_Xq));
@@ -1598,14 +1631,16 @@ model {
   int_markup = 1;
   
   // Longitudinal submodel(s): regression equations
+
   if (sum_y_K > 0) y_eta = y_X * y_beta;
   else y_eta = rep_vector(0.0, sum_y_N);
   //if (y_has_offset == 1) y_eta = y_eta + y_offset;
+
   y_eta = y_eta + csr_matrix_times_vector(sum_y_N, len_b, w, v, u, b_by_model);
   for (m in 1:M) {
     vector[y_N[m]] y_eta_tmp;	
     y_eta_tmp = y_eta[y_beg[m]:y_end[m]]; 
-	
+
     if (y_has_intercept[m] == 1) {
       if (y_has_intercept_unbound[m] == 1)
         y_eta_tmp = y_eta_tmp + 
@@ -1617,7 +1652,7 @@ model {
         y_eta_tmp = y_eta_tmp - max(y_eta_tmp) + 
                     y_gamma_lobound[sum(y_has_intercept_upbound[1:m])];					
     }	
-	
+
     if (y_centre == 1) {
       int mark_beg;
       int mark_end;
@@ -1634,7 +1669,7 @@ model {
 #      else if (link[m] == 2) y_eta_tmp = y_eta_tmp * y_dispersion[disp_mark] .* y_noise[nois_mark];
 #      else                   y_eta_tmp = y_eta_tmp + sqrt(y_dispersion[disp_mark]) + sqrt_vec(y_noise[nois_mark]);
 #    }    
-    
+
     // Log-likelihood for longitudinal submodel(s)
     if (has_weights == 0 && prior_PD == 0) { # unweighted log-likelihoods
       if (family[m] == 1) {

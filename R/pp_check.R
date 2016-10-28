@@ -27,10 +27,11 @@
 #' @export
 #' @templateVar bdaRef (Ch. 6)
 #' @templateVar stanjmArg object
-#' @templateVar mArg object
+#' @templateVar mArg m
 #' @template reference-bda
 #' @template args-stanjm-object
 #' @template args-m
+#' 
 #' @param check The type of plot (possibly abbreviated) to show. One of 
 #'   \code{"distributions"}, \code{"residuals"}, \code{"scatter"}, 
 #'   \code{"test"}. See Details for descriptions.
@@ -65,9 +66,7 @@
 #' have been observed later in time, that is some time \eqn{s} where 
 #' \eqn{s>t}. The predictions are therefore suitable for assessing model
 #' fit, but should not be used to dynamic predictions where we want to 
-#' condition only on previous measurements for the individual. In that 
-#' situation the alternative \code{\link{pp_dynLong}} should be used for
-#' dynamic predictions which condition only only prior observed measurements. \cr
+#' condition only on previous measurements for the individual.\cr
 #' \cr
 #' Descriptions of the plots corresponding to the different values of 
 #' \code{check}:
@@ -125,10 +124,10 @@ pp_check <- function(object, m = 1, check = "distributions", nreps = NULL,
     nreps <- NULL
   }
 
-  is_binomial <- if (is(object, "polr") && !is_scobit(object))
+  is_binomial <- if (is(object, "polr") && !rstanarm:::is_scobit(object))
     FALSE else rstanarm:::is.binomial(family(object)[[m]]$family)
   if (is_binomial && fn == "pp_check_resid") {
-    graph <- pp_check_binned_resid(object, n = nreps, ...)
+    graph <- rstanarm:::pp_check_binned_resid(object, n = nreps, ...)
     return(graph)
   }
   
@@ -157,6 +156,6 @@ pp_check <- function(object, m = 1, check = "distributions", nreps = NULL,
     args <- list(y = y, yrep = yrep, n = nreps, ...)
   }
   
-  fn <- getFromNamespace(fn, "rstanarm")
+  fn <- utils::getFromNamespace(fn, "rstanarm")
   do.call(fn, args)
 }

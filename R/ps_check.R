@@ -25,21 +25,27 @@
 #' 
 #' @export
 #' @templateVar stanjmArg object
+#' @templateVar labsArg xlab,ylab
+#' @templateVar cigeomArg ci_geom_args
 #' @template args-stanjm-object
-#'  
+#' @template args-labs
+#' @template args-ci-geom-args
+#'   
 #' @param check The type of plot to show. Currently only "survival" is 
 #'   allowed, which compares the estimated marginal survival function under
 #'   the joint model to the estimated Kaplan-Meier curve based on the 
 #'   observed data.
-#' @param ci Logical specifying whether to plot the credible interval for
-#'   the estimated marginal survival function.
-#' @param limits A numeric vector of length 2 specifying the limits to use
-#'   for the credible interval.
+#' @param limits A quoted character string specifying the type of limits to
+#'   include in the plot. Can be one of: \code{"ci"} for the Bayesian
+#'   posterior uncertainty interval (often known as a credible interval);
+#'   or \code{"none"} for no interval limits.
 #' @param draws An integer indicating the number of MCMC draws to use to 
 #'   to estimate the survival function. The default and maximum number of 
 #'   draws is the size of the posterior sample.
 #' @param seed An optional \code{\link[=set.seed]{seed}} to use.
-#' @param ... Optional arguments to geoms to control features of the plots.   
+#' @param ... Optional arguments passed to 
+#'   \code{\link[ggplot2]{geom_line}} and used to control features
+#'   of the plotted trajectory.
 #' 
 #' @return A ggplot object that can be further customized using the
 #'   \pkg{ggplot2} package.
@@ -52,9 +58,9 @@
 #'   \code{\link{pp_check}} for graphical checks of the longitudinal submodel.
 #'    
 #' @examples 
-#' if (!exists("example_jm")) example(example_jm)
+#' if (!exists("examplejm")) example(examplejm)
 #' # Compare estimated survival function to Kaplan-Meier curve
-#' (ps <- ps_check(example_jm))
+#' (ps <- ps_check(examplejm))
 #' ps + 
 #'  ggplot2::scale_color_manual(values = c("red", "black")) + # change colors
 #'  ggplot2::scale_size_manual(values = c(0.5, 3)) + # change line sizes 
@@ -63,9 +69,12 @@
 #' @importFrom ggplot2 ggplot aes_string geom_step
 #' 
 ps_check <- function(object, check = "survival", 
-                     ci = TRUE, limits = c(.025, .975), 
-                     draws = NULL, seed = NULL, ...) {
+                     limits = c("ci", "none"),
+                     draws = NULL, seed = NULL, 
+                     xlab = NULL, ylab = NULL,
+                     ci_geom_args = NULL, ...) {
   validate_stanjm_object(object)
+  limits <- match.arg(limits)
 
   # Predictions for plotting the estimated survival function
   dat <- posterior_survfit(object, marginalised = TRUE, 
@@ -92,7 +101,7 @@ ps_check <- function(object, check = "survival",
                        lb = km$lower, ub = km$upper)
   
   # Plot estimated survival function with KM curve overlaid
-  graph <- plot.survfit.stanjm(dat, ci = ci, ids = NULL, ...)
+  graph <- plot.survfit.stanjm(dat, ids = NULL, limits = limits, ...)
   kmgraph <- geom_step(data = kmdat, 
                        mapping = aes_string(x = "times", y = "surv"))
   graph + kmgraph

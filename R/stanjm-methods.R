@@ -25,10 +25,10 @@
 #' submodels or the event submodel.
 #' 
 #' @name stanjm-methods
-#' @aliases VarCorr fixef ranef ngrps sigma
+#' @aliases coef VarCorr fixef ranef ngrps sigma
 #' 
-#' @template args-stanjm-object
 #' @templateVar stanjmArg object,x
+#' @template args-stanjm-object
 #' @param ... Ignored, except by the \code{update} method. See
 #'   \code{\link{update}}.
 #' 
@@ -75,10 +75,10 @@
 #' 
 #' @seealso
 #' Other S3 methods for stanjm objects, which have separate documentation, 
-#' including \code{\link{as.matrix.stanjm}}, \code{\link{plot.stanjm}}, 
+#' including \code{\link{as.matrix.stanjm}},  
 #' \code{\link{print.stanjm}}, and \code{\link{summary.stanjm}}.
 #' 
-#' \code{\link{posterior_interval}} for an alternative to \code{confint}, 
+#' Also \code{\link{posterior_interval}} for an alternative to \code{confint}, 
 #' and \code{posterior_predict}, \code{posterior_traj} and 
 #' \code{posterior_survfit} for predictions based on the fitted joint model.
 #' 
@@ -278,7 +278,11 @@ terms.stanjm <- function(x, ..., fixed.only = TRUE, random.only = FALSE) {
 #' @rdname stanjm-methods
 #' @export
 #' @method update stanjm
-#' @param formula.,evaluate See \code{\link[stats]{update}}.
+#' @param formulaLong.,formulaEvent. An updated formula for the longitudinal
+#'   or event submodel. For a multivariate joint model \code{formulaLong.} 
+#'   should be a list of formulas, as described for the \code{formulaLong}
+#'   argument in \code{\link{stan_jm}}.
+#' @param evaluate See \code{\link[stats]{update}}.
 #'
 update.stanjm <- function(object, formulaLong., formulaEvent., ..., evaluate = TRUE) {
   call <- getCall(object)
@@ -527,7 +531,7 @@ model.frame.stanjm <- function(formula, fixed.only = FALSE, ...) {
 model.matrix.stanjm <- function(object, ...) {
   if (is.stanjm(object)) {
     M <- object$n_markers
-    return(lapply(seq(M), object$glmod[[m]]$X))
+    return(lapply(seq(M), function(m) object$glmod[[m]]$X))
   }
   
   NextMethod("model.matrix")

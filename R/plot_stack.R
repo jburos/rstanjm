@@ -17,7 +17,24 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #
 
+#' Combine plots of estimated longitudinal trajectories and survival function
 #' 
+#' This function takes plots of estimated subject-specific longitudinal 
+#' trajectories and the estimated subject-specific survival function and 
+#' combines them into a single figure.
+#' 
+#' @param yplot An object of class \code{plot.predict.stanjm}, returned by a 
+#'   call to the plotting method for objects of class 
+#'   \code{predict.stanjm}. If there is more than one longitudinal outcome,
+#'   then a list of such objects can be provided.
+#' @param survplot An object of class \code{plot.survfit.stanjm}, returned by a 
+#'   call to the plotting method for objects of class 
+#'   \code{survfit.stanjm}. 
+#'   
+#' @return A single \code{ggplot} object that includes plots of the estimated 
+#'   subject-specific longitudinal trajectories stacked on top of their 
+#'   associated subject-specific survival curves.   
+#'   
 #' @export
 #' 
 #' @importFrom ggplot2 ggplot_build facet_wrap aes_string expand_limits
@@ -25,6 +42,15 @@
 plot_stack <- function(yplot, survplot) {
     
   if (!is(yplot, "list")) yplot <- list(yplot)
+  
+  lapply(yplot, function(x) {
+    if (!is(x, "plot.predict.stanjm"))
+      stop("'yplot' should be an object of class 'plot.predict.stanjm', ",
+           "or a list of such objects.", call. = FALSE)
+  })
+  if (!is(survplot, "plot.survfit.stanjm"))
+    stop("'survplot' should be an object of class 'plot.survfit.stanjm'.",
+         call. = FALSE)   
   
   y_build <- lapply(yplot, ggplot_build)
   y_layout <- lapply(y_build, function(x) x$panel$layout)
