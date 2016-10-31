@@ -103,11 +103,6 @@
 #'   submodel.
 #'   
 #' @examples
-#' The numeric value should represent the proportion of observed follow up time
-#'   (difference between baseline and \code{time}), for example, 0.2 = 20% of the 
-#'   observed follow up time. If set to \code{NULL} then survival probabilities
-#'   are only calculated at \code{time} and no extrapolation is carried out.
-#'   It is ignored if \code{marginalised} is set to \code{TRUE}.
 #' 
 posterior_survfit <- function(object, newdataEvent = NULL, newdataLong = NULL, ids,  
                               times = NULL, limits = c(.025, .975), 

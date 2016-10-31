@@ -33,19 +33,19 @@ if (interactive()) options(mc.cores = parallel::detectCores())
 fixef_tol <- 0.10
 ranef_tol <- 0.10 
 
-fit1 <- stan_jm(formulaLong = y1 ~ t0 + (1 | id),
-               dataLong = simdata_jm_gaus_cvassoc, 
-               formulaEvent = Surv(stop, died) ~ trt,
-               dataEvent = simdata_jm_gaus_cvassoc.id,
+fit1 <- stan_jm(formulaLong = y1gaus ~ t0 + (1 | id),
+               dataLong = simdata_jm_cvassoc, 
+               formulaEvent = Surv(t, d) ~ trt,
+               dataEvent = simdata_jm_cvassoc_id,
                time_var = "t0", 
                assoc = "etavalue",
                iter = iter, refresh = refresh,
                chains = chains, seed = seed)
 
-fit2 <- stan_jm(formulaLong = y1 ~ t0 + (1 | id),
-               dataLong = simdata_jm_gaus_cvassoc, 
-               formulaEvent = Surv(stop, died) ~ trt,
-               dataEvent = simdata_jm_gaus_cvassoc,
+fit2 <- stan_jm(formulaLong = y1gaus ~ t0 + (1 | id),
+               dataLong = simdata_jm_cvassoc, 
+               formulaEvent = Surv(t0, t, d) ~ trt,
+               dataEvent = simdata_jm_cvassoc,
                time_var = "t0", 
                assoc = "etavalue",
                iter = iter, refresh = refresh,
@@ -61,7 +61,7 @@ test_that("stan_jm returns correct estimates for univariate JM, gaussian outcome
 })
 
 test_that("weights arguments works", {
-  idvec0 <- simdata_jm_gaus_cvassoc.id[["id"]]
+  idvec0 <- simdata_jm_cvassoc_id[["id"]]
   idvec1 <- head(idvec0)            # missing IDs
   idvec2 <- rep(idvec0, each = 2)   # repeated IDs
   idvec3 <- c(idvec, 9998, 9999)    # extra IDs not in model

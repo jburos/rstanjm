@@ -10,16 +10,24 @@ Authors@R: c(person("Sam", "Brilleman", email = "sam.brilleman@monash.edu",
              person("Ben", "Goodrich", email = "benjamin.goodrich@columbia.edu", 
                     role = "aut"),
 			 person("Trustees of", "Columbia University", role = "cph"))
-Description: Estimates joint longitudinal and time-to-event models using the 'rstan' package, which 
-    provides the R interface to the Stan C++ library for Bayesian estimation. Users specify models 
-    via the customary R syntax with formulas and data frames plus some additional arguments for priors.
+Description: Estimate joint longitudinal and time-to-event models under a Bayesian
+    framework via Stan. Stan is a C++ library for Bayesian estimation. Users of the
+    rstanjm package specify a joint model using the customary R formula syntax
+    and customary R data frames. The rstanjm package then carries out estimation in Stan
+    via the 'rstan' package (the R interface for Stan). Univariate (one longitudinal 
+    marker) or multivariate (more than one longitudinal marker) joint models are
+    allowed. Multilevel clustered data are allowed. The joint model association 
+    structure can be specified in various ways. The time-to-event is modelled using
+    a parametric proportional hazards model for which the baseline hazard can be a
+    Weibull distribution or approximated using cubic splines. Various options are 
+    available for the prior distributions for regression coefficients.
 License: GPL (>=3)
 Depends:
     R (>= 3.0.2),
     Rcpp (>= 0.11.0),
-    methods,
 	  survival (>= 2.39.4),
 	  lme4 (>= 1.1-8),
+    methods
 Imports:
 		rstanarm (>= 2.11.1),
     data.table (>= 1.9.6),

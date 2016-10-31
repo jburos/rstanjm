@@ -19,5 +19,5 @@
 library(testthat)
 library(rstanjm)
 Sys.unsetenv("R_TESTS")
-example(example_jm)
+example(examplejm)
 if (!grepl("^sparc",  R.version$platform)) test_check("rstanjm")
