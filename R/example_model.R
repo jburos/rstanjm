@@ -34,9 +34,9 @@
 #' @examples
 #' examplejm <- 
 #'   stan_jm(formulaLong = logBili ~ year + (1 | id), 
-#'           dataLong = pbcLong,
+#'           dataLong = pbcLong_subset,
 #'           formulaEvent = Surv(futimeYears, death) ~ sex + trt, 
-#'           dataEvent = pbcSurv,
+#'           dataEvent = pbcSurv_subset,
 #'           time_var = "year",
 #'           chains = 1, cores = 1, seed = 12345,
 #'           iter = 1500, warmup = 750)

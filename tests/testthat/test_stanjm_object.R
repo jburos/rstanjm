@@ -38,22 +38,22 @@ context("Check arguments or slots for stan_jm objects")
 
 # Gaussian models
 
-l1 <- lmer(y1 ~ t0 + (1 | id),
-           data = simdata_jm_gaus_cvassoc)
+l1 <- lmer(y1gaus ~ t0 + (1 | id),
+           data = simdata_jm_cvassoc)
 
-fit1 <- stan_jm(formulaLong = y1 ~ t0 + (1 | id),
-                dataLong = simdata_jm_gaus_cvassoc, 
-                formulaEvent = Surv(stop, died) ~ trt,
-                dataEvent = simdata_jm_gaus_cvassoc.id,
+fit1 <- stan_jm(formulaLong = y1gaus ~ t0 + (1 | id),
+                dataLong = simdata_jm_cvassoc, 
+                formulaEvent = Surv(t, d) ~ trt,
+                dataEvent = simdata_jm_cvassoc_id,
                 time_var = "t0", 
                 assoc = "etavalue",
                 iter = iter, refresh = refresh,
                 chains = chains, seed = seed)
 
-fit2 <- stan_jm(formulaLong = y1 ~ t0 + (1 | id),
-                dataLong = simdata_jm_gaus_cvassoc, 
-                formulaEvent = Surv(start, stop, died) ~ trt,
-                dataEvent = simdata_jm_gaus_cvassoc,
+fit2 <- stan_jm(formulaLong = y1gaus ~ t0 + (1 | id),
+                dataLong = simdata_jm_cvassoc, 
+                formulaEvent = Surv(t0, t, d) ~ trt,
+                dataEvent = simdata_jm_cvassoc,
                 time_var = "t0", 
                 assoc = "etavalue",
                 iter = iter, refresh = refresh,

@@ -194,7 +194,7 @@ print.stanjm <- function(x, digits = 3, ...) {
 #'   
 #' # Only show random effects parameters
 #' summary(examplejm, pars = "b")
-#' as.data.frame(summary(example_model, pars = "b"))
+#' as.data.frame(summary(examplejm, pars = "b"))
 #'  
 #' # To obtain only the random intercepts we could also use a
 #' # regular expression in the regex argument as follows

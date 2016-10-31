@@ -38,25 +38,25 @@ context("Check methods for stan_jm objects")
 
 # Gaussian models
 
-l1 <- lmer(y1 ~ t0 + (1 | id),
-           data = simdata_jm_gaus_cvassoc)
+l1 <- lmer(y1gaus ~ t0 + (1 | id),
+           data = simdata_jm_cvassoc)
 
-s1 <- coxph(Surv(stop, died) ~ trt, 
-            data = simdata_jm_gaus_cvassoc.id)
+s1 <- coxph(Surv(t, d) ~ trt, 
+            data = simdata_jm_cvassoc_id)
 
-fit1 <- stan_jm(formulaLong = y1 ~ t0 + (1 | id),
-               dataLong = simdata_jm_gaus_cvassoc, 
-               formulaEvent = Surv(stop, died) ~ trt,
-               dataEvent = simdata_jm_gaus_cvassoc.id,
+fit1 <- stan_jm(formulaLong = y1gaus ~ t0 + (1 | id),
+               dataLong = simdata_jm_cvassoc, 
+               formulaEvent = Surv(t, d) ~ trt,
+               dataEvent = simdata_jm_cvassoc_id,
                time_var = "t0", 
                assoc = "etavalue",
                iter = iter, refresh = refresh,
                chains = chains, seed = seed)
 
-fit2 <- stan_jm(formulaLong = y1 ~ t0 + (1 | id),
-                   dataLong = simdata_jm_gaus_cvassoc, 
-                   formulaEvent = Surv(stop, died) ~ trt,
-                   dataEvent = simdata_jm_gaus_cvassoc,
+fit2 <- stan_jm(formulaLong = y1gaus ~ t0 + (1 | id),
+                   dataLong = simdata_jm_cvassoc, 
+                   formulaEvent = Surv(t0, t, d) ~ trt,
+                   dataEvent = simdata_jm_cvassoc,
                    time_var = "t0", 
                    assoc = "etavalue",
                    iter = iter, refresh = refresh,
@@ -64,13 +64,12 @@ fit2 <- stan_jm(formulaLong = y1 ~ t0 + (1 | id),
 
 # Poisson models
 
-l3 <- glmer(y1 ~ t0 + (1 | id),
-            data = simdata_jm_pois_cvassoc,
+l3 <- glmer(y1pois ~ t0 + (1 | id),
+            data = simdata_jm_cvassoc,
             family = "poisson")
 
-fit3 <- update(fit1, family = "poisson",
-               dataLong = simdata_jm_pois_cvassoc,
-               dataEvent = simdata_jm_pois_cvassoc.id)
+fit3 <- update(formulaLong. = y1pois ~ t0 + (1 | id), 
+               family = "poisson")
 
 
     #--------------------#
