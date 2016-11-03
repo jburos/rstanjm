@@ -1022,6 +1022,7 @@ data {
   int<lower=0,upper=1> basehaz_piecewise;  // piecewise constant baseline hazard
   int<lower=0,upper=1> basehaz_splines;  // cubic splines baseline hazard
   int<lower=0> splines_df;  // df for cubic splines baseline hazard
+  int<lower=0> piecewise_df;  // number of segments for piecewise constant baseline hazard
   int<lower=0,upper=1> e_centre;  // 1 = yes for centred predictor matrix
   int<lower=0,upper=1> e_has_intercept;  // 1 = yes
   int<lower=0> nrow_y_Xq;     // num. rows in long. predictor matrix at quad points
@@ -1030,6 +1031,7 @@ data {
   matrix[nrow_e_Xq,e_K] e_Xq;         // predictor matrix (event submodel) at quadpoints, possibly centred
   vector[nrow_e_Xq] e_times;          // event times and unstandardised quadrature points
   matrix[(nrow_e_Xq*basehaz_splines),splines_df] e_ns_times; // basis for cubic splines baseline hazard
+  matrix[(nrow_e_Xq*basehaz_piecewise),piecewise_df] e_times_piecedummy; // dummy indicators for piecewise constant baseline hazard
   vector[nrow_e_Xq] e_d;              // event indicator, followed by dummy indicator for quadpoints
   vector[e_K*(e_centre>0)] e_xbar;   // predictor means (event submodel)
   int<lower=0> num_non_zero_Zq;    // number of non-zero elements in the Z matrix (at quadpoints)
@@ -1108,7 +1110,8 @@ data {
   vector<lower=0>[sum_y_has_dispersion] priorLong_scale_for_dispersion;
   real<lower=0> priorEvent_scale_for_weibull[basehaz_weibull];
   vector<lower=0>[splines_df] priorEvent_scale_for_splines;
- 
+  vector<lower=0>[piecewise_df] priorEvent_scale_for_piecewise;
+
   // hyperparameters for random effects model
   vector<lower=0>[t] shape; 
   vector<lower=0>[t] scale;
@@ -1257,7 +1260,8 @@ parameters {
   real e_gamma[e_has_intercept];          // intercept (event model)
   vector[e_K] e_z_beta;                   // primative coefs (event submodel)
   real<lower=0> weibull_shape_unscaled[basehaz_weibull];  // unscaled weibull shape parameter 
-  vector[splines_df] splines_coefs_unscaled;       // unscaled coefs for cubic splines baseline hazard
+  vector[splines_df] splines_coefs_unscaled;       // unscaled coefs for cubic splines on log baseline hazard
+  vector[piecewise_df] piecewise_coefs_unscaled;  // unscaled coefs for piecewise constant baseline hazard
  
   // parameters for association structure
   vector[a_K] a_z_beta;   // primative coefs
@@ -1287,6 +1291,7 @@ transformed parameters {
   vector[e_K] e_beta; 
   real weibull_shape[basehaz_weibull];
   vector[splines_df] splines_coefs;     
+  vector[piecewise_df] piecewise_coefs;     
   
   // parameters for GK quadrature  
   vector[(M*nrow_y_Xq)] y_eta_q;          // linear predictor (all long submodels) evaluated at quadpoints
@@ -1384,6 +1389,8 @@ transformed parameters {
     else weibull_shape[1] = weibull_shape_unscaled[1];
   } else if (basehaz_splines == 1) {
     splines_coefs = priorEvent_scale_for_splines .* splines_coefs_unscaled;
+  } else if (basehaz_piecewise == 1) {
+    piecewise_coefs = priorEvent_scale_for_piecewise .* piecewise_coefs_unscaled;
   }  
   
   // parameters for association structure
@@ -1592,6 +1599,9 @@ transformed parameters {
   // NB assumes splines baseline hazard
   else if (basehaz_splines == 1)
 	  log_basehaz = e_ns_times * splines_coefs;	
+  // NB assumes piecewise constant baseline hazard
+  else if (basehaz_piecewise == 1)
+	  log_basehaz = e_times_piecedummy * piecewise_coefs;		  
   ll_haz_q = e_d .* (log_basehaz + e_eta_q);
 					  
   // Partition event times and quad points
@@ -1924,7 +1934,11 @@ model {
   // Log-prior for baseline hazard spline coefficients 
   if (basehaz_splines == 1) 
     target += normal_lpdf(splines_coefs_unscaled | 0, 1);
-  
+
+  // Log-prior for baseline hazard piecewise constant coefficients 
+  if (basehaz_piecewise == 1) 
+    target += normal_lpdf(piecewise_coefs_unscaled | 0, 1);
+    
   // Prior for random effects model
   if (t > 0) decov_lp(z_b, z_T, rho, zeta, tau, 
                       regularization, delta, shape, t, p);

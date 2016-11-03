@@ -65,13 +65,22 @@
 #'   \strong{Examples} section below.
 #' @param base_haz A character string indicating which baseline hazard to use
 #'   for the event submodel. Options are a Weibull baseline hazard
-#'   (\code{"weibull"}, the default) or an approximated baseline hazard 
-#'   using B-splines (\code{"splines"}).
+#'   (\code{"weibull"}, the default), a B-splines approximation estimated 
+#'   for the log baseline hazard (\code{"splines"}), or a piecewise
+#'   constant baseline hazard (\code{"piecewise"}).
 #' @param df An optional positive integer specifying the degrees of freedom 
-#'   for the cubic splines if \code{base_haz = "splines"}. The default is 3.
+#'   for the B-splines if \code{base_haz = "splines"}, or the number of
+#'   intervals used for the piecewise constant baseline hazard if 
+#'   \code{base_haz = "piecewise"}. The default is 6.
 #' @param knots An optional numeric vector specifying the internal knot 
-#'   locations for the cubic splines if \code{base_haz = "splines"}. Cannot be
-#'   specified if \code{df} is specified.  
+#'   locations for the B-splines if \code{base_haz = "splines"}, or the 
+#'   internal cut-points for defining intervals of the piecewise constant 
+#'   baseline hazard if \code{base_haz = "piecewise"}. Knots cannot be
+#'   specified if \code{df} is specified. If not specified, then the 
+#'   default is to use \code{df - 4} knots if \code{base_haz = "splines"},
+#'   or \code{df - 1} knots if \code{base_haz = "piecewise"}, which are
+#'   placed at equally spaced percentiles of the distribution of
+#'   observed event times.
 #' @param quadnodes The number of nodes to use for the Gauss-Kronrod quadrature
 #'   that is used to evaluate the cumulative hazard in the likelihood function. 
 #'   Options are 15 (the default), 11 or 7.
@@ -307,7 +316,7 @@ stan_jm <- function(formulaLong, dataLong,
                     formulaEvent, dataEvent, 
                     time_var, id_var, family = gaussian,
                     assoc = "etavalue",
-                    base_haz = c("weibull", "splines"), 
+                    base_haz = c("weibull", "splines", "piecewise"), 
                     df, knots, quadnodes = 15, 
                     subsetLong, subsetEvent, 
                     na.action = getOption("na.action", "na.omit"),
@@ -349,7 +358,9 @@ stan_jm <- function(formulaLong, dataLong,
   call <- match.call(expand.dots = TRUE)    
   mc <- match.call(expand.dots = FALSE)
   mc$time_var <- mc$id_var <- 
-    mc$assoc <- mc$base_haz <- mc$df <- mc$quadnodes <- 
+    mc$assoc <- mc$base_haz <- 
+    mc$df <- mc$knots <- 
+    mc$quadnodes <- 
     mc$centreLong <- mc$centreEvent <- mc$init <- NULL
   mc$priorLong <- mc$priorLong_intercept <- mc$priorLong_ops <- 
     mc$priorEvent <- mc$priorEvent_intercept <- mc$priorEvent_ops <-
@@ -798,32 +809,39 @@ stan_jm <- function(formulaLong, dataLong,
   base_haz_piecewise <- (base_haz == "piecewise")
   base_haz_splines <- (base_haz == "splines")
 
-  if (!base_haz_splines) {  # not splines baseline hazard
+  if (!(base_haz_splines || base_haz_piecewise)) { # not splines or piecewise
     if (!missing(df)) {
       warning("'df' will be ignored since 'base_haz' was not set ",
-              "to splines.", immediate. = TRUE, call. = FALSE)
+              "to splines or piecewise constant.", 
+              immediate. = TRUE, call. = FALSE)
     }
     if (!missing(knots)) {
       warning("'knots' will be ignored since 'base_haz' was not set ",
-              "to splines.", immediate. = TRUE, call. = FALSE)
+              "to splines or piecewise constant.", 
+              immediate. = TRUE, call. = FALSE)
     }
-    df <- knots <- splines_df <- NULL    
-  } else {  # splines baseline hazard
+    df <- knots <- splines_df <- piecewise_df <- NULL    
+  } else {  # splines  or piecewise
     if ((!missing(df)) && (!missing(knots))) {
       # both specified
       stop("Cannot specify both 'df' and 'knots'.", call. = FALSE)
     } else if (missing(df) && missing(knots)) {
       # neither specified -- use default df
-      df <- splines_df <- 3L
+      df <- splines_df <- piecewise_df <- 6L
       knots <- NULL
     } else if ((!missing(df)) && (missing(knots))) {
       # only df specified
-      splines_df <- df
+      if (base_haz_splines) {
+        df <- splines_df <- df + 1
+      } else if (base_haz_piecewise) {
+        piecewise_df <- df
+      }
       knots <- NULL
     } else if ((!missing(knots)) && (missing(df))) {
       # only knots specified
       df <- NULL
-      splines_df <- length(knots) + 1
+      splines_df <- length(knots) + 4
+      piecewise_df <- length(knots) + 1
     } else stop("Bug found: unable to reconcile 'df' and ",
                 "'knots' arguments.", call. = FALSE)
   }
@@ -901,8 +919,27 @@ stan_jm <- function(formulaLong, dataLong,
   # Evaluate spline basis (knots, df, etc) based on distribution
   # of observed event times
   if (base_haz_splines) 
-    splines_basis <- splines::ns(eventtime[(d > 0)], df, knots)
-               
+    splines_basis <- splines::bs(eventtime[(d > 0)], df = df, knots = knots, 
+                                 Boundary.knots = c(0, max(eventtime)), 
+                                 intercept = TRUE)
+
+  # Evaluate cut points for piecewise constant
+  if (base_haz_piecewise) {
+    if (is.null(knots)) {
+      knots <- quantile(eventtime[(d > 0)], probs = seq(0, 1, 1 / df))
+      knots[[1]] <- 0
+      knots[[length(knots)]] <- max(eventtime)
+    } else {
+      if (!is.numeric(knots))
+        stop("'knots' vector must be numeric", call. = FALSE)
+      if (any(knots < 0))
+        stop("'knots' must be positive", call. = FALSE)
+      if (any(knots > max(eventtime)))
+        stop("'knots' cannot be greater than the largest event ",
+             "time", call. = FALSE)
+    }
+  }
+                 
   # Incorporate intercept term (since Cox model does not have intercept)
   # -- depends on baseline hazard
   if (base_haz_weibull & (!"(Intercept)" %in% colnames(e_x_quadtime)))
@@ -1177,10 +1214,13 @@ stan_jm <- function(formulaLong, dataLong,
   # Priors for event submodel
   priorEvent_scaled <- priorEvent_ops$scaled
   priorEvent_min_prior_scale <- priorEvent_ops$min_prior_scale
-  priorEvent_scale_for_weibull <- priorEvent_ops$prior_scale_for_weibull
-  priorEvent_scale_for_splines <- priorEvent_ops$prior_scale_for_splines
+  priorEvent_scale_for_weibull <- priorEvent_ops$prior_scale_for_basehaz
+  priorEvent_scale_for_splines <- priorEvent_ops$prior_scale_for_basehaz
+  priorEvent_scale_for_piecewise <- priorEvent_ops$prior_scale_for_basehaz
   if (base_haz_splines) priorEvent_scale_for_splines <- 
     rstanarm:::maybe_broadcast(priorEvent_scale_for_splines, splines_df)  
+  if (base_haz_piecewise) priorEvent_scale_for_piecewise <- 
+    rstanarm:::maybe_broadcast(priorEvent_scale_for_piecewise, piecewise_df)  
   
   if (is.null(priorEvent)) {
     priorEvent_informative <- FALSE
@@ -1414,6 +1454,7 @@ stan_jm <- function(formulaLong, dataLong,
     basehaz_piecewise = as.integer(base_haz_piecewise),
     basehaz_splines = as.integer(base_haz_splines),
     splines_df = if (base_haz_splines) as.integer(splines_df) else 0,
+    piecewise_df = if (base_haz_piecewise) as.integer(piecewise_df) else 0,
     e_centre = as.integer(centreEvent),
     e_has_intercept = as.integer(e_has_intercept),
     nrow_y_Xq = NROW(xqtemp[[1]]),
@@ -1475,6 +1516,8 @@ stan_jm <- function(formulaLong, dataLong,
       if (base_haz_weibull) as.array(priorEvent_scale_for_weibull) else as.array(double(0)),
     priorEvent_scale_for_splines = 
       if (base_haz_splines) as.array(priorEvent_scale_for_splines) else as.array(double(0)),
+    priorEvent_scale_for_piecewise = 
+      if (base_haz_piecewise) as.array(priorEvent_scale_for_piecewise) else as.array(double(0)),
     
     prior_PD = as.integer(prior_PD)
   )  
@@ -1595,9 +1638,21 @@ stan_jm <- function(formulaLong, dataLong,
                        return_fam}))
   standata$any_fam_3 <- as.integer(any(standata$family == 3L))
   
+  # Cubic splines baseline hazard
   standata$e_ns_times <- if (base_haz_splines) 
-    as.array(splines:::predict.ns(splines_basis, standata$e_times)) else 
+    as.array(splines:::predict.bs(splines_basis, standata$e_times)) else 
     as.array(matrix(0,0,0))
+  
+  # Piecewise constant baseline hazard
+  if (base_haz_piecewise) {
+    e_times_quantiles <- cut(standata$e_times, knots, 
+                             include.lowest = TRUE, labels = FALSE)
+    tmp <- matrix(NA, length(e_times_quantiles), piecewise_df)
+    for (i in 1:piecewise_df) tmp[, i] <- ifelse(e_times_quantiles == i, 1, 0)
+  }
+  standata$e_times_piecedummy <- if (base_haz_piecewise)
+    as.array(tmp) else as.array(matrix(0,0,0))    
+
   
   #================
   # Initial values
@@ -1665,6 +1720,7 @@ stan_jm <- function(formulaLong, dataLong,
       weibull_shape_unscaled = if (base_haz_weibull) 
         as.array(runif(1, 0.5, 3) / priorEvent_scale_for_weibull) else double(0),
       splines_coefs_unscaled = if (base_haz_splines) as.array(rep(0, splines_df)) else double(0),
+      piecewise_coefs_unscaled = if (base_haz_piecewise) as.array(rep(0, piecewise_df)) else double(0),
       a_z_beta = if (a_K) as.array(rep(0, a_K)) else double(0),
       z_b = as.array(runif(standata$len_b, -0.5, 0.5)),
       y_global = as.array(runif(y_hs)),
@@ -1711,6 +1767,7 @@ stan_jm <- function(formulaLong, dataLong,
             if (Npat) "b_by_model",
             "y_dispersion", 
             if (base_haz_weibull) "weibull_shape",
+            if (base_haz_piecewise) "piecewise_coefs",
             if (base_haz_splines) "splines_coefs",
             #"mean_PPD",
             "theta_L")
@@ -1780,6 +1837,7 @@ stan_jm <- function(formulaLong, dataLong,
                  if (length(group)) c(paste0("b[", b_nms, "]")),
                  d_nms,
                  if (base_haz_weibull) "Event|weibull-shape",               
+                 if (base_haz_piecewise) paste0("Event|basehaz-coef", seq(piecewise_df)),               
                  if (base_haz_splines) paste0("Event|basehaz-coef", seq(splines_df)),               
                 #"mean_PPD",
                  paste0("theta_L", seq(standata$len_theta_L)),
@@ -1790,10 +1848,13 @@ stan_jm <- function(formulaLong, dataLong,
   names(n_grps) <- cnms_nms  # n_grps is num. of levels within each grouping factor
   names(p) <- cnms_nms       # p is num. of variables within each grouping factor
   
-  splines_attr <- if (base_haz_splines) 
-    attributes(splines_basis)[c("degree", "knots", "Boundary.knots", "intercept")] else NULL
-  base_haz_attr <- list(type = base_haz, splines_attr = splines_attr)
-  
+  # Attributes of baseline haz for passing to fitted object
+  if (base_haz_splines) {
+    attr <- attributes(splines_basis)[c("degree", "knots", "Boundary.knots", "intercept")] 
+  } else if (base_haz_piecewise) {
+    attr <- list(df = piecewise_df, knots = knots)
+  } else NULL
+
   # Undo ordering of matrices if bernoulli
   for (m in 1:M) {
     if (is_bernoulli[[m]]) {
@@ -1808,7 +1869,7 @@ stan_jm <- function(formulaLong, dataLong,
   #colnames(Z) <- b_names(names(stanfit), value = TRUE)
   fit <- rstanarm:::nlist(stanfit, family, formula = c(formulaLong, formulaEvent), 
                           id_var, time_var, offset = NULL, quadnodes,
-                          base_haz = base_haz_attr,
+                          base_haz = list(type = base_haz, attr = attr),
                           M, cnms, y_N, y_cnms, y_flist, Npat, n_grps, assoc = has_assoc, 
                           fr = c(y_fr, list(e_fr)),
                           x = lapply(1:M, function(i) 
