@@ -239,23 +239,26 @@ priorLong_options <- function(prior_scale_for_dispersion = 5,
 
 #' @rdname priors
 #' @export 
-#' @param prior_scale_for_weibull Prior scale for the shape parameter of the 
-#'   Weibull distribution for the baseline hazard in \code{\link{stan_jm}}
-#'   (when the \code{base_haz} argument is set to "weibull"), 
+#' @param prior_scale_for_basehaz Usage depends on the baseline hazard 
+#'   specified in the \code{base_haz} argument of the  
+#'   \code{\link{stan_jm}} call. 
+#'   If \code{base_haz = "weibull"} then this argument specifies the
+#'   prior scale for the shape parameter of the Weibull distribution, 
 #'   which is given a half-Cauchy truncated at zero.
-#' @param prior_scale_for_splines Prior scale for the coefficients of the
-#'   restricted cubic splines for the baseline hazard in \code{\link{stan_jm}}
-#'   (when the \code{base_haz} argument is set to "splines"), 
+#'   If \code{base_haz = "splines"} then this argument specifies the
+#'   prior scale(s) for the spline regression coefficients, 
 #'   which are given normal distributions with location 0.
-#'   
-priorEvent_options <- function(prior_scale_for_weibull = 5,
-                               prior_scale_for_splines = 10,
+#'   If \code{base_haz = "piecewise"} then this argument specifies the
+#'   prior scale for the parameters corresponding to the log baseline 
+#'   hazard within each interval, which are given normal distributions
+#'   with location 0.
+#'  
+priorEvent_options <- function(prior_scale_for_basehaz = 5,
                                min_prior_scale = 1e-12, 
                                scaled = TRUE) {
-  rstanarm:::validate_parameter_value(prior_scale_for_weibull)
+  rstanarm:::validate_parameter_value(prior_scale_for_basehaz)
   rstanarm:::validate_parameter_value(min_prior_scale)
-  rstanarm:::nlist(scaled, min_prior_scale, prior_scale_for_weibull, 
-                   prior_scale_for_splines)
+  rstanarm:::nlist(scaled, min_prior_scale, prior_scale_for_basehaz)
 }
 
 #' @rdname priors
