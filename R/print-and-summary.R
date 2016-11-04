@@ -75,7 +75,7 @@ print.stanjm <- function(x, digits = 3, ...) {
     coef_mat <- mat[, c(nms$y[[m]], nms$y_extra[[m]]), drop = FALSE]
     
     # Calculate median and MAD
-    estimates <- rstanarm:::.median_and_madsd(coef_mat)
+    estimates <- .median_and_madsd(coef_mat)
     
     # Add column with eform
     if (link[m] %in% c("log", "logit")) 
@@ -86,7 +86,7 @@ print.stanjm <- function(x, digits = 3, ...) {
     # Print estimates
     rownames(estimates) <- 
       gsub(paste0("^Long", m, "\\|"), "", rownames(estimates))     
-    rstanarm:::.printfr(estimates, digits, ...)
+    .printfr(estimates, digits, ...)
   }
   
   # Estimates table for event submodel
@@ -94,7 +94,7 @@ print.stanjm <- function(x, digits = 3, ...) {
     coef_mat <- mat[, c(nms$e, nms$a, nms$e_extra), drop = FALSE]
     
     # Calculate median and MAD
-    estimates <- rstanarm:::.median_and_madsd(coef_mat)
+    estimates <- .median_and_madsd(coef_mat)
   
     # Add column with eform
     estimates <- cbind(estimates, 
@@ -103,7 +103,7 @@ print.stanjm <- function(x, digits = 3, ...) {
   
     rownames(estimates) <- gsub("^Event\\|", "", rownames(estimates))  
     rownames(estimates) <- gsub("^Assoc\\|", "", rownames(estimates))   
-    rstanarm:::.printfr(estimates, digits, ...)
+    .printfr(estimates, digits, ...)
 
   # Estimates table for group-level random effects
   cat("\nGroup-level random effects:\n") 
@@ -205,7 +205,7 @@ print.stanjm <- function(x, digits = 3, ...) {
 #' 
 summary.stanjm <- function(object, pars = c("long", "event"), regex_pars = NULL, 
                             probs = NULL, digits = 3, ...) {
-  pars <- rstanarm:::collect_pars(object, pars, regex_pars)
+  pars <- collect_pars(object, pars, regex_pars)
   M <- object$n_markers
   
   # Family and link for each submodel
@@ -248,7 +248,7 @@ summary.stanjm <- function(object, pars = c("long", "event"), regex_pars = NULL,
                  grep(paste0("^Long", m, "\\|"), nms_tmp, value = TRUE))
   nms_tmp_e <- grep("^Event\\|", nms_tmp, value = TRUE)
   nms_tmp_a <- grep("^Assoc\\|", nms_tmp, value = TRUE)
-  nms_tmp_b <- rstanarm:::b_names(nms_tmp, value = TRUE)
+  nms_tmp_b <- b_names(nms_tmp, value = TRUE)
   nms_tmp_lp <- grep("^log-posterior$", nms_tmp, value = TRUE)
   out <- out[c(unlist(nms_tmp_y), nms_tmp_e, nms_tmp_a, nms_tmp_b, nms_tmp_lp), , drop = FALSE]
   
@@ -269,7 +269,7 @@ summary.stanjm <- function(object, pars = c("long", "event"), regex_pars = NULL,
             time_var = object$time_var,
             family = fam,
             base_haz = object$base_haz$type,
-            posterior_sample_size = rstanarm:::posterior_sample_size(object),
+            posterior_sample_size = posterior_sample_size(object),
             times = times,
             print.digits = digits, 
             class = "summary.stanjm")

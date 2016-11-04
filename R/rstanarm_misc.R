@@ -15,6 +15,14 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
+
+# The following functions are taken verbatim from the rstanarm
+# package. They are included here, so that they can be used
+# internally within the rstanjm package, without needing to
+# extract them from the rstanarm namespace using ':::'
+
+#----------  Functions from: misc.R ----------# 
+
 # If a is NULL (and Inf, respectively) return b, otherwise just return a
 # @param a,b Objects
 `%ORifNULL%` <- function(a, b) {
@@ -22,4 +30,150 @@
 }
 `%ORifINF%` <- function(a, b) {
   if (a == Inf) b else a
+}
+
+# Grep for "b" parameters (ranef)
+#
+# @param x Character vector (often rownames(fit$stan_summary))
+# @param ... Passed to grep
+b_names <- function(x, ...) {
+  grep("^b\\[", x, ...)
+}
+
+# Combine pars and regex_pars
+#
+# @param x stanreg object
+# @param pars Character vector of parameter names
+# @param regex_pars Character vector of patterns
+collect_pars <- function(x, pars = NULL, regex_pars = NULL) {
+  if (is.null(pars) && is.null(regex_pars)) 
+    return(NULL)
+  if (!is.null(pars)) 
+    pars[pars == "varying"] <- "b"
+  if (!is.null(regex_pars)) 
+    pars <- c(pars, grep_for_pars(x, regex_pars))
+  unique(pars)
+}
+
+# Get the posterior sample size
+#
+# @param x A stanreg object
+# @return NULL if used.optimizing(x), otherwise the posterior sample size
+posterior_sample_size <- function(x) {
+  validate_stanreg_object(x)
+  if (used.optimizing(x)) 
+    return(NULL)
+  pss <- x$stanfit@sim$n_save
+  if (used.variational(x))
+    return(pss)
+  sum(pss - x$stanfit@sim$warmup2)
+}
+
+# Test for a given estimation method
+#
+# @param x A stanreg object.
+used.optimizing <- function(x) {
+  x$algorithm == "optimizing"
+}
+used.sampling <- function(x) {
+  x$algorithm == "sampling"
+}
+used.variational <- function(x) {
+  x$algorithm %in% c("meanfield", "fullrank")
+}
+
+# Test if stanreg object used stan_(g)lmer
+#
+# @param x A stanreg object.
+is.mer <- function(x) {
+  check1 <- inherits(x, "lmerMod")
+  check2 <- !is.null(x$glmod)
+  if (check1 && !check2) {
+    stop("Bug found. 'x' has class 'lmerMod' but no 'glmod' component.")
+  } else if (!check1 && check2) {
+    stop("Bug found. 'x' has 'glmod' component but not class 'lmerMod'.")
+  }
+  isTRUE(check1 && check2)
+}
+
+# Consistent error message to use when something is only available for 
+# models fit using MCMC
+#
+# @param what An optional message to prepend to the default message.
+STOP_sampling_only <- function(what) {
+  msg <- "only available for models fit using MCMC (algorithm='sampling')."
+  if (!missing(what)) 
+    msg <- paste(what, msg)
+  stop(msg, call. = FALSE)
+}
+
+# Consistent error message to use when something is only available for models
+# fit using MCMC or VB but not optimization
+# 
+# @param what An optional message to prepend to the default message.
+STOP_not_optimizing <- function(what) {
+  msg <- "not available for models fit using algorithm='optimizing'."
+  if (!missing(what)) 
+    msg <- paste(what, msg)
+  stop(msg, call. = FALSE)
+}
+
+
+#----------  Functions from: print-and-summary.R ----------# 
+
+.printfr <- function(x, digits, ...) {
+  print(format(round(x, digits), nsmall = digits), quote = FALSE, ...)
+}
+.median_and_madsd <- function(x) {
+  cbind(Median = apply(x, 2, median), MAD_SD = apply(x, 2, mad))
+}
+
+
+#----------  Functions from: plots.R ----------# 
+
+# Check for valid parameters
+# @param x stanreg object
+# @param pars user specified character vector
+check_plotting_pars <- function(x, pars) {
+  if (used.optimizing(x)) {
+    allpars <- c("alpha", "beta", rownames(x$stan_summary))
+  } else {
+    sim <- x$stanfit@sim
+    allpars <- c(sim$pars_oi, sim$fnames_oi)
+  }
+  m <- which(match(pars, allpars, nomatch = 0) == 0)
+  if (length(m) > 0) 
+    stop("No parameter ", paste(pars[m], collapse = ', '), 
+         call. = FALSE) 
+  return(unique(pars))
+}
+
+# Select the correct plotting function
+# @param x stanreg object
+# @param plotfun user specified plotfun argument (can be missing)
+set_plotting_fun <- function(x, plotfun = NULL) {
+  .plotters <- function(x) paste0("stan_", x)
+  
+  if (used.optimizing(x)) {
+    if (!is.null(plotfun)) {
+      stop("'plotfun' should not be specified for models fit using ",
+           "algorithm='optimizing'.", call. = FALSE)
+    } else {
+      return("stan_plot_opt")
+    }
+  } else if (is.null(plotfun)) {
+    plotfun <- "stan_plot"
+  }
+  
+  samp_only <- c("ac", "diag", "rhat", "ess", "mcse", "par")
+  plotters <- .plotters(c("plot", "trace", "scat", "hist", "dens", samp_only))
+  funname <- grep(paste0(plotfun, "$"), plotters, value = TRUE)
+  if (used.variational(x) && funname %in% .plotters(samp_only))
+    STOP_sampling_only(funname)
+  fun <- try(getExportedValue("rstan", funname), silent = TRUE)
+  if (inherits(fun, "try-error")) 
+    stop("Plotting function not found. See ?rstanarm::plots for valid names.", 
+         call. = FALSE)
+  
+  return(fun)
 }

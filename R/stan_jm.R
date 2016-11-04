@@ -152,6 +152,10 @@
 #' @param algorithm Character string (possibly abbreviated) indicating the 
 #'   estimation approach to use. Currently, only "sampling" (for MCMC) is 
 #'   allowed.
+#' @param debug Should not be used. This is used in package development to
+#'   help identify the location of bugs in the Stan code. When set to 
+#'   \code{TRUE}, the Stan file executes several print statements which 
+#'   can help to identify the location of bugs or numerical instabilities.  
 #'   
 #' @details The \code{stan_jm} function can be used to fit a joint model (also 
 #'   known as a shared parameter model) for longitudinal and time-to-event data 
@@ -330,8 +334,9 @@ stan_jm <- function(formulaLong, dataLong,
 					          priorAssoc = normal(),
 					          priorAssoc_ops = priorAssoc_options(),
                     prior_covariance = decov(), prior_PD = FALSE,
-					          adapt_delta = 0.75, max_treedepth = 9L, QR = FALSE, 
-					          algorithm = c("sampling", "meanfield", "fullrank")) {
+					          adapt_delta = NULL, max_treedepth = NULL, QR = FALSE, 
+					          algorithm = c("sampling", "meanfield", "fullrank"),
+					          debug = FALSE) {
 
 
   #=============================
@@ -370,6 +375,7 @@ stan_jm <- function(formulaLong, dataLong,
     mc$adapt_delta <- mc$max_treedepth <- 
     mc$... <- mc$QR <- NULL
   mc$weights <- NULL
+  mc$debug <- NULL
   
   # Create call for longitudinal submodel  
   y_mc <- mc
@@ -634,7 +640,6 @@ stan_jm <- function(formulaLong, dataLong,
       ord[[m]] <- order(y[[m]])
       y[[m]] <- y[[m]][ord[[m]]]
       trials[[m]] <- trials[[m]][ord[[m]]]
-      y_weights[[m]] <- y_weights[[m]][ord[[m]]]
       xtemp[[m]] <- xtemp[[m]][ord[[m]], , drop = FALSE]  
       Z[[m]] <- Z[[m]][ord[[m]], , drop = FALSE]
       y_N01[[m]] <- sapply(0:1, function(x) sum(y[[m]] == x))
@@ -752,6 +757,9 @@ stan_jm <- function(formulaLong, dataLong,
       weights_df <- merge(flist_df, weights, 
                           by.x = "id", by.y = id_var, sort = FALSE)
       y_weights[[m]] <- weights_df[[weight_var]]    
+      # Reorder weights if bernoulli
+      if (rstanarm:::is.binomial(family[[m]]$family) && all(y[[m]] %in% 0:1))      
+        y_weights[[m]] <- y_weights[[m]][ord[[m]]]
     }
   } else y_weights <- lapply(1:M, function(m) rep(0.0, length(y[[m]])))
     
@@ -1734,8 +1742,8 @@ stan_jm <- function(formulaLong, dataLong,
         else matrix(0,0,0)      
       ),
       if (prior_covariance$dist == "decov") list(
-      z_T = as.array(rep(0, len_z_T)),
-      rho = as.array(runif(sum(p)-t)),
+      z_T = as.array(rep(sqrt(1/len_z_T), len_z_T)),
+      rho = if ((sum(p) - t) > 0) as.array(rep(1 / (sum(p) - t + 1), (sum(p) - t))) else double(0),
       zeta = if (!is.null(normalised_zetas)) as.array(normalised_zetas) else double(0),
       tau = as.array(tau)
       ),
@@ -1752,6 +1760,8 @@ stan_jm <- function(formulaLong, dataLong,
   # Fit model
   #===========
 
+  standata$debug <- as.integer(debug)
+  
   # call stan() to draw from posterior distribution
   stanfit <- if (prior_covariance$dist == "lkjcorr") stanmodels$jmlkjcorr else stanmodels$jm
   pars <- c(if (sum_y_has_intercept_unbound) "y_gamma_unbound",
@@ -1775,17 +1785,15 @@ stan_jm <- function(formulaLong, dataLong,
   #cat("\n--> Fitting joint model now...")
   cat("\nPlease note the warmup phase may be much slower than",
       "later iterations!\n")             
-  sampling_args <- rstanarm:::set_sampling_args(
+  sampling_args <- set_sampling_args(
     object = stanfit, 
-    prior = NULL, # determines default adapt_delta value
     user_dots = list(...), 
     user_adapt_delta = adapt_delta,
+    user_max_treedepth = max_treedepth,
     data = standata, 
     pars = pars, 
     init = init,
     show_messages = FALSE)
-  sampling_args$control$max_treedepth <- max_treedepth  
-  sampling_args$save_warmup <- TRUE
   stanfit <- do.call(sampling, sampling_args)
 
 #  if (QR) {  # not yet implemented for stan_jm

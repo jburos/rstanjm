@@ -224,7 +224,65 @@ linkinv.family <- function(x, ...) {
 }
   
   
+# Set arguments for sampling 
+#
+# Prepare a list of arguments to use with \code{rstan::sampling} via
+# \code{do.call}.
+#
+# @param object The stanfit object to use for sampling.
+# @param user_dots The contents of \code{...} from the user's call to
+#   the \code{stan_jm} modeling function.
+# @param user_adapt_delta The value for \code{adapt_delta} specified by the
+#   user.
+# @param user_max_treedepth The value for \code{max_treedepth} specified by the
+#   user.
+# @param ... Other arguments to \code{\link[rstan]{sampling}} not coming from
+#   \code{user_dots} (e.g. \code{data}, \code{pars}, \code{init}, etc.)
+# @return A list of arguments to use for the \code{args} argument for 
+#   \code{do.call(sampling, args)}.
+set_sampling_args <- function(object, user_dots = list(), 
+                              user_adapt_delta = NULL, 
+                              user_max_treedepth = NULL, ...) {
+  args <- list(object = object, ...)
+  unms <- names(user_dots)
+  for (j in seq_along(user_dots)) {
+    args[[unms[j]]] <- user_dots[[j]]
+  }
+  control_defaults <- list(adapt_delta = 0.85,
+                           max_treedepth = 9L)
   
+  if (!"control" %in% unms) { 
+    # no user-specified 'control' argument
+    args$control <- control_defaults
+  } else { 
+    # user specifies a 'control' argument
+    # adapt delta
+    if (!is.null(user_adapt_delta)) { 
+      # if user specified adapt_delta argument to stan_jm then 
+      # set control$adapt_delta to user-specified value
+      args$control$adapt_delta <- user_adapt_delta
+    } else {
+      # use default adapt_delta
+      args$control$adapt_delta <- control_defaults$adapt_delta
+    }
+    # max treedepth
+    if (!is.null(user_max_treedepth)) { 
+      # if user specified max_treedepth argument to stan_jm then 
+      # set control$max_treedepth to user-specified value
+      args$control$max_treedepth <- user_max_treedepth
+    } else {
+      # use default max_treedepth
+      args$control$max_treedepth <- control_defaults$max_treedepth
+    }
+  }
+  
+  if (!"iter" %in% unms) args$iter <- 1000
+  if (!"chains" %in% unms) args$chains <- 2
+  if (!"cores" %in% unms) args$cores <- parallel::detectCores()
+  if (!"save_warmup" %in% unms) args$save_warmup <- TRUE  
+
+  return(args)
+}  
   
   
   
