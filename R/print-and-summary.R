@@ -149,8 +149,11 @@ print.stanjm <- function(x, digits = 3, ...) {
 #'   fixed effect intercept terms.
 #'   The estimates for the random effects can be selected using \code{pars = "b"}
 #'   or \code{pars = "varying"}.
+#'   See \strong{Examples}.
 #'   If both \code{pars} and \code{regex_pars} are set to \code{NULL} then all 
-#'   parameters are selected, including the log posterior. See \strong{Examples}.
+#'   fixed effect regression coefficients are selected, as well as any 
+#'   additional parameters such as the residual error, dispersion,
+#'   or baseline hazard parameters, and the log posterior. 
 #' @param probs An optional numeric vector of probabilities passed to 
 #'   \code{\link[stats]{quantile}}, for calculating the quantiles of the 
 #'   posterior distribution for each parameter.
@@ -203,7 +206,7 @@ print.stanjm <- function(x, digits = 3, ...) {
 #'  
 #' @importMethodsFrom rstan summary
 #' 
-summary.stanjm <- function(object, pars = c("long", "event"), regex_pars = NULL, 
+summary.stanjm <- function(object, pars = NULL, regex_pars = NULL, 
                             probs = NULL, digits = 3, ...) {
   pars <- collect_pars(object, pars, regex_pars)
   M <- object$n_markers
@@ -218,9 +221,8 @@ summary.stanjm <- function(object, pars = c("long", "event"), regex_pars = NULL,
     args$probs <- probs
   out <- do.call("summary", args)$summary
   
+  nms <- collect_nms(rownames(object$stan_summary), M, value = TRUE)
   if (!is.null(pars)) {
-    nms <- collect_nms(rownames(object$stan_summary), M, value = TRUE)
-
     pars2 <- NA     
     if ("alpha" %in% pars) pars2 <- c(pars2, nms$alpha)
     if ("beta" %in% pars) pars2 <- c(pars2, nms$beta)
@@ -233,8 +235,12 @@ summary.stanjm <- function(object, pars = c("long", "event"), regex_pars = NULL,
                               c("alpha", "beta", "varying", "b",
                                 "long", "event", "assoc", "fixef")))
     pars <- pars2[!is.na(pars2)]
-    out <- out[rownames(out) %in% pars, , drop = FALSE]
+  } else {
+    pars <- c(unlist(nms$y), unlist(nms$y_extra),
+              nms$e, nms$a, nms$e_extra, "log-posterior")
   }
+  
+  out <- out[rownames(out) %in% pars, , drop = FALSE]
   out <- out[!grepl(":_NEW_", rownames(out), fixed = TRUE), , drop = FALSE]
   stats <- colnames(out)
   if ("n_eff" %in% stats)

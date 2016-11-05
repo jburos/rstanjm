@@ -55,6 +55,19 @@ collect_pars <- function(x, pars = NULL, regex_pars = NULL) {
   unique(pars)
 }
 
+# Test if an object is a stanreg object
+#
+# @param x The object to test. 
+is.stanreg <- function(x) inherits(x, "stanreg")
+
+# Throw error if object isn't a stanreg object
+# 
+# @param x The object to test.
+validate_stanreg_object <- function(x, call. = FALSE) {
+  if (!is.stanreg(x))
+    stop("Object is not a stanreg object.", call. = call.) 
+}
+
 # Get the posterior sample size
 #
 # @param x A stanreg object

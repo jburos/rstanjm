@@ -21,8 +21,8 @@
 #' 
 #' For models fit using \code{\link{stan_jm}}, there are a variety of 
 #' diagnostic and inference related plots that can be generated. The 
-#' \code{plotfun} argument to the generic \code{plot} function can be 
-#' used to choose the desired plot type.
+#' user can specify which type of plot to display via the 
+#' \code{plotfun} argument.
 #' 
 #' @method plot stanjm
 #' @export
@@ -50,13 +50,16 @@
 #'   or \code{pars = "varying"}.
 #'   If both \code{pars} and \code{regex_pars} are set to \code{NULL} then all 
 #'   parameters are selected, including the log posterior. 
+#'   If both \code{pars} and \code{regex_pars} are set to \code{NULL} then all 
+#'   fixed effect regression coefficients are selected (with the exception
+#'   of the intercept term if a Weibull baseline hazard was estimated).
 #' @param plotfun A character string naming the plotting function to apply to 
 #'   the stanjm object. See \code{\link[rstanarm]{rstanarm-plots}} for the names and
 #'   descriptions. Also see the \strong{Examples} section below. \code{plotfun} can be
 #'   either the full name of the plotting function (e.g. \code{"stan_hist"}) or
 #'   can be abbreviated to the part of the name following the underscore (e.g. 
-#'   \code{"hist"}). The default plot shows intervals and point estimates for 
-#'   the coefficients.
+#'   \code{"hist"}). The default plot displays intervals and point estimates for 
+#'   the parameters.
 #' @param ... Additional arguments to pass to \code{plotfun} (see
 #'   \code{\link[rstanarm]{rstanarm-plots}}).
 #'
@@ -86,9 +89,10 @@ set_plotting_args <- function(x, pars = NULL, regex_pars = NULL, ...) {
   args <- list(x, ...)
   M <- x$n_markers
   pars <- collect_pars(x, pars, regex_pars)
-  if (!is.null(pars)) {
-    nms <- collect_nms(rownames(x$stan_summary), M, value = TRUE)
-    
+  
+  # Collect parameter names
+  nms <- collect_nms(rownames(x$stan_summary), M, value = TRUE)
+  if (!is.null(pars)) {  # user specified pars
     pars2 <- NA     
     if ("alpha" %in% pars) pars2 <- c(pars2, nms$alpha)
     if ("beta" %in% pars) pars2 <- c(pars2, nms$beta)
@@ -101,9 +105,20 @@ set_plotting_args <- function(x, pars = NULL, regex_pars = NULL, ...) {
                               c("alpha", "beta", "varying", "b",
                                 "long", "event", "assoc", "fixef")))
     pars <- pars2[!is.na(pars2)]
-  }  
-  if (!is.null(pars)) 
-    args$pars <- check_plotting_pars(x, pars)
+  } else {  # no pars specified
+    # Note: pars cannot be left equal to NULL since the 
+    # rstan plot functions will try to extract parameter names
+    # using a call to 
+    #   names(object$coefficients)
+    # which will throw up an error for 'stanjm' objects since it returns 
+    #   c("Long1", "Event")
+    # and NOT the parameter names which are at the lower level of
+    # the list!  
+    pars <- c(unlist(nms$y), nms$e, nms$a)
+    pars <- setdiff(pars, "Event|(Intercept)")
+  }
+  
+  args$pars <- check_plotting_pars(x, pars)
   return(args)
 }
 
@@ -152,6 +167,10 @@ pairs.stanjm <- function(x, ...) {
 #   to be used in the 'pars' argument of the pairs.stanfit call
 drop_nms_with_spaces <- function(nms) {
   sel <- grep(" ", nms)
+  # pairs cannot handle variables with spaces in the variable 
+  # names -- the problem appears to be with passing these 
+  # variables in the 'pars' argument to the 'extract' function
+  # (which is called within the 'pairs.stanfit' function)
   if (length(sel)) {
     cat("'pairs' cannot handle variable names with spaces. The ",
         "following variables will not be plotted: ", 
