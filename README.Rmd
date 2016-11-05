@@ -56,19 +56,19 @@ library(devtools)
 install_github("sambrilleman/rstanjm", args = "--preclean", local = FALSE, build_vignettes = FALSE)
 ```
 
-The `args = "--preclean"` option is necessary to ensure that the Stan model code is compiled correctly. Note that the package does not currently have any supporting vignettes, hence we can only specify `build_vignettes = FALSE`. Once vignettes become available, then these could also be installed by specifying `build_vignettes = TRUE` (assuming LaTeX is appropriately installed).
+The `args = "--preclean"` option is necessary to ensure that the Stan model code is compiled correctly. Note that the package does not currently have any supporting vignettes, hence we can only specify `build_vignettes = FALSE`. Once vignettes become available, then these could also be installed by specifying `build_vignettes = TRUE` (assuming LaTeX is appropriately installed on your PC).
 
-# Example
+## Example
 
-## Model fitting 
-
-In this section we present some examples based on a small subset of the Mayo Clinic's primary biliary cirrhosis (PBC) data. For a description of the dataset type:
+In this section we present some examples based on a small subset of the Mayo Clinic's primary biliary cirrhosis (PBC) data. For a description of the datasets type:
 
 ```r
 help("pbc-datasets", package = "rstanjm")
 ```
 
-First, we fit a simple univariate joint model, with a single normally distributed longitudinal marker, an association structure based on the current value of the linear predictor, and Weibull baseline hazard.
+### Model fitting
+
+First, we fit a simple univariate joint model, with a single normally distributed longitudinal marker, an association structure based on the current value of the linear predictor, and Weibull baseline hazard:
 
 ```r
 library(rstanjm)
@@ -79,7 +79,7 @@ f1 <- stan_jm(formulaLong = logBili ~ year + (year | id),
               time_var = "year")
 ```
 
-Next, we fit a multivariate joint model, with two normally distributed longitudinal markers, an association structure based on the current value and current slope of the linear predictor from the first longitudinal submodel and the random intercept (including the fixed component) from the second longitudinal submodel, and a baseline hazard approximated using B-splines. We use a horseshoe shrinkage prior for the three association parameters, and Student t distribution priors with 5 degrees of freedom for the remaining regression coefficients. Note that since this joint model is relatively more complex and contains a larger number of parameters, we need to fit this joint model to the full PBC data containing 312 individuals and therefore this model takes a little longer to run (~ 10 to 20min).
+Next, we fit a multivariate joint model, with two normally distributed longitudinal markers, an association structure based on the current value and current slope of the linear predictor from the first longitudinal submodel and the random intercept (including the fixed component) from the second longitudinal submodel, and a baseline hazard approximated using B-splines. We use a horseshoe shrinkage prior for the three association parameters, and a Student t prior with 5 degrees of freedom for each of the remaining regression coefficients. Note that since this joint model is relatively more complex and contains a larger number of parameters, we need to fit this joint model to the full PBC data, containing 312 individuals, and therefore this model takes a little longer to run (~ 10 to 20min):
 
 ```r
 mv1 <- stan_jm(
@@ -99,16 +99,16 @@ mv1 <- stan_jm(
 
 The fitted model is returned as an object of the S3 class `stanjm`. We have a variety of methods and postestimation functions available for this class, including: `print`, `summary`, `plot`, `fixef`, `ranef`, `coef`, `VarCorr`, `posterior_interval`, `update`, and more. See `?print.stanjm`, `?summary.stanjm`, `?plot` and `?stanjm-methods` to get more details.
 
-## In-sample predictions
+### In-sample predictions
 
-We can obtain posterior predictions (either for individuals who were used in the estimation, or for new individuals). For the longitudinal submodel we can use the function `posterior_traj`, which by default will use the observed predictor matrix to generate posterior predictions for the longitudinal submodel:
+We can obtain posterior predictions, either for individuals who were used in the estimation or for new individuals. For the longitudinal submodel we use the function `posterior_traj`, which by default will use the observed predictor matrix to generate posterior predictions for the longitudinal submodel:
 
 ```r
 pt <- posterior_traj(f1)
 head(pt)
 ```
 
-To easily interpolate between observation times, so that we obtain predictions at equally spaced times across the entire observation period for each individual we can simply set the argument `interpolate = TRUE`. Similarly if we want to obtain predictions at time points beyond the last observation time we can simply set the argument `extrapolate = TRUE`. We can then plot those trajectories for a subset of individuals. The code required is as follows:
+To easily interpolate between observation times, so that we obtain predictions at equally spaced time points across the entire observation period for each individual, we specify `interpolate = TRUE`. Similarly, if we want to extrapolate our predictions beyond the last observation time we specify `extrapolate = TRUE`. We can then choose to plot the fitted longitudinal trajectories for a subset of individuals. The code required is as follows:
 
 ```r
 pt <- posterior_traj(f1, interpolate = TRUE, extrapolate = TRUE)
@@ -116,7 +116,7 @@ pt_plot <- plot(pt, ids = 1:3)
 pt_plot
 ```
 
-Similarly, we can obtain posterior predictions for the survival function. Here we will generate the estimated survival function for the same three individuals, and then plot estimated survival function alongside the longitudinal predictions using the function `plot_stack`:
+Similarly, we can obtain posterior predictions for the survival function. Here we will generate the estimated subject-specific survival function for each of the individuals using in estimating the model, and then for the same three individuals as used above we will plot estimated survival functions alongside the longitudinal predictions using the function `plot_stack`:
 
 ```r
 ps <- posterior_survfit(f1)
@@ -124,7 +124,7 @@ ps_plot <- plot(ps, ids = 1:3)
 plot_stack(pt_plot, ps_plot)
 ```
 
-## Out-of-sample predictions
+### Out-of-sample predictions
 
 If we have new data for an individual who was not included in the estimation sample, then we can easily generate posterior predictions for that individual by including the `newdata` argument as follows:
 
@@ -142,9 +142,9 @@ ps_new <- posterior_survfit(f1, newdataLong = df, newdataEvent = df_surv)
 plot(ps_new)
 ```
 
-Note however that the out-of-sample predictions that are obtained from using these functions are based on draws of the random effects distribution conditional on the data used to fit the model, but *not* conditional on the new data. That is, they are fitted values evaluated at the set of new covariate values provided, but *not* dynamic predictions (see for example Taylor et al. (2013)).
+Note however that the out-of-sample predictions that are obtained from using these functions are based on draws of the random effects distribution conditional on the data used to fit the model, but *not* conditional on the new data. That is, they are fitted values evaluated using the specified set of new covariate values, but they are *not* individualised dynamic predictions (see for example Taylor et al. (2013)).
 
-## Model checking
+### Model checking
 
 We can also check the fit of the longitudinal and event submodels by comparing posterior predictions to the observed data. This can be easily done using the `pp_check` and `ps_check` functions. For the unvariate joint model:
 
@@ -167,11 +167,11 @@ We can also use the diagnostic and inference plots available through the generic
 plot(f1, plotfun = "trace")
 ```
 
-# Bug Reports
+## Bug Reports
 
 If you find any bugs, please report them via email to [Sam Brilleman](mailto:sam.brilleman@monash.edu).
 
-# References
+## References
 
 1. Stan Development Team (2015) Stan Modeling Language Users Guide and Reference Manual. [http://mc-stan.org/documentation/](http://mc-stan.org/documentation/)
 
