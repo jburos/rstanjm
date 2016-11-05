@@ -1,5 +1,12 @@
+^\.travis\.yml$
 ^.*\.Rproj$
 ^\.Rproj\.user$
-^\.travis\.yml$
+man-roxygen/*
+\.github/*
+vignettes/_output.yaml
+^README\.md$
 ^README\.Rmd$
 ^README-.*\.png$
+LICENSE
+^.*\.o$
+^\cleanup*
