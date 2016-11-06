@@ -236,20 +236,30 @@ linkinv.family <- function(x, ...) {
 #   user.
 # @param user_max_treedepth The value for \code{max_treedepth} specified by the
 #   user.
+# @param sum_p The total number of random effects in the joint model. Should
+#   likely be passed as sum(standata$p)
 # @param ... Other arguments to \code{\link[rstan]{sampling}} not coming from
-#   \code{user_dots} (e.g. \code{data}, \code{pars}, \code{init}, etc.)
+#   \code{user_dots} (e.g. \code{pars}, \code{init}, etc.)
 # @return A list of arguments to use for the \code{args} argument for 
 #   \code{do.call(sampling, args)}.
 set_sampling_args <- function(object, user_dots = list(), 
                               user_adapt_delta = NULL, 
-                              user_max_treedepth = NULL, ...) {
+                              user_max_treedepth = NULL, 
+                              sum_p = NULL, ...) {
   args <- list(object = object, ...)
   unms <- names(user_dots)
   for (j in seq_along(user_dots)) {
     args[[unms[j]]] <- user_dots[[j]]
   }
-  control_defaults <- list(adapt_delta = 0.85,
-                           max_treedepth = 9L)
+  
+  if (is.null(sum_p) || (sum_p <= 0))
+    stop("Bug found: sum_p should specify the total number ",
+         "of random effects in the joint model (used for ",
+         "determining the default adapt_delta")
+  
+  control_defaults <- list(
+    adapt_delta = if (sum_p > 2) 0.85 else 0.80,
+    max_treedepth = 9L)
   
   if (!"control" %in% unms) { 
     # no user-specified 'control' argument
