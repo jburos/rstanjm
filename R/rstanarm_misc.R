@@ -32,14 +32,6 @@
   if (a == Inf) b else a
 }
 
-# Grep for "b" parameters (ranef)
-#
-# @param x Character vector (often rownames(fit$stan_summary))
-# @param ... Passed to grep
-b_names <- function(x, ...) {
-  grep("^b\\[", x, ...)
-}
-
 # Combine pars and regex_pars
 #
 # @param x stanreg object
