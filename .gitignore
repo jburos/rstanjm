@@ -3,4 +3,4 @@ exec/*.rda
 .Rhistory
 src/include
 src/Modules*
-src/rstanarm.so
+src/rstanjm*

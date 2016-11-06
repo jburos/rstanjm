@@ -129,6 +129,10 @@ The following components must be included in a \code{stanjm} object.
   The estimation method used. Will be \code{"sampling"} for models
   estimated using \code{stan_jm}.
   }
+  \item{\code{times}}{
+  The time taken (in mins) for model estimation, presented separately for  
+  each MCMC chain.
+  }
   \item{\code{stanfit,stan_summary}}{
   The object of \code{\link[rstan]{stanfit-class}} returned by RStan and a
   matrix of various summary statistics from the stanfit object.

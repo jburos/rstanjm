@@ -88,6 +88,10 @@ stanjm <- function(object) {
   y_coefs <- lapply(y_coefs, unpad_reTrms.default)
   y_ses   <- lapply(y_ses, unpad_reTrms.default)
 
+  # Run time (mins)
+  times <- round((rstan::get_elapsed_time(object$stanfit))/60, digits = 1)
+  times <- cbind(times, total = rowSums(times))
+  
   out <- rstanarm:::nlist(
     coefficients = list_nms(c(y_coefs, list(e_coefs)), M), 
     ses = list_nms(c(y_ses, list(e_ses)), M),
@@ -128,6 +132,7 @@ stanjm <- function(object) {
     quadnodes = object$quadnodes,
     prior.info = object$prior.info,
     algorithm = object$algorithm,
+    times = times,
     stan_summary,  
     stanfit = if (opt) stanfit$stanfit else stanfit,
     glmod = object$glmod,
