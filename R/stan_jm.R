@@ -254,8 +254,7 @@
 #'               dataLong = pbcLong_subset,
 #'               formulaEvent = Surv(futimeYears, death) ~ sex + trt, 
 #'               dataEvent = pbcSurv_subset,
-#'               time_var = "year",
-#'               chains = 1, iter = 1000, warmup = 500)
+#'               time_var = "year")
 #' summary(f1) 
 #'         
 #' #####
@@ -266,8 +265,7 @@
 #'               formulaEvent = Surv(futimeYears, death) ~ sex + trt, 
 #'               dataEvent = pbcSurv_subset,
 #'               assoc = c("etavalue", "shared_b"),
-#'               time_var = "year",
-#'               chains = 1, iter = 1000, warmup = 500)
+#'               time_var = "year")
 #' summary(f2)          
 #' 
 #' ######
@@ -284,8 +282,7 @@
 #'         formulaEvent = Surv(futimeYears, death) ~ sex + trt, 
 #'         dataEvent = pbcSurv_subset,
 #'         assoc = list("etavalue", c("etavalue", "shared_b(1)")), 
-#'         time_var = "year",
-#'         chains = 1, iter = 1000, warmup = 500, refresh = 25)
+#'         time_var = "year", refresh = 25)
 #' summary(mv1)
 #' 
 #' # To include both the random intercept and random slope in the shared 
@@ -308,7 +305,7 @@
 #'         dataEvent = pbcSurv_subset,
 #'         assoc = list("etavalue", c("etavalue", "shared_b(1)")),
 #'         time_var = "year",
-#'         chains = 3, iter = 1000, warmup = 500, refresh = 25,
+#'         chains = 3, refresh = 25,
 #'         cores = parallel::detectCores())
 #' summary(mv2)            
 #' }

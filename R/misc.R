@@ -277,8 +277,8 @@ set_sampling_args <- function(object, user_dots = list(),
   }
   
   if (!"iter" %in% unms) args$iter <- 1000
-  if (!"chains" %in% unms) args$chains <- 2
-  if (!"cores" %in% unms) args$cores <- parallel::detectCores()
+  if (!"chains" %in% unms) args$chains <- 1
+  #if (!"cores" %in% unms) args$cores <- parallel::detectCores()
   if (!"save_warmup" %in% unms) args$save_warmup <- TRUE  
 
   return(args)
