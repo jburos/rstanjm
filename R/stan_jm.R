@@ -492,12 +492,12 @@ stan_jm <- function(formulaLong, dataLong,
   m_mc <- list()  # list containing matched calls for each marker
   for (m in 1:M) {
     m_mc[[m]] <- y_mc
-    m_mc[[m]]$formula <- if (formula_list) y_mc$formula[[(1+m)]] else y_mc$formula
-    m_mc[[m]]$data    <- if (data_list)    y_mc$data[[(1+m)]]    else y_mc$data
+    m_mc[[m]]$formula <- if (formula_list) eval(y_mc$formula)[[m]] else y_mc$formula
+    m_mc[[m]]$data    <- if (data_list)    eval(y_mc$data)[[m]]    else y_mc$data
     if (!is.null(y_subset_list))   
-      m_mc[[m]]$subset  <- if (y_subset_list) y_mc$subset[[(1+m)]]  else y_mc$subset
+      m_mc[[m]]$subset  <- if (y_subset_list) eval(y_mc$subset)[[m]]  else y_mc$subset
     if (!is.null(family_list))   
-      m_mc[[m]]$family  <- if (family_list)   y_mc$family[[(1+m)]]  else y_mc$family    
+      m_mc[[m]]$family  <- if (family_list)   eval(y_mc$family)[[m]]  else y_mc$family    
   }
    
   # Create call for event submodel
