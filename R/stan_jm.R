@@ -881,6 +881,7 @@ stan_jm <- function(formulaLong, dataLong,
     names(eventtime) <- names(d) <- flist_event
     
     e_mf           <- data.table(e_mf, key = c(id_var, "start"))
+    e_mf[["start"]] <- as.numeric(e_mf[["start"]])
     e_mf_eventtime <- e_mf[, .SD[.N], by = get(id_var)]
     e_mf_eventtime <- e_mf_eventtime[, get := NULL]
     # Unstandardised quadrature points
@@ -1032,11 +1033,15 @@ stan_jm <- function(formulaLong, dataLong,
                               # longitudinal submodel calculated at event 
                               # and quad times, possibly centred
   Zq              <- list()   # random effects matrix
+  y_cnmsq         <- list()
+  y_flistq        <- list()
   y_mod_q_eps     <- list()   # fitted long. submodels under time shift of epsilon
   xq_eps          <- list()   # xq with time shift of epsilon
   xqtemp_eps      <- list()   # xqtemp with time shift of epsilon  
   Zq_eps          <- list()   # random effects matrix with time shift of epsilon
-
+  y_cnmsq_eps     <- list()
+  y_flistq_eps    <- list()
+  
   # Set up a second longitudinal model frame which includes the time variable
   for (m in 1:M) {
     m_mc_temp         <- m_mc[[m]]
@@ -1056,6 +1061,7 @@ stan_jm <- function(formulaLong, dataLong,
     
     # Update model based on predvars and obtain new model frame
     mf <- data.table::data.table(y_mod_wtime$fr, key = c(id_var, time_var))
+    mf[[time_var]] <- as.numeric(mf[[time_var]])
   
     # Identify which row in longitudinal data is closest to event time
     mf_eventtime <- mf[data.table::SJ(flist_event, eventtime), 
@@ -1092,6 +1098,8 @@ stan_jm <- function(formulaLong, dataLong,
     xq[[m]] <- as.matrix(y_mod_q[[m]]$X)
     xqtemp[[m]] <- if (y_has_intercept[m]) xq[[m]][, -1L, drop=FALSE] else xq[[m]]  
     Zq[[m]] <- Matrix::t(y_mod_q[[m]]$reTrms$Zt)
+    y_cnmsq[[m]] <- y_mod_q[[m]]$reTrms$cnms
+    y_flistq[[m]] <- y_mod_q[[m]]$reTrms$flist
       #Needs working out to appropriately deal with offsets??
       #offset_quadtime <- model.offset(mod_quadtime$fr) %ORifNULL% double(0)
 
@@ -1111,6 +1119,8 @@ stan_jm <- function(formulaLong, dataLong,
       xqtemp_eps[[m]] <- if (y_has_intercept[m]) xq_eps[[m]][, -1L, drop=FALSE] else xq_eps[[m]]  
       if (centreLong) xqtemp_eps[[m]] <- sweep(xqtemp_eps[[m]], 2, xbar[[m]], FUN = "-")
       Zq_eps[[m]] <- Matrix::t(y_mod_q_eps[[m]]$reTrms$Zt)
+      y_cnmsq_eps[[m]] <- y_mod_q_eps[[m]]$reTrms$cnms
+      y_flistq_eps[[m]] <- y_mod_q_eps[[m]]$reTrms$flist
     }    
   }
   
@@ -1596,6 +1606,11 @@ stan_jm <- function(formulaLong, dataLong,
   standata$u <- as.array(parts$u)
  
   # data for random effects in GK quadrature
+  groupq <- lapply(1:M, function(x) {
+    pad_reTrms(Z = Zq[[x]], 
+               cnms = y_cnmsq[[x]], 
+               flist = y_flistq[[x]])})
+  Zq <- lapply(1:M, function(x) groupq[[x]]$Z)
   Zqmerge <- Matrix::bdiag(Zq)
   parts_Zq <- rstan::extract_sparse_parts(Zqmerge)
   standata$num_non_zero_Zq <- as.integer(length(parts_Zq$w))
@@ -1607,7 +1622,14 @@ stan_jm <- function(formulaLong, dataLong,
   standata$eps <- eps  # time shift for numerically calculating derivative
   standata$y_Xq_eps <- if (sum(has_assoc$etaslope, has_assoc$muslope))
     as.array(as.matrix(Matrix::bdiag(xqtemp_eps))) else as.array(matrix(0,0,sum_y_K))
-  Zq_eps_merge <- if (length(Zq_eps)) Matrix::bdiag(Zq_eps) else matrix(0,0,0)
+  if (length(Zq_eps)) {
+    groupq_eps <- lapply(1:M, function(x) {
+      pad_reTrms(Z = Zq_eps[[x]], 
+                cnms = y_cnmsq_eps[[x]], 
+                flist = y_flistq_eps[[x]])})
+    Zq_eps <- lapply(1:M, function(x) groupq_eps[[x]]$Z)
+    Zq_eps_merge <- Matrix::bdiag(Zq_eps) 
+  } else Zq_eps_merge <- matrix(0,0,0)
   parts_Zq_eps <- rstan::extract_sparse_parts(Zq_eps_merge)
   standata$num_non_zero_Zq_eps <- as.integer(length(parts_Zq_eps$w))
   standata$w_Zq_eps <- parts_Zq_eps$w
