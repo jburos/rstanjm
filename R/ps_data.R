@@ -110,8 +110,10 @@ ps_data <-
     newdata <- cbind(unclass(newdata[[1]]), newdata)
     if (resp_type == "right") {
       newdata <- data.table::data.table(newdata, key = c(id_var, "time"))
+      newdata[["time"]] <- as.numeric(newdata[["time"]])
     } else if (resp_type == "counting") {
       newdata <- data.table::data.table(newdata, key = c(id_var, "start"))
+      newdata[["start"]] <- as.numeric(newdata[["start"]])
     } else {
       stop("Bug found: newdataEvent was set to NULL, but the model ",
            "frame collected from the original model doesn't appear to ",
