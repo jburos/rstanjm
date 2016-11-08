@@ -257,34 +257,18 @@ set_sampling_args <- function(object, user_dots = list(),
          "of random effects in the joint model (used for ",
          "determining the default adapt_delta")
   
-  control_defaults <- list(
-    adapt_delta = if (sum_p > 2) 0.85 else 0.80,
-    max_treedepth = 9L)
+  default_adapt_delta <- if (sum_p > 3) 0.9 else if (sum_p > 2) 0.85 else 0.80
+  default_max_treedepth <- 9L
   
-  if (!"control" %in% unms) { 
-    # no user-specified 'control' argument
-    args$control <- control_defaults
-  } else { 
-    # user specifies a 'control' argument
-    # adapt delta
-    if (!is.null(user_adapt_delta)) { 
-      # if user specified adapt_delta argument to stan_jm then 
-      # set control$adapt_delta to user-specified value
-      args$control$adapt_delta <- user_adapt_delta
-    } else {
-      # use default adapt_delta
-      args$control$adapt_delta <- control_defaults$adapt_delta
-    }
-    # max treedepth
-    if (!is.null(user_max_treedepth)) { 
-      # if user specified max_treedepth argument to stan_jm then 
-      # set control$max_treedepth to user-specified value
-      args$control$max_treedepth <- user_max_treedepth
-    } else {
-      # use default max_treedepth
-      args$control$max_treedepth <- control_defaults$max_treedepth
-    }
-  }
+  if (!is.null(user_adapt_delta))
+    args$control$adapt_delta <- user_adapt_delta else 
+      if (is.null(args$control$adapt_delta))
+        args$control$adapt_delta <- default_adapt_delta
+      
+  if (!is.null(user_max_treedepth))
+    args$control$max_treedepth <- user_max_treedepth else
+      if (is.null(args$control$max_treedepth))
+        args$control$max_treedepth <- default_max_treedepth
   
   if (!"iter" %in% unms) args$iter <- 1000
   if (!"chains" %in% unms) args$chains <- 1
