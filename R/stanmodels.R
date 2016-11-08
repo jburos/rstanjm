@@ -28,7 +28,7 @@ stanmodels <- sapply(stan_files, function(f) {
     isystem <- file.path("inst", "chunks")
   if (!file.exists(file.path(isystem, "common_functions.stan")))
     isystem <- file.path("..", "inst", "chunks")
-  stanfit <- rstan::stanc_builder(f, isystem)
+  stanfit <- rstan::stanc_builder(f)  # removed isystem argument since not using inst/chunks
   stanfit$model_cpp <- list(model_cppname = stanfit$model_name, 
                             model_cppcode = stanfit$cppcode)
   return(do.call(methods::new, args = c(stanfit[-(1:3)], Class = "stanmodel", 

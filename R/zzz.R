@@ -16,16 +16,17 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
 .onLoad <- function(libname, pkgname) { # nocov start
-  #if (!("methods" %in% .packages())) attachNamespace("methods")
-  #loadRcppModules()
   modules <- paste0("stan_fit4", names(stanmodels), "_mod")
-  for (m in modules) loadModule(m, what = TRUE)
+  for (m in modules) Rcpp::loadModule(m, what = TRUE)
 } # nocov end
 
 .onAttach <- function(...) {
   rstanjmLib <- dirname(system.file(package = "rstanjm"))
   pkgdesc <- utils::packageDescription("rstanjm", lib.loc = rstanjmLib)
   builddate <- gsub(';.*$', '', pkgdesc$Packaged)
-  packageStartupMessage(paste("rstanjm (Version ", pkgdesc$Version, ", packaged: ", builddate, ")", sep = ""))
+  #packageStartupMessage(paste0("rstanjm (Version ", pkgdesc$Version, ")"))
+  packageStartupMessage("* By default rstanjm fits models using a single MCMC chain. If you have a")
+  packageStartupMessage("  multicore CPU with excess RAM, you can fit multiple MCMC chains in parallel")
+  packageStartupMessage("  by specifying the 'chains' and 'cores' arguments when fitting your model.")
 }
 
