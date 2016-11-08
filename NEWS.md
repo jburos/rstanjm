@@ -5,9 +5,9 @@ Initial CRAN release
 
 This document should have the following structure:  
 ### Version (Date)  
-#### Serious bug fixes  
-  1. List here if any  
-#### Bug fixes  
-  2. List here if any  
-#### New features  
-  3. List here if any    
+#### Serious bug fixes   
+   * List here if any   
+#### Bug fixes    
+   * List here if any  
+#### New features    
+   * List here if any    
