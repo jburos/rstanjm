@@ -257,7 +257,7 @@ set_sampling_args <- function(object, user_dots = list(),
          "of random effects in the joint model (used for ",
          "determining the default adapt_delta")
   
-  default_adapt_delta <- if (sum_p > 3) 0.9 else if (sum_p > 2) 0.85 else 0.80
+  default_adapt_delta <- if (sum_p > 2) 0.85 else 0.80
   default_max_treedepth <- 9L
   
   if (!is.null(user_adapt_delta))

@@ -1,13 +1,16 @@
-### rstanjm 0.0.1 (X/X/2016)  
+### rstanjm 0.0.1 (X/X/2016)
+  
 Initial CRAN release
 
 ---
 
-This document should have the following structure:  
-### Version (Date)  
+### Version (Date) 
+ 
 #### Serious bug fixes   
-   * List here if any   
+   * List here if any 
+   
 #### Bug fixes    
-   * List here if any  
+   * List here if any 
+   
 #### New features    
    * List here if any    
