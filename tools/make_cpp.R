@@ -20,7 +20,10 @@ cat(
   "#ifndef MODELS_HPP", "#define MODELS_HPP",
   "#define STAN__SERVICES__COMMAND_HPP", "#include <rstan/rstaninc.hpp>",
   sapply(stan_files, FUN = function(f) {
-    cppcode <- rstan::stanc_builder(f)$cppcode  # removed isystem argument since not using inst/chunks
+    isystem <- system.file("chunks", package = "rstanarm")
+    if (!file.exists(file.path(isystem, "common_functions.stan")))
+      isystem <- system.file("inst", "chunks", package = "rstanarm")    
+    cppcode <- rstan::stanc_builder(f, isystem)$cppcode  # isystem calls inst/chunks in rstanarm package
     cppcode <- gsub("typedef.*stan_model.*;", "", cppcode, perl = TRUE)
     return(cppcode)
   }), "#endif", file = file.path("src", "include", "models.hpp"), 
