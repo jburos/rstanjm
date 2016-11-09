@@ -1,12 +1,12 @@
 Package: rstanjm
 Type: Package
-Title: Bayesian joint longitudinal and time-to-event models via Stan
+Title: Bayesian Joint Longitudinal and Time-to-Event Models via Stan
 Version: 0.0.0-1
-Date: 2016-06-28
+Date: 2016-11-09
 Authors@R: c(person("Sam", "Brilleman", email = "sam.brilleman@monash.edu", role = c("cre", "aut", "cph")),
              person("Jonah", "Gabry", email = "jsg2201@columbia.edu", role = "aut"),
              person("Ben", "Goodrich", email = "benjamin.goodrich@columbia.edu", role = "aut"),
-			       person("Trustees of", "Columbia University", role = "cph"),
+             person("Trustees of", "Columbia University", role = "cph"),
              person("Douglas", "Bates", role = "cph", comment = "R/pp_data.R"),
              person("Martin", "Maechler", role = "cph", comment = "R/pp_data.R"),
              person("Ben", "Bolker", role = "cph", comment = "R/pp_data.R"),
@@ -14,14 +14,24 @@ Authors@R: c(person("Sam", "Brilleman", email = "sam.brilleman@monash.edu", role
 Description: Estimate joint longitudinal and time-to-event models under a Bayesian
     framework via Stan. Stan is a C++ library for Bayesian estimation. Users of the
     rstanjm package specify a joint model using the customary R formula syntax
-    and customary R data frames. The rstanjm package then carries out estimation in Stan
-    via the 'rstan' package (the R interface for Stan). Univariate (one longitudinal 
-    marker) or multivariate (more than one longitudinal marker) joint models are
-    allowed. Multilevel clustered data are allowed. The joint model association 
-    structure can be specified in various ways. The time-to-event is modelled using
-    a parametric proportional hazards model for which the baseline hazard can be a
-    Weibull distribution or approximated using cubic splines. Various options are 
-    available for the prior distributions for regression coefficients.
+    and customary R data frames. The rstanjm package then carries out back-end 
+    estimation in Stan via the 'rstan' package (the R interface for Stan). 
+    Univariate (one longitudinal marker) or multivariate (more than one longitudinal 
+    marker) joint models are allowed. The longitudinal outcome(s) are each modelled 
+    using a generalised linear mixed model. Dependence between multiple longitudinal
+    outcomes is captured via a shared multivariate normal distribution for the 
+    random effects. Continuous, binary or count data can be handled in the 
+    longitudinal submodel via a range of link functions and error distributions. 
+    Multilevel clustered data (for example, patients within clinics) can be 
+    accomodated in the longitudinal submodel only. The time-to-event is modelled 
+    using a proportional hazards model for which the baseline hazard can be 
+    specified as a Weibull distribution, piecewise constant, or approximated 
+    using B-splines. The association structure for the joint model can be 
+    specified in a variety of ways, for example, by having the log hazard of the 
+    event linearly associated with the current value of the longitudinal 
+    marker, current slope of the longitudinal marker, or shared random effects.  
+    Various options are available for the prior distributions of the regression 
+    coefficients.
 License: GPL (>=3)
 Depends:
     R (>= 3.0.2),
@@ -38,15 +48,12 @@ Imports:
     nlme (>= 3.1-124),
     rstan (>= 2.9.0-3),
     shinystan (>= 2.1.0),
-    stats,
     splines,
+    stats,
     utils
 Suggests:
-    gridExtra,
-    HSAUR3,
     KernSmooth,
     knitr,
-    MASS,
     rmarkdown,
     roxygen2,
     testthat
