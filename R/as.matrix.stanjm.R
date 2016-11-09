@@ -1,5 +1,6 @@
-# Part of the rstanarm package for estimating model parameters
+# Part of the rstanjm package
 # Copyright (C) 2015, 2016 Trustees of Columbia University
+# Copyright (C) 2016 Sam Brilleman
 # 
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -68,7 +69,6 @@ as.array.stanjm <- function(x, ..., pars = NULL, regex_pars = NULL) {
   arr <- arr[, , pars, drop = FALSE]
   unpad_reTrms(arr)
 }
-
 
 #' @rdname as.matrix.stanjm
 #' @method as.data.frame stanjm
