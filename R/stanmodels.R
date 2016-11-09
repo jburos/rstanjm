@@ -1,5 +1,6 @@
 # Part of the rstanarm package for estimating model parameters
 # Copyright (C) 2015, 2016 Trustees of Columbia University
+# Copyright (C) 2016 Sam Brilleman
 # 
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -23,12 +24,11 @@ if (!file.exists(MODELS_HOME)) MODELS_HOME <- sub("R$", "exec", getwd())
 stan_files <- dir(MODELS_HOME, pattern = "stan$", full.names = TRUE)
 stanmodels <- sapply(stan_files, function(f) {
   model_cppname <- sub("\\.stan$", "", basename(f))
-  isystem <- system.file("chunks", package = methods::getPackageName(environment(), FALSE))
+  isystem <- system.file("chunks", package = "rstanarm")
   if (!file.exists(file.path(isystem, "common_functions.stan")))
-    isystem <- file.path("inst", "chunks")
-  if (!file.exists(file.path(isystem, "common_functions.stan")))
-    isystem <- file.path("..", "inst", "chunks")
-  stanfit <- rstan::stanc_builder(f)  # removed isystem argument since not using inst/chunks
+    isystem <- system.file("inst", "chunks", package = "rstanarm")
+  stanfit <- rstan::stanc_builder(f,
+    isystem)  # isystem calls inst/chunks in rstanarm package
   stanfit$model_cpp <- list(model_cppname = stanfit$model_name, 
                             model_cppcode = stanfit$cppcode)
   return(do.call(methods::new, args = c(stanfit[-(1:3)], Class = "stanmodel", 

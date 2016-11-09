@@ -312,7 +312,7 @@
 #' 
 #' @export
 #' @import data.table
-#' @import survival Surv
+#' @importFrom survival Surv
 #' 
 stan_jm <- function(formulaLong, dataLong, 
                     formulaEvent, dataEvent, 
