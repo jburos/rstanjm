@@ -109,7 +109,7 @@ the second containing the corresponding weights. The data frame should only
 have one row for each individual; that is, weights should be constant 
 within individuals.}
 
-\item{offset}{Not yet implemented. Same as \code{\link[stats]{glm}}.}
+\item{offset}{Not currently implemented. Same as \code{\link[stats]{glm}}.}
 
 \item{centreLong, centreEvent}{A logical specifying whether the predictor
 matrix for the longitudinal submodel(s) or event submodel should be 
@@ -301,7 +301,7 @@ mv1 <- stan_jm(
         formulaEvent = Surv(futimeYears, death) ~ sex + trt, 
         dataEvent = pbcSurv_subset,
         assoc = list("etavalue", c("etavalue", "shared_b(1)")), 
-        time_var = "year", refresh = 25)
+        time_var = "year")
 summary(mv1)
 
 # To include both the random intercept and random slope in the shared 
