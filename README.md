@@ -5,9 +5,11 @@ rstanjm
 
 [![Travis-CI Build Status](https://travis-ci.org/sambrilleman/rstanjm.svg?branch=master)](https://travis-ci.org/sambrilleman/rstanjm) [![CRAN\_Status\_Badge](http://www.r-pkg.org/badges/version/rstanjm)](http://www.r-pkg.org/pkg/rstanjm) [![License](https://img.shields.io/badge/License-GPL%20%28%3E=%203%29-brightgreen.svg)](http://www.gnu.org/licenses/gpl-3.0.html)
 
-**rstanjm** is an R package which allows the user to fit joint (shared parameter) models for longitudinal and time-to-event data under a Bayesian framework. Estimation is carried out using the software [Stan](http://mc-stan.org) (via the **rstan** package).
+**rstanjm** is an R package that allows the user to fit joint (shared parameter) models for longitudinal and time-to-event data under a Bayesian framework. Estimation is carried out using the software [Stan](http://mc-stan.org) (via the **rstan** package).
 
-Both univariate (one longitudinal marker) and multivariate (more than one longitudinal marker) joint models can be estimated. Both continuous and non-continuous (e.g. binary or count data) longitudinal markers can be accomodated through a range of possible link functions and error distributions. Multi-level clustered data (e.g. patients within clinics) can be accomodated in the longitudinal submodel, provided that the individual (e.g. patient) is the lowest level of clustering.
+Both univariate (one longitudinal marker) and multivariate (more than one longitudinal marker) joint models can be estimated. The estimated longitudinal submodel(s) are specified as a (multivariate) generalised linear mixed effects model. Therefore, both continuous and non-continuous (e.g. binary or count data) longitudinal markers can be accomodated through a range of possible link functions and error distributions. Multi-level clustered data (e.g. patients within clinics) can be accomodated in the longitudinal submodel, provided that the individual (e.g. patient) is the lowest level of clustering. If a multivariate joint model is specified, then the dependence between the multiple markers is captured through a shared multivariate normal distribution for the random effects.
+
+The event submodel is specified as a proportional hazards model for which the baseline hazard can be a Weibull distribution, piecewise constant, or approximated using B-splines. Various association structures for linking the longitudinal marker to the risk of the event are possible.
 
 A range of prior distributions are available for the regression coefficients (based on those available in the **rstanarm** package). Post-estimation functions, for example posterior predictions for the longitudinal and survival outcomes, are also provided.
 
@@ -48,15 +50,13 @@ The `args = "--preclean"` option is necessary to ensure that the Stan model code
 Example
 -------
 
-In this section we present some examples based on a small subset of the Mayo Clinic's primary biliary cirrhosis (PBC) data. For a description of the datasets type:
+In this section we present two very brief examples showing how the **rstanjm** package's main modelling function can be used to fit either a univariate or multivariate shared parameter joint model. In the examples we use the Mayo Clinic's primary biliary cirrhosis (PBC) data. For a description of the datasets type:
 
 ``` r
 help("pbc-datasets", package = "rstanjm")
 ```
 
-### Model fitting
-
-First, we fit a simple univariate joint model, with a single normally distributed longitudinal marker, an association structure based on the current value of the linear predictor, and Weibull baseline hazard:
+First, we fit a simple univariate joint model, with a single normally distributed longitudinal marker, an association structure based on the current value of the linear predictor, and a Weibull baseline hazard (note that we fit this model to a small subset of the PBC data so that the example model runs quickly):
 
 ``` r
 library(rstanjm)
@@ -67,13 +67,17 @@ f1 <- stan_jm(formulaLong = logBili ~ year + (year | id),
               time_var = "year")
 ```
 
-Next, we fit a multivariate joint model, with two normally distributed longitudinal markers, an association structure based on the current value and current slope of the linear predictor from the first longitudinal submodel and the random intercept (including the fixed component) from the second longitudinal submodel, and a baseline hazard approximated using B-splines. We use a horseshoe shrinkage prior for the three association parameters, and a Student t prior with 5 degrees of freedom for each of the remaining regression coefficients. Note that since this joint model is relatively more complex and contains a larger number of parameters, we need to fit this joint model to the full PBC data, containing 312 individuals, and therefore this model takes a little longer to run (~ 10 to 20min):
+The fitted model is returned as an object of the S3 class `stanjm`. We have a variety of methods and postestimation functions available for this class, including: `print`, `summary`, `plot`, `fixef`, `ranef`, `coef`, `VarCorr`, `posterior_interval`, `update`, and more. See `?print.stanjm`, `?summary.stanjm`, `?plot` and `?stanjm-methods` for more details.
+
+We can also obtain posterior predictions, either for individuals who were used in the estimation or for new individuals. To obtain the estimated longitudinal trajectory we use the function `posterior_traj`, whilst for the estimated survival function we use `posterior_survfit`. By default these functions will use the observed predictor matrices to generate posterior predictions, however, we can obtain out-of-sample predictions by providing new data via the `newdata`, `newdataLong` and `newdataEvent` arguments. See `?posterior_traj` and `?posterior_survfit` for more details.
+
+Second, we demonstrate how we can fit a more complex shared parameter joint model. In this example we fit a multivariate joint model, with two normally distributed longitudinal markers, an association structure based on the current value and current slope of the linear predictor from the first longitudinal submodel and the random intercept (including the fixed component) from the second longitudinal submodel, and a baseline hazard approximated using B-splines. We use a horseshoe shrinkage prior for the three association parameters, and a Student t prior with 5 degrees of freedom for each of the remaining regression coefficients. Note that since this joint model is relatively more complex and contains a larger number of parameters, we need to fit this joint model to the full PBC data, containing 312 individuals, and therefore this model takes a little longer to run:
 
 ``` r
 mv1 <- stan_jm(
         formulaLong = list(
           logBili ~ year + (year | id), 
-          albumin ~ sex + year + (1 | id)),
+          spiders ~ sex + year + (1 | id)),
         dataLong = pbcLong_subset,
         formulaEvent = Surv(futimeYears, death) ~ sex + trt, 
         dataEvent = pbcSurv_subset,
@@ -85,74 +89,10 @@ mv1 <- stan_jm(
         priorAssoc = hs())
 ```
 
-The fitted model is returned as an object of the S3 class `stanjm`. We have a variety of methods and postestimation functions available for this class, including: `print`, `summary`, `plot`, `fixef`, `ranef`, `coef`, `VarCorr`, `posterior_interval`, `update`, and more. See `?print.stanjm`, `?summary.stanjm`, `?plot` and `?stanjm-methods` to get more details.
-
-### In-sample predictions
-
-We can obtain posterior predictions, either for individuals who were used in the estimation or for new individuals. For the longitudinal submodel we use the function `posterior_traj`, which by default will use the observed predictor matrix to generate posterior predictions for the longitudinal submodel:
+The examples in this README file are intended to be brief. For further details, and a more comprehensive demonstration of the **rstanjm** package see the vignette:
 
 ``` r
-pt <- posterior_traj(f1)
-head(pt)
-```
-
-To easily interpolate between observation times, so that we obtain predictions at equally spaced time points across the entire observation period for each individual, we specify `interpolate = TRUE`. Similarly, if we want to extrapolate our predictions beyond the last observation time we specify `extrapolate = TRUE`. We can then choose to plot the fitted longitudinal trajectories for a subset of individuals. The code required is as follows:
-
-``` r
-pt <- posterior_traj(f1, interpolate = TRUE, extrapolate = TRUE)
-pt_plot <- plot(pt, ids = 1:3)
-pt_plot
-```
-
-Similarly, we can obtain posterior predictions for the survival function. Here we will generate the estimated subject-specific survival function for each of the individuals using in estimating the model, and then for the same three individuals as used above we will plot estimated survival functions alongside the longitudinal predictions using the function `plot_stack`:
-
-``` r
-ps <- posterior_survfit(f1)
-ps_plot <- plot(ps, ids = 1:3)
-plot_stack(pt_plot, ps_plot)
-```
-
-### Out-of-sample predictions
-
-If we have new data for an individual who was not included in the estimation sample, then we can easily generate posterior predictions for that individual by including the `newdata` argument as follows:
-
-``` r
-df <- pbcLong[pbcLong$id == 100, ]
-pt_new <- posterior_traj(f1, newdata = df, int = TRUE, ext = TRUE)
-plot(pt_new)
-```
-
-And the estimated survival function can be obtained using:
-
-``` r
-df_surv <- pbcSurv[pbcSurv$id == 100, ]
-ps_new <- posterior_survfit(f1, newdataLong = df, newdataEvent = df_surv)
-plot(ps_new)
-```
-
-Note however that the out-of-sample predictions that are obtained from using these functions are based on draws of the random effects distribution conditional on the data used to fit the model, but *not* conditional on the new data. That is, they are fitted values evaluated using the specified set of new covariate values, but they are *not* individualised dynamic predictions (see for example Taylor et al. (2013)).
-
-### Model checking
-
-We can also check the fit of the longitudinal and event submodels by comparing posterior predictions to the observed data. This can be easily done using the `pp_check` and `ps_check` functions. For the unvariate joint model:
-
-``` r
-pp_check(f1)
-ps_check(f1)
-```
-
-or for the multivariate joint model:
-
-``` r
-pp_check(mv1, m = 1)  # check fit for first longitudinal submodel
-pp_check(mv1, m = 2)  # check fit for second longitudinal submodel
-ps_check(mv1)
-```
-
-We can also use the diagnostic and inference plots available through the generic `plot` method for `stanjm` objects (see `?plot.stanjm` for details). For example:
-
-``` r
-plot(f1, plotfun = "trace")
+vignette('rstanjm', package = 'rstanjm')
 ```
 
 Bug Reports
@@ -165,4 +105,4 @@ References
 
 1.  Stan Development Team (2015) Stan Modeling Language Users Guide and Reference Manual. <http://mc-stan.org/documentation/>
 
-2.  Taylor JM, Park Y, Ankerst DP, et al. Real-time individual predictions of prostate cancer recurrence using joint models. *Biometrics*. 2013; **69(1)**: 206–213.
+2.  Taylor JM, Park Y, Ankerst DP, et al. Real-time individual predictions of prostate cancer recurrence using joint models. *Biometrics*. 2013; **69(1)**: 206â213.

@@ -1,0 +1,222 @@
+---
+title: "Introduction to the rstanjm package"
+author: "Sam Brilleman"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{rstanjm}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+This vignette provides an introduction to the **rstanjm** package. The package allows users to fit shared parameter joint models for longitudinal and time-to-event data via the Bayesian software [Stan](http://mc-stan.org/).
+
+## Overview of shared parameter joint models
+
+### Distinct submodels
+
+Within a shared parameter joint model there are several outcomes: one or more *longitudinal* outcomes, and one *time-to-event* outcome. Note that the longitudinal outcome(s) are sometimes referred to as longitudinal *markers*, since they commonly represent a clinical biomarker which is repeatedly measured over time (for example blood pressure). In most situations, we will be interested in how the longitudinal marker, or some aspect of the trajectory of the longitudinal marker, is associated with the risk of the event. The joint modelling approach described below, and implemented in the **rstanjm** package, allows us to estimate this association allowing for the fact that the observed longitudinal measurements are likely to be both error-prone and measured in discrete time, whilst underlying changes in the unobserved "true" value of the marker are both free of measurement error and occur in continuous time. 
+
+A shared parameter joint model consists of distinct submodels for each of the outcomes. These are therefore commonly referred to as the *longitudinal submodel(s)* and the *event submodel*. The longitudinal submodel(s) are linked to the linear predictor in the event submodel through shared parameters. The shared parameters can be specified in various ways, and this specification is commonly referred to as the *association structure* of the joint model. We will discuss the joint model association structure further in the section below.
+
+In the **rstanjm** package each of the longitudinal outcomes is modelled using a generalised linear mixed effects model. In the case of multiple longitudinal markers the dependence between the different markers is captured through a shared multivariate normal distribution for the random effects. Given that a separate generalised linear mixed effects model is used for modelling each longitudinal outcome, different types of longitudinal outcome data can be accommodated within a single joint model, for example continuous, binary or count data. A variety of link functions and error distributions are available for handling different data types. Note that if there are multiple clustering levels (for example, patients within clinics) then random effects at different clustering levels are assumed independent, however, as mentioned previously the random effects within a clustering level are assumed to be correlated across the different longitudinal submodels since they are drawn from a shared multivariate normal distribution. 
+
+In the **rstanjm** package the event submodel is specified as a parametric proportional hazards model. For the baseline hazard, the user can choose between a Weibull distribution, a piecewise constant baseline hazard (sometimes referred to as piecewise exponential), or an approximation using B-splines. In the case of the piecewise constant or B-splines baseline hazard, the user can control the flexibility by specifying the degrees of freedom. Time-varying covariates (those that are not included as additional longitudinal outcomes, for example, because they are exogenous) can be included in the event submodel by using a multiple row per-individual data structure with what is commonly known as "start/stop" notation.
+
+### Association structures
+
+The longitudinal submodel(s) and the event submodel are assumed to be related through shared parameters. Technically, a key assumption of the shared parameter joint model is that the longitudinal outcome(s) are independent of the event time conditional on the random effects. As mentioned in the previous section, the shared parameters can be specified in a variety of ways and the specifification we choose is commonly referred to as the *association structure* of the joint model. The models estimated using the **rstanjm** package are specified by including some function of the parameters from the longitudinal submodel(s) directly in the linear predictor for the log hazard of the event. Current options for specifying the joint model association structure in the **rstanjm** package include:
+* the current value of the linear predictor in the longitudinal submodel (`"etavalue"`)
+* first derivative (slope) of the linear predictor in the longitudinal submodel (`"etaslope"`)
+* current expected value of the longitudinal submodel (`"muvalue"`)
+* shared individual-level random effects (`"shared_b"`)
+* shared individual-level random effects which also incorporate the corresponding fixed effect component (`"shared_coef"`)
+* no association structure (equivalent to fitting separate longitudinal and event models) (`"null"` or `NULL`). 
+
+More than one association structure can be specified, however, not all possible combinations are allowed. Moreover, if you are fitting a multivariate joint model then you can optionally choose to use a different association structure(s) for linking each longitudinal submodel to the event submodel.
+
+### Estimation framework
+
+The **rstanjm** package estimates models under a Bayesian framework. The back-end estimation is carried out using the Bayesian software [Stan](http://mc-stan.org/) (implemented via the **rstan** package, which is the R interface to Stan).
+
+A range of prior distributions are available for the regression coefficients, and these are based on those available in the **rstanarm** package. In addition, the prior distribution used for the covariance matrix of the normally distributed random effects involves a novel decomposition and is the same as the prior used in the `stan_glmer` function of the **rstanarm** package. See `?priors` for more details, or see the extensive documentation available for the **rstanarm** package (including the `stan_glmer` vignette which describes the prior distribution used for covariance matrices: `vignette("glmer", package = "rstanarm")`).
+
+Since models in **rstanjm** are estimated under a Bayesian framework, fitted values and predictions from the model are based on draws from the posterior predictive distribution (see Gelman et al. (2013) for an explanation of posterior predictive distributions).
+
+Evaluating the log-likelihood for the event submodel involves calculation of the cumulative hazard. This calculation involves an integral which incorporates the value of the time-varying longitudinal marker and, therefore, there is no closed form solution. The `stan_jm` modelling function approximates this integral using a Gauss-Kronrod quadrature rule (Laurie (1997)). By default the numerical quadrature is performed using 15 quadrature nodes, however, the user can optionally specify less nodes if they wish by setting the `quadnodes` argument to 7, 11, or 15. 
+
+## Example: A univariate joint model
+
+In this section we present an example using the Mayo Clinic's primary biliary cirrhosis (PBC) data. So that the examples run quickly, we use a small random subset of just 40 patients from the full data. For a description of the dataset you can type:
+
+```{r datasets_help, eval = FALSE}
+help("pbc-datasets", package = "rstanjm")
+```
+
+**Note:** By default the main modelling function in the **rstanjm** package, `stan_jm`, estimates model using a single MCMC chain. It is however recommended that the user estimates models using multiple MCMC chains to help assess convergence. If you are using a multicore CPU with excess RAM then you can run multiple MCMC chains *in parallel* to reduce computation time. This can be easily done by specifying the `cores` and `chains` arguments when fitting the model. Alternatively, to always use the maximum number of cores available on your CPU you can call `options(mc.cores = parallel::detectCores())` at the start of your R session and then just specify the `chains` argument when fitting your model (setting `chains` equal to any value up to the maximum number of cores on your CPU).
+
+### Model fitting
+
+We first fit a simple univariate joint model, with a single normally distributed longitudinal marker, an association structure based on the current value of the linear predictor, and Weibull baseline hazard. To fit the model we use the main modelling function in the **rstanjm** package: `stan_jm`. When calling `stan_jm` we must, at a minimum, specify a formula object for each of the longitudinal and event submodels (through the arguments `formulaLong` and `formulaEvent`), the data frames which contain the variables for each of the the longitudinal and event submodels (through the arguments `dataLong` and `dataEvent`), and the name of the variable representing time in the longitudinal submodel (through the argument `time_var`).
+
+The formula for the longitudinal submodel is specified using the **lme4** package formula style. That is `y ~ x + (random_effects | grouping_factor)`. In this example we specify that log serum bilirubin (`logBili`) follows a subject-specific linear trajectory. To do this we include a fixed intercept and fixed slope (`year`), as well as a random intecept and random slope for each subject `id` (`(year | id)`).
+
+The formula for the event submodel is specified using the **survival** package formula style. That is, the outcome of the left of the `~` needs to be of the format `Surv(event_time, event_indicator)` for single row per individual data, or `Surv(start_time, stop_time, event_indicator)` for multiple row per individual data. The latter allows for exogenous time-varying covariates to be included in the event submodel. In this example we assume that the log hazard of death is linearly related to gender (`sex`) and an indicator of treatment with D-penicillamine (`trt`).
+
+```{r univariate_fit, results = "hold", message = FALSE, warning = FALSE}
+library(rstanjm)
+f1 <- stan_jm(formulaLong = logBili ~ year + (year | id), 
+              dataLong = pbcLong_subset,
+              formulaEvent = Surv(futimeYears, death) ~ sex + trt, 
+              dataEvent = pbcSurv_subset,
+              time_var = "year", refresh = 1000)
+```
+
+The argument `refresh = 1000` was specified so that Stan didn't provide us with excessive progress updates whilst fitting the model. However, if you are fitting a model that will take several minutes or hours to fit, then you may wish to request progress updates quite regularly, for example setting `refresh = 20` for every 20 iterations (by default the refresh argument is set to 1/10th of the total number of iterations). 
+
+The fitted model is returned as an object of the S3 class `stanjm`. We have a variety of methods and postestimation functions available for this class, including: `print`, `summary`, `plot`, `fixef`, `ranef`, `coef`, `VarCorr`, `posterior_interval`, `update`, and more. Here, we will examine the most basic output for the fitted joint model by typing `print(f1)`:
+
+```{r print, echo = FALSE}
+print(f1)
+```
+
+The output tells us that for each one unit increase in an individual's underlying level of log serum bilirubin, their estimated log hazard of death increases by 34% (equivalent to a 3.8-fold increase in the hazard of death). The mean absolute deviation (MAD) is provided as a more robust estimate of the standard deviation of the posterior distribution. In this case the MAD_SD for the association parameter is 0.237, indicating there is quite large uncertainty around the estimated association between log serum bilirubin and risk of death (recall this is a small dataset containing only 40 patients!).
+
+If we wanted some slightly more detailed output for each of the model parameters, as well as further details regarding the model estimation (for example computation time, number of longitudinal observations, number of individuals, type of baseline hazard, etc) we can instead use the `summary` method:
+
+```{r summary}
+summary(f1)
+```
+
+The easiest way to extract the correlation matrix for the random effects (aside from viewing the `print` output) is to use the `VarCorr` function (modelled on the `VarCorr` function from the **lme4** package). If you wish to extract the variances and covariances (instead of the standard deviations and correlations) then you can type the following to return a data frame with all of the relevant information:
+
+```{r VarCorr}
+as.data.frame(VarCorr(f1))
+```
+
+### Association structures
+
+In the previous example we were fitting a shared parameter joint model which assumed that the log hazard of the event (in this case the log hazard of death) at time *t* was linearly related to the subject-specific expected value of the longitudinal marker (in this case the expected value of log serum bilirubin) also at time *t*. This is the default association structure, although it could be explicitly specified by setting the `assoc = "etavalue"` argument. 
+
+However, let's suppose we believe that the log hazard of death is actually related to both the *current value* of log serum bilirubin and the current *rate of change* in log serum bilirubin. To estimate this joint model we need to indicate that we want to also include the subject-specific slope (at time *t*) from the longitudinal submodel as part of the association structure. We do this by setting the `assoc` argument equal to a character vector `c("etavalue", "etaslope")` which indicates our desired association structure:
+
+ ```{r assoc_etaslope, eval = FALSE}
+f2 <- stan_jm(formulaLong = logBili ~ year + (year | id), 
+              dataLong = pbcLong,
+              formulaEvent = Surv(futimeYears, death) ~ sex + trt, 
+              dataEvent = pbcSurv,
+              time_var = "year", refresh = 250,
+			  assoc = c("etavalue", "etaslope"))
+``` 
+
+In this example the subject-specific slope is actually constant across time *t* since we have a linear trajectory. Note however that we could still use the `"etaslope"` association structure even if we had a non-linear subject specific trajectory (for example modelled using cubic splines or polynomials).
+
+If we instead thought that the log hazard of death was only related to how an individual's log serum bilirubin deviated from the average at baseline, we could form an association structure based only on the subject-specific random intercept term. To do this we would use the `"shared_b"` association structure. However, by default this would include all of the subject-specific random effects; in this example we have a random intercept and a random slope. To only include a subset of the random effects in the association structure we can specify the indices in parentheses as a suffix, as follows:
+
+ ```{r assoc_randomint, eval = FALSE}
+f3 <- stan_jm(formulaLong = logBili ~ year + (year | id), 
+              dataLong = pbcLong,
+              formulaEvent = Surv(futimeYears, death) ~ sex + trt, 
+              dataEvent = pbcSurv,
+              time_var = "year", refresh = 250,
+			  assoc = "shared_b(1)")
+```
+
+### Prior distributions
+
+(To be completed)
+
+### Model inference and diagnostics
+
+Various diagnostic and inference plots are available through the generic `plot` method for `stanjm` objects. These plots are based on those available in the **rstan** and **rstanarm** packages. The different plots that are available can be chosen using the `plotfun` argument. See `?plot.stanjm` for details. 
+
+The default plot will show us the point and interval estimates for each of the (fixed effect) regression coefficients. However, lets say that we wanted to view kernel density plots of the posterior distributions for some of the model parameters. To indicate that we only want to plot these for a subset of the model parameters we use the `pars` argument. In this case we will only plot the densities for parameters related to the event submodel (including the association parameters). Some convenient shortcuts are available so that we do not need to specify all the parameters by name as the `pars` argument in the following example shows:
+
+```{r density_plots}
+plot(f1, plotfun = "dens", pars = "event")
+```
+
+We can also check the fit of the longitudinal and event submodels by comparing posterior predictions to the observed data. This can be easily done using the `pp_check` and `ps_check` functions. Let's start by assessing the longitudinal submodel:
+
+```{r pp_check}
+pp_check(f1)
+```
+
+By default the `pp_check` function compares the posterior predictions for the longitudinal submodel to the observed longitudinal data. In the plot above the observed longitudinal data (measurements of log serum bilirubin) are shown by the solid blue kernel density, whilst each of the black lines show the kernel density for posterior predictions based on a single MCMC draw of the model parameters (by default the function shows 8 random draws from the total number of MCMC iterations). Note that if we had fit a multivariate joint model, then we could specify the `m` argument in the `pp_check` function call to examine the plots for each one of the longitudinal submodels separately (for example `pp_check(f1, m = 1)`, `pp_check(f1, m = 2)`, and so on).
+
+To assess the fit of the event submodel we can compare the marginal survival function (calculated using the subject-specific survival estimates, then marginalised over all individuals in the sample) based on draws from the posterior predictive distribution of the fitted joint model to the observed Kaplan-Meier survival function:  
+
+```{r ps_check}
+ps_check(f1)
+```
+
+### In-sample predictions
+
+We can obtain posterior predictions, either for individuals who were used in the estimation or for new individuals. For the longitudinal submodel we use the function `posterior_traj`, which by default will use the observed predictor matrix to generate posterior predictions for the longitudinal submodel:
+
+```{r long_preds}
+pt <- posterior_traj(f1)
+head(pt)
+```
+
+To easily interpolate between observation times, so that we obtain predictions at equally spaced time points across the entire observation period for each individual, we specify `interpolate = TRUE`. Similarly, if we want to extrapolate our predictions beyond the last observation time we specify `extrapolate = TRUE`. We can then choose to plot the fitted longitudinal trajectories for a subset of individuals. The code required is as follows:
+
+```{r long_predplot}
+pt <- posterior_traj(f1, interpolate = TRUE, extrapolate = TRUE)
+pt_plot <- plot(pt, ids = 1:3)
+pt_plot
+```
+
+Similarly, we can obtain posterior predictions for the survival function. Here we will generate the estimated subject-specific survival function for each of the individuals using in estimating the model, and then for the same three individuals as used above we will plot estimated survival functions alongside the longitudinal predictions using the function `plot_stack`:
+
+```{r surv_preds}
+ps <- posterior_survfit(f1)
+ps_plot <- plot(ps, ids = 1:3)
+plot_stack(pt_plot, ps_plot)
+```
+
+### Out-of-sample predictions
+
+If we have new data for an individual who was not included in the estimation sample, then we can easily generate posterior predictions for that individual by including the `newdata` argument as follows:
+
+```{r oos_longpred, eval = TRUE}
+df <- pbcLong[pbcLong$id == 100, c("id", "logBili", "year")]
+pt_new <- posterior_traj(f1, newdata = df, interpolate = TRUE, extrapolate = TRUE)
+plot(pt_new)
+```
+
+And the estimated survival function can be obtained using:
+
+```{r oos_survpred, eval = TRUE}
+df_surv <- pbcSurv[pbcSurv$id == 100, c("id", "sex", "trt")]
+ps_new <- posterior_survfit(f1, newdataLong = df, newdataEvent = df_surv)
+plot(ps_new)
+```
+
+Note however that the out-of-sample predictions that are obtained from using these functions are based on draws of the random effects distribution conditional on the data used to fit the model, but *not* conditional on the new data. That is, they are fitted values evaluated using the specified set of new covariate values, but they are *not* individualised dynamic predictions (see for example Taylor et al. (2013)).
+
+## A multivariate joint model
+
+Next, we fit a multivariate joint model, with two normally distributed longitudinal markers, an association structure based on the current value and current slope of the linear predictor from the first longitudinal submodel and the random intercept (including the fixed component) from the second longitudinal submodel, and a baseline hazard approximated using B-splines. We use a horseshoe shrinkage prior for the three association parameters, and a Student t prior with 5 degrees of freedom for each of the remaining regression coefficients. Note that since this joint model is relatively more complex and contains a larger number of parameters, we need to fit this joint model to the full PBC data, containing 312 individuals, and therefore this model takes longer to run (~30min, depending on CPU specs):
+
+```{r multivariate_fit, eval = FALSE}
+mv1 <- stan_jm(
+        formulaLong = list(
+          logBili ~ year + (year | id), 
+          albumin ~ sex + year + (1 | id)),
+        dataLong = pbcLong,
+        formulaEvent = Surv(futimeYears, death) ~ sex + trt, 
+        dataEvent = pbcSurv,
+        time_var = "year",
+        assoc = list(c("etavalue", "etaslope"), "shared_coef(1)"),
+        base_haz = "splines",
+        priorLong = student_t(df = 5),
+        priorEvent = student_t(df = 5),
+        priorAssoc = hs())
+```
+
+# References
+
+1. Gelman A, Carlin JB, Stern HS, Dunson DB, Vehtari A, Rubin DB. (2013). *Bayesian Data Analysis.* Chapman & Hall/CRC Press, London, 3rd edition. [http://stat.columbia.edu/~gelman/book/](http://stat.columbia.edu/~gelman/book/)
+
+2. Laurie DP. Calculation of Gauss-Kronrod quadrature rules. *Mathematics of Computation* 1997; **66**:1133-1145.

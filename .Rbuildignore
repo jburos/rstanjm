@@ -13,3 +13,4 @@ vignettes/_output.yaml
 ^\cleanup*
 man-roxygen/*
 tests/*
+^rstanjm\.pdf$

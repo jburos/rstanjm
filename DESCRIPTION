@@ -3,13 +3,14 @@ Type: Package
 Title: Bayesian joint longitudinal and time-to-event models via Stan
 Version: 0.0.0-1
 Date: 2016-06-28
-Authors@R: c(person("Sam", "Brilleman", email = "sam.brilleman@monash.edu", 
-                    role = c("cre", "aut", "cph")),
-             person("Jonah", "Gabry", email = "jsg2201@columbia.edu", 
-			        role = "aut"),
-             person("Ben", "Goodrich", email = "benjamin.goodrich@columbia.edu", 
-                    role = "aut"),
-			 person("Trustees of", "Columbia University", role = "cph"))
+Authors@R: c(person("Sam", "Brilleman", email = "sam.brilleman@monash.edu", role = c("cre", "aut", "cph")),
+             person("Jonah", "Gabry", email = "jsg2201@columbia.edu", role = "aut"),
+             person("Ben", "Goodrich", email = "benjamin.goodrich@columbia.edu", role = "aut"),
+			       person("Trustees of", "Columbia University", role = "cph"),
+             person("Douglas", "Bates", role = "cph", comment = "R/pp_data.R"),
+             person("Martin", "Maechler", role = "cph", comment = "R/pp_data.R"),
+             person("Ben", "Bolker", role = "cph", comment = "R/pp_data.R"),
+             person("Steve", "Walker", role = "cph", comment = "R/pp_data.R"))
 Description: Estimate joint longitudinal and time-to-event models under a Bayesian
     framework via Stan. Stan is a C++ library for Bayesian estimation. Users of the
     rstanjm package specify a joint model using the customary R formula syntax
@@ -38,6 +39,7 @@ Imports:
     rstan (>= 2.9.0-3),
     shinystan (>= 2.1.0),
     stats,
+    splines,
     utils
 Suggests:
     gridExtra,

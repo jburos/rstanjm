@@ -97,7 +97,7 @@
 #'   the second containing the corresponding weights. The data frame should only
 #'   have one row for each individual; that is, weights should be constant 
 #'   within individuals.
-#' @param offset Not yet implemented. Same as \code{\link[stats]{glm}}. 
+#' @param offset Not currently implemented. Same as \code{\link[stats]{glm}}. 
 #' @param centreLong,centreEvent A logical specifying whether the predictor
 #'   matrix for the longitudinal submodel(s) or event submodel should be 
 #'   centred. 
@@ -282,7 +282,7 @@
 #'         formulaEvent = Surv(futimeYears, death) ~ sex + trt, 
 #'         dataEvent = pbcSurv_subset,
 #'         assoc = list("etavalue", c("etavalue", "shared_b(1)")), 
-#'         time_var = "year", refresh = 25)
+#'         time_var = "year")
 #' summary(mv1)
 #' 
 #' # To include both the random intercept and random slope in the shared 
@@ -312,6 +312,7 @@
 #' 
 #' @export
 #' @import data.table
+#' @import survival Surv
 #' 
 stan_jm <- function(formulaLong, dataLong, 
                     formulaEvent, dataEvent, 
@@ -1667,7 +1668,7 @@ stan_jm <- function(formulaLong, dataLong,
   
   # Cubic splines baseline hazard
   standata$e_ns_times <- if (base_haz_splines) 
-    as.array(splines:::predict.bs(splines_basis, standata$e_times)) else 
+    as.array(splines::predict(splines_basis, standata$e_times)) else 
     as.array(matrix(0,0,0))
   
   # Piecewise constant baseline hazard
@@ -1751,13 +1752,13 @@ stan_jm <- function(formulaLong, dataLong,
       a_z_beta = if (a_K) as.array(rep(0, a_K)) else double(0),
       z_b = as.array(runif(standata$len_b, -0.5, 0.5)),
       y_global = as.array(runif(y_hs)),
-      y_local = if (y_hs) as.array(runif(y_hs * sum_y_K), dim = c(y_hs, sum_y_K))
+      y_local = if (y_hs) matrix(runif(y_hs * sum_y_K), nrow = y_hs, ncol = sum_y_K)
         else matrix(0,0,0),
       e_global = as.array(runif(e_hs)),
-      e_local = if (e_hs) as.array(runif(e_hs * e_K), dim = c(e_hs, e_K))
+      e_local = if (e_hs) matrix(runif(e_hs * e_K), nrow = e_hs, ncol = e_K)
         else matrix(0,0,0),
       a_global = as.array(runif(a_hs)),
-      a_local = if (a_hs) as.array(runif(a_hs * a_K), dim = c(a_hs, a_K))
+      a_local = if (a_hs) matrix(runif(a_hs * a_K), nrow = a_hs, ncol = a_K)
         else matrix(0,0,0)      
       ),
       if (prior_covariance$dist == "decov") list(
