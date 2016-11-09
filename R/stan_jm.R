@@ -1803,20 +1803,26 @@ stan_jm <- function(formulaLong, dataLong,
             "theta_L")
 
   #cat("\n--> Fitting joint model now...")
-  cat("\nPlease note the warmup phase may be much slower than",
+  if (algorithm == "sampling") {
+    cat("\nPlease note the warmup phase may be much slower than",
       "later iterations!\n")             
-  sampling_args <- set_sampling_args(
-    object = stanfit, 
-    user_dots = list(...), 
-    user_adapt_delta = adapt_delta,
-    user_max_treedepth = max_treedepth,
-    sum_p = sum(standata$p),
-    data = standata, 
-    pars = pars, 
-    init = init,
-    show_messages = FALSE)
-  stanfit <- do.call(sampling, sampling_args)
-
+    sampling_args <- set_sampling_args(
+      object = stanfit, 
+      user_dots = list(...), 
+      user_adapt_delta = adapt_delta,
+      user_max_treedepth = max_treedepth,
+      sum_p = sum(standata$p),
+      data = standata, 
+      pars = pars, 
+      init = init,
+      show_messages = FALSE)
+    stanfit <- do.call(sampling, sampling_args)
+  } else {
+    # meanfield or fullrank vb
+    stanfit <- rstan::vb(stanfit, pars = pars, data = standata,
+                         algorithm = algorithm, ...)    
+  }
+  
 #  if (QR) {  # not yet implemented for stan_jm
 #    thetas <- extract(stanfit, pars = "beta", inc_warmup = TRUE, 
 #                      permuted = FALSE)

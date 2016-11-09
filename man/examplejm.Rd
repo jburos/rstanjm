@@ -5,13 +5,9 @@
 \title{Example joint longitudinal and time-to-event model}
 \format{Calling \code{example("examplejm")} will run the model in the 
   Examples section, below, and the resulting stanjm object will then be
-  available in the global environment. The \code{chains} and \code{iter}
-  arguments are specified to make this example be small in size. In practice,
-  we recommend that they be left unspecified in order to use the default
-  values (4 and 2000 respectively) or increased if there are convergence
-  problems. The \code{cores} argument is optional and on a multicore system,
-  the user may well want to set that equal to the number of chains being
-  executed.}
+  available in the global environment. The \code{cores} argument is 
+  optional and on a multicore system, the user may well want to set 
+  that equal to the number of chains being executed.}
 \description{
 A model for use in \pkg{rstanjm} examples.
 }
@@ -22,8 +18,7 @@ examplejm <-
           formulaEvent = Surv(futimeYears, death) ~ sex + trt, 
           dataEvent = pbcSurv_subset,
           time_var = "year",
-          chains = 1, cores = 1, seed = 12345,
-          iter = 1500, warmup = 750)
+          chains = 1, cores = 1, seed = 12345)
 
 }
 
