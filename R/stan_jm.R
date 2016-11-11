@@ -464,7 +464,7 @@ stan_jm <- function(formulaLong, dataLong,
   # Check family and link
   supported_families <- c("binomial", "gaussian", "Gamma", "inverse.gaussian",
                           "poisson", "neg_binomial_2")
-  family <- lapply(family, rstanarm:::validate_family)
+  family <- lapply(family, validate_family)
   fam <- lapply(family, function(x) 
                 which(pmatch(supported_families, x$family, nomatch = 0L) == 1L))
   if (any(lapply(fam, length) == 0L)) 
@@ -603,12 +603,12 @@ stan_jm <- function(formulaLong, dataLong,
     } 
     xtemp[[m]] <- if (y_has_intercept[m]) x[[m]][, -1L, drop=FALSE] else x[[m]]
 
-    if (rstanarm:::is.binomial(family[[m]]$family)) {
+    if (is.binomial(family[[m]]$family)) {
       if (NCOL(y[[m]]) == 1L) {
         if (is.numeric(y[[m]]) || is.logical(y[[m]])) 
           y[[m]] <- as.integer(y[[m]])
         if (is.factor(y[[m]])) 
-          y[[m]] <- rstanarm:::fac2bin(y[[m]])
+          y[[m]] <- fac2bin(y[[m]])
         if (!all(y[[m]] %in% c(0L, 1L))) 
           stop("y values must be 0 or 1 for bernoulli regression.")
         trials[[m]] <- rep(0L, length(y[[m]]))
@@ -634,7 +634,7 @@ stan_jm <- function(formulaLong, dataLong,
     }
 
     # Reorder y, X, Z if bernoulli (zeros first)
-    if (rstanarm:::is.binomial(family[[m]]$family) && all(y[[m]] %in% 0:1)) {      
+    if (is.binomial(family[[m]]$family) && all(y[[m]] %in% 0:1)) {      
       ord[[m]] <- order(y[[m]])
       y[[m]] <- y[[m]][ord[[m]]]
       trials[[m]] <- trials[[m]][ord[[m]]]
@@ -756,7 +756,7 @@ stan_jm <- function(formulaLong, dataLong,
                           by.x = "id", by.y = id_var, sort = FALSE)
       y_weights[[m]] <- weights_df[[weight_var]]    
       # Reorder weights if bernoulli
-      if (rstanarm:::is.binomial(family[[m]]$family) && all(y[[m]] %in% 0:1))      
+      if (is.binomial(family[[m]]$family) && all(y[[m]] %in% 0:1))      
         y_weights[[m]] <- y_weights[[m]][ord[[m]]]
     }
   } else y_weights <- lapply(1:M, function(m) rep(0.0, length(y[[m]])))
@@ -774,12 +774,12 @@ stan_jm <- function(formulaLong, dataLong,
   # Family indicators
   famname <- lapply(fam, function(x) supported_families[x])
   is_bernoulli  <- mapply(function(x, i)
-    rstanarm:::is.binomial(x) && all(y[[i]] %in% 0:1),
+    is.binomial(x) && all(y[[i]] %in% 0:1),
                           famname, seq_along(famname), SIMPLIFY = FALSE)
-  is_nb         <- lapply(famname, rstanarm:::is.nb)
-  is_gaussian   <- lapply(famname, rstanarm:::is.gaussian)
-  is_gamma      <- lapply(famname, rstanarm:::is.gamma)
-  is_ig         <- lapply(famname, rstanarm:::is.ig)
+  is_nb         <- lapply(famname, is.nb)
+  is_gaussian   <- lapply(famname, is.gaussian)
+  is_gamma      <- lapply(famname, is.gamma)
+  is_ig         <- lapply(famname, is.ig)
   is_continuous <- lapply(seq_along(famname), function(x) 
                      (is_gaussian[[x]] || is_gamma[[x]] || is_ig[[x]]))
   
@@ -790,7 +790,7 @@ stan_jm <- function(formulaLong, dataLong,
       needs_intercept <- 
         !is_gaussian[[x]] && linkname == "identity" ||
         is_gamma[[x]] && linkname == "inverse" ||
-        rstanarm:::is.binomial(famname[[x]]) && linkname == "log"
+        is.binomial(famname[[x]]) && linkname == "log"
       if (needs_intercept)
         stop(paste0("To use the combination of family and link ", 
                     "specified for longitudinal marker ", x,
@@ -1130,7 +1130,7 @@ stan_jm <- function(formulaLong, dataLong,
   # Prior distributions
   #=====================
  
-  ok_dists <- rstanarm:::nlist("normal", student_t = "t", "cauchy", "hs", "hs_plus",
+  ok_dists <- nlist("normal", student_t = "t", "cauchy", "hs", "hs_plus",
                                "informative_normal", informative_student_t = "informative_t",
                                "informative_cauchy")
   ok_intercept_dists <- if (length(ok_dists) > 5L) ok_dists[c(1:3,6:8)] else ok_dists[1:3]
@@ -1139,7 +1139,7 @@ stan_jm <- function(formulaLong, dataLong,
   priorLong_scaled <- priorLong_ops$scaled
   priorLong_min_prior_scale <- priorLong_ops$min_prior_scale
   priorLong_scale_for_dispersion <- 
-    as.array(rstanarm:::maybe_broadcast(priorLong_ops$prior_scale_for_dispersion, sum_y_has_dispersion))
+    as.array(maybe_broadcast(priorLong_ops$prior_scale_for_dispersion, sum_y_has_dispersion))
   
   if (is.null(priorLong)) {
     priorLong_informative <- FALSE
@@ -1162,7 +1162,7 @@ stan_jm <- function(formulaLong, dataLong,
       priorLong_dist <- ifelse(priorLong_dist == "informative_normal", 1L, 2L)
       priorLong_mean <- unlist(y_beta)
       priorLong_scale <- 
-        rstanarm:::set_prior_scale(priorLong_scale * unlist(se_y_beta), 
+        set_prior_scale(priorLong_scale * unlist(se_y_beta), 
                                    default = 10 * unlist(se_y_beta), 
                                    link = family[[1]]$link)
     } else if (priorLong_dist %in% c("normal", "t")) {
@@ -1170,18 +1170,18 @@ stan_jm <- function(formulaLong, dataLong,
       priorLong_dist <- ifelse(priorLong_dist == "normal", 1L, 2L)
       # !!! Need to change this so that link can be specific to each submodel
       priorLong_scale <- 
-        rstanarm:::set_prior_scale(priorLong_scale, default = 2.5, 
+        set_prior_scale(priorLong_scale, default = 2.5, 
                                    link = family[[1]]$link)
     } else {
       priorLong_informative <- FALSE
       priorLong_dist <- ifelse(priorLong_dist == "hs", 3L, 4L)
     }
     
-    priorLong_df <- rstanarm:::maybe_broadcast(priorLong_df, sum_y_K)
+    priorLong_df <- maybe_broadcast(priorLong_df, sum_y_K)
     priorLong_df <- as.array(pmin(.Machine$double.xmax, priorLong_df))
-    priorLong_mean <- rstanarm:::maybe_broadcast(priorLong_mean, sum_y_K)
+    priorLong_mean <- maybe_broadcast(priorLong_mean, sum_y_K)
     priorLong_mean <- as.array(priorLong_mean)
-    priorLong_scale <- rstanarm:::maybe_broadcast(priorLong_scale, sum_y_K)
+    priorLong_scale <- maybe_broadcast(priorLong_scale, sum_y_K)
     priorLong_scale <- as.array(priorLong_scale)
   }
   
@@ -1208,22 +1208,22 @@ stan_jm <- function(formulaLong, dataLong,
         ifelse(priorLong_dist_for_intercept == "informative_normal", 1L, 2L)
       priorLong_mean_for_intercept <- y_gamma
       priorLong_scale_for_intercept <- 
-        rstanarm:::set_prior_scale(priorLong_scale_for_intercept * se_y_gamma, 
+        set_prior_scale(priorLong_scale_for_intercept * se_y_gamma, 
                                    default = 10 * se_y_gamma, link = family[[1]]$link)
     } else {
       priorLong_informative_for_intercept <- FALSE
       priorLong_dist_for_intercept <- 
         ifelse(priorLong_dist_for_intercept == "normal", 1L, 2L)
       priorLong_scale_for_intercept <- 
-        rstanarm:::set_prior_scale(priorLong_scale_for_intercept, default = 10, 
+        set_prior_scale(priorLong_scale_for_intercept, default = 10, 
                                    link = family[[1]]$link)      
     }
 
-    priorLong_df_for_intercept <- rstanarm:::maybe_broadcast(priorLong_df_for_intercept, sum_y_has_intercept)
+    priorLong_df_for_intercept <- maybe_broadcast(priorLong_df_for_intercept, sum_y_has_intercept)
     priorLong_df_for_intercept <- as.array(pmin(.Machine$double.xmax, priorLong_df_for_intercept))
-    priorLong_mean_for_intercept <- rstanarm:::maybe_broadcast(priorLong_mean_for_intercept, sum_y_has_intercept)
+    priorLong_mean_for_intercept <- maybe_broadcast(priorLong_mean_for_intercept, sum_y_has_intercept)
     priorLong_mean_for_intercept <- as.array(priorLong_mean_for_intercept)
-    priorLong_scale_for_intercept <- rstanarm:::maybe_broadcast(priorLong_scale_for_intercept, sum_y_has_intercept)
+    priorLong_scale_for_intercept <- maybe_broadcast(priorLong_scale_for_intercept, sum_y_has_intercept)
     priorLong_scale_for_intercept <- as.array(priorLong_scale_for_intercept)
   }
 
@@ -1234,9 +1234,9 @@ stan_jm <- function(formulaLong, dataLong,
   priorEvent_scale_for_splines <- priorEvent_ops$prior_scale_for_basehaz
   priorEvent_scale_for_piecewise <- priorEvent_ops$prior_scale_for_basehaz
   if (base_haz_splines) priorEvent_scale_for_splines <- 
-    rstanarm:::maybe_broadcast(priorEvent_scale_for_splines, splines_df)  
+    maybe_broadcast(priorEvent_scale_for_splines, splines_df)  
   if (base_haz_piecewise) priorEvent_scale_for_piecewise <- 
-    rstanarm:::maybe_broadcast(priorEvent_scale_for_piecewise, piecewise_df)  
+    maybe_broadcast(priorEvent_scale_for_piecewise, piecewise_df)  
   
   if (is.null(priorEvent)) {
     priorEvent_informative <- FALSE
@@ -1259,24 +1259,24 @@ stan_jm <- function(formulaLong, dataLong,
       priorEvent_dist <- ifelse(priorEvent_dist == "informative_normal", 1L, 2L)
       priorEvent_mean <- e_beta
       priorEvent_scale <- 
-        rstanarm:::set_prior_scale(priorEvent_scale * se_e_beta, 
+        set_prior_scale(priorEvent_scale * se_e_beta, 
                                    default = 10 * se_e_beta, link = "none")
     } else if (priorEvent_dist %in% c("normal", "t")) {
       priorEvent_informative <- FALSE
       priorEvent_dist <- ifelse(priorEvent_dist == "normal", 1L, 2L)
       # !!! Need to think about whether 2.5 is appropriate default value here
-      priorEvent_scale <- rstanarm:::set_prior_scale(priorEvent_scale, default = 2, 
+      priorEvent_scale <- set_prior_scale(priorEvent_scale, default = 2, 
                                      link = "none")
     } else {
       priorEvent_informative <- FALSE
       priorEvent_dist <- ifelse(priorEvent_dist == "hs", 3L, 4L)
     }
     
-    priorEvent_df <- rstanarm:::maybe_broadcast(priorEvent_df, e_K)
+    priorEvent_df <- maybe_broadcast(priorEvent_df, e_K)
     priorEvent_df <- as.array(pmin(.Machine$double.xmax, priorEvent_df))
-    priorEvent_mean <- rstanarm:::maybe_broadcast(priorEvent_mean, e_K)
+    priorEvent_mean <- maybe_broadcast(priorEvent_mean, e_K)
     priorEvent_mean <- as.array(priorEvent_mean)
-    priorEvent_scale <- rstanarm:::maybe_broadcast(priorEvent_scale, e_K)
+    priorEvent_scale <- maybe_broadcast(priorEvent_scale, e_K)
     priorEvent_scale <- as.array(priorEvent_scale)
   }
   
@@ -1300,7 +1300,7 @@ stan_jm <- function(formulaLong, dataLong,
       ifelse(priorEvent_dist_for_intercept == "normal", 1L, 2L)
     # !!! Need to think about whether 10 is appropriate default value here      
     priorEvent_scale_for_intercept <- 
-      rstanarm:::set_prior_scale(priorEvent_scale_for_intercept, default = 10, 
+      set_prior_scale(priorEvent_scale_for_intercept, default = 10, 
                       link = "none")
     priorEvent_df_for_intercept <- min(.Machine$double.xmax, priorEvent_df_for_intercept)
   }
@@ -1328,17 +1328,17 @@ stan_jm <- function(formulaLong, dataLong,
       priorAssoc_dist <- ifelse(priorAssoc_dist == "normal", 1L, 2L)
       # !!! Need to potentially have appropriate default value here depending on 
       #     type of association structure
-      priorAssoc_scale <- rstanarm:::set_prior_scale(priorAssoc_scale, default = 2, 
+      priorAssoc_scale <- set_prior_scale(priorAssoc_scale, default = 2, 
                                      link = "none")      
     } else {
       priorAssoc_dist <- ifelse(priorAssoc_dist == "hs", 3L, 4L)
     }
     
-    priorAssoc_df <- rstanarm:::maybe_broadcast(priorAssoc_df, a_K)
+    priorAssoc_df <- maybe_broadcast(priorAssoc_df, a_K)
     priorAssoc_df <- as.array(pmin(.Machine$double.xmax, priorAssoc_df))
-    priorAssoc_mean <- rstanarm:::maybe_broadcast(priorAssoc_mean, a_K)
+    priorAssoc_mean <- maybe_broadcast(priorAssoc_mean, a_K)
     priorAssoc_mean <- as.array(priorAssoc_mean)
-    priorAssoc_scale <- rstanarm:::maybe_broadcast(priorAssoc_scale, a_K)
+    priorAssoc_scale <- maybe_broadcast(priorAssoc_scale, a_K)
     priorAssoc_scale <- as.array(priorAssoc_scale)
   }
 
@@ -1640,18 +1640,18 @@ stan_jm <- function(formulaLong, dataLong,
   # hyperparameters for random effects model
   if (prior_covariance$dist == "decov") {
     decov_args <- prior_covariance
-    standata$shape <- as.array(rstanarm:::maybe_broadcast(decov_args$shape, t))
-    standata$scale <- as.array(rstanarm:::maybe_broadcast(decov_args$scale, t))
+    standata$shape <- as.array(maybe_broadcast(decov_args$shape, t))
+    standata$scale <- as.array(maybe_broadcast(decov_args$scale, t))
     standata$len_concentration <- sum(p[p > 1])
     standata$concentration <- 
-      as.array(rstanarm:::maybe_broadcast(decov_args$concentration, sum(p[p > 1])))
+      as.array(maybe_broadcast(decov_args$concentration, sum(p[p > 1])))
     standata$len_regularization <- sum(p > 1)
     standata$regularization <- 
-      as.array(rstanarm:::maybe_broadcast(decov_args$regularization, sum(p > 1))) 
+      as.array(maybe_broadcast(decov_args$regularization, sum(p > 1))) 
   } else if (prior_covariance$dist == "lkjcorr") {
     lkj_args <- prior_covariance
-    standata$lkj_shape <- as.array(rstanarm:::maybe_broadcast(lkj_args$shape, t))
-    standata$prior_scale_for_sd_b <- as.array(rstanarm:::maybe_broadcast(lkj_args$scale, sum(p)))
+    standata$lkj_shape <- as.array(maybe_broadcast(lkj_args$shape, t))
+    standata$prior_scale_for_sd_b <- as.array(maybe_broadcast(lkj_args$scale, sum(p)))
   }
 
   standata$family <- as.array(sapply(1:M, function(x) {
@@ -1668,7 +1668,7 @@ stan_jm <- function(formulaLong, dataLong,
   
   # Cubic splines baseline hazard
   standata$e_ns_times <- if (base_haz_splines) 
-    as.array(splines::predict(splines_basis, standata$e_times)) else 
+    as.array(predict(splines_basis, standata$e_times)) else 
     as.array(matrix(0,0,0))
   
   # Piecewise constant baseline hazard
@@ -1859,10 +1859,10 @@ stan_jm <- function(formulaLong, dataLong,
   # Names for vector of dispersion parameters
   d_nms <- character()  
   for (m in 1:M) {
-    if (rstanarm:::is.gaussian(famname[[m]]))   d_nms <- c(d_nms, paste0("Long", m,"|sigma"))
-    else if (rstanarm:::is.gamma(famname[[m]])) d_nms <- c(d_nms, paste0("Long", m,"|shape"))
-    else if (rstanarm:::is.ig(famname[[m]]))    d_nms <- c(d_nms, paste0("Long", m,"|lambda"))
-    else if (rstanarm:::is.nb(famname[[m]]))    d_nms <- c(d_nms, paste0("Long", m,"|overdispersion"))
+    if (is.gaussian(famname[[m]]))   d_nms <- c(d_nms, paste0("Long", m,"|sigma"))
+    else if (is.gamma(famname[[m]])) d_nms <- c(d_nms, paste0("Long", m,"|shape"))
+    else if (is.ig(famname[[m]]))    d_nms <- c(d_nms, paste0("Long", m,"|lambda"))
+    else if (is.nb(famname[[m]]))    d_nms <- c(d_nms, paste0("Long", m,"|overdispersion"))
   }
                   
   new_names <- c(int_nms,
@@ -1902,7 +1902,7 @@ stan_jm <- function(formulaLong, dataLong,
   }
   
   #colnames(Z) <- b_names(names(stanfit), value = TRUE)
-  fit <- rstanarm:::nlist(stanfit, family, formula = c(formulaLong, formulaEvent), 
+  fit <- nlist(stanfit, family, formula = c(formulaLong, formulaEvent), 
                           id_var, time_var, offset = NULL, quadnodes,
                           base_haz = list(type = base_haz, attr = attr),
                           M, cnms, y_N, y_cnms, y_flist, Npat, n_grps, assoc = has_assoc, 
@@ -1919,7 +1919,7 @@ stan_jm <- function(formulaLong, dataLong,
                           y = y, e_x, eventtime, d, quadpoints = quadpoint, 
                           epsilon = if (sum(has_assoc$etaslope, has_assoc$muslope)) eps else NULL,
                           standata, dataLong, dataEvent, call, terms = NULL, model = NULL,                          
-                          prior.info = rstanarm:::get_prior_info(call, formals()),
+                          prior.info = get_prior_info(call, formals()),
                           na.action, algorithm = "sampling", init, glmod = y_mod, coxmod = e_mod)
   out <- stanjm(fit)
   
@@ -2286,7 +2286,7 @@ check_intercept <- function(family, link) {
       }
     }
   }  
-  rstanarm:::nlist(unbound, lobound, upbound) 
+  nlist(unbound, lobound, upbound) 
 }
 
 
@@ -2359,7 +2359,7 @@ pad_reTrms <- function(Z, cnms, flist) {
       mark <- mark - 1L
     }
   }
-  rstanarm:::nlist(Z, cnms, flist)
+  nlist(Z, cnms, flist)
 }
 
 # Drop the extra reTrms from a matrix x

@@ -138,7 +138,7 @@ set_plotting_args <- function(x, pars = NULL, regex_pars = NULL, ...) {
 #' pairs(examplejm, pars = c("Long1|(Intercept)", "log-posterior"))
 #'
 pairs.stanjm <- function(x, ...) {
-  if (!rstanarm:::used.sampling(x))
+  if (!used.sampling(x))
     STOP_sampling_only("pairs")
   requireNamespace("rstan")
   requireNamespace("KernSmooth")

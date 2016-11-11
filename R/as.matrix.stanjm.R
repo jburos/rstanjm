@@ -38,14 +38,14 @@
 #' @seealso \code{\link{stanjm-methods}}
 #' 
 as.matrix.stanjm <- function(x, ..., pars = NULL, regex_pars = NULL) {
-  pars <- rstanarm:::collect_pars(x, pars, regex_pars)
+  pars <- collect_pars(x, pars, regex_pars)
   user_pars <- !is.null(pars)
 
   mat <- as.matrix(x$stanfit)
   if (!user_pars)
-    pars <- rstanarm:::exclude_lp_and_ppd(colnames(mat))
+    pars <- exclude_lp_and_ppd(colnames(mat))
   if (user_pars)
-    rstanarm:::check_missing_pars(mat, pars)
+    check_missing_pars(mat, pars)
 
   mat <- mat[, pars, drop = FALSE]
   unpad_reTrms(mat)
@@ -55,16 +55,16 @@ as.matrix.stanjm <- function(x, ..., pars = NULL, regex_pars = NULL) {
 #' @method as.array stanjm
 #' @export
 as.array.stanjm <- function(x, ..., pars = NULL, regex_pars = NULL) {
-  pars <- rstanarm:::collect_pars(x, pars, regex_pars)
+  pars <- collect_pars(x, pars, regex_pars)
 
   arr <- as.array(x$stanfit)
   if (identical(arr, numeric(0)))
-    rstanarm:::STOP_no_draws()
+    STOP_no_draws()
   
   if (!is.null(pars)) {
-    rstanarm:::check_missing_pars(arr, pars)
+    check_missing_pars(arr, pars)
   } else {
-    pars <- rstanarm:::exclude_lp_and_ppd(rstanarm:::last_dimnames(arr))
+    pars <- exclude_lp_and_ppd(last_dimnames(arr))
   }
   arr <- arr[, , pars, drop = FALSE]
   unpad_reTrms(arr)

@@ -104,12 +104,12 @@
 #'   function.
 #' 
 #' @examples 
-#' 
+#'  
 pp_check <- function(object, m = 1, check = "distributions", nreps = NULL, 
                      seed = NULL, overlay = TRUE, test = "mean", ...) {
   validate_stanjm_object(object)
-  if (rstanarm:::used.optimizing(object)) 
-    rstanarm:::STOP_not_optimizing("pp_check")
+  if (used.optimizing(object)) 
+    STOP_not_optimizing("pp_check")
   
   checks <- c("distributions", "residuals", "scatter", "test")
   fn <- switch(match.arg(arg = check, choices = checks),
@@ -124,15 +124,16 @@ pp_check <- function(object, m = 1, check = "distributions", nreps = NULL,
     nreps <- NULL
   }
 
-  is_binomial <- if (is(object, "polr") && !rstanarm:::is_scobit(object))
-    FALSE else rstanarm:::is.binomial(family(object)[[m]]$family)
+  is_binomial <- if (is(object, "polr") && !is_scobit(object))
+    FALSE else is.binomial(family(object)[[m]]$family)
   if (is_binomial && fn == "pp_check_resid") {
-    graph <- rstanarm:::pp_check_binned_resid(object, n = nreps, ...)
+    graph <- pp_check_binned_resid(object, n = nreps, ...)
     return(graph)
   }
   
   y <- get_y(object)[[m]]
-  yrep <- posterior_predict(object, m, draws = nreps, seed = seed)
+  yrep <- posterior_predict(object, m, draws = nreps, 
+                            seed = seed, return_matrix = TRUE)
   if (is(object, "polr")) {
     y <- as.integer(y)
     yrep <- apply(yrep, 2, function(x) as.integer(as.factor(x)))
@@ -143,7 +144,7 @@ pp_check <- function(object, m = 1, check = "distributions", nreps = NULL,
       y <- y[, 1L] / trials
       yrep <- sweep(yrep, 2L, trials, "/")
     } else if (is.factor(y))
-      y <- rstanarm:::fac2bin(y)
+      y <- fac2bin(y)
   }
   
   if (fn == "pp_check_dist") {

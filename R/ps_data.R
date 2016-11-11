@@ -63,7 +63,7 @@ ps_data <-
                    .ps_data_long_zQ(object, newdataLong[[m]], m, t_and_tQ, 
                                     ids, id_var, time_var, ...))
     #offset <- .pp_data_offset(object, newdata, offset)
-    return(rstanarm:::nlist(e_xQ, y_xQ, y_zQ, offset, t, tQ))
+    return(nlist(e_xQ, y_xQ, y_zQ, offset, t, tQ))
   }
 
 
@@ -224,7 +224,7 @@ ps_data <-
   
   # Get model formula for random effects part
   if (is.null(re.form)) 
-    re.form <- rstanarm:::justRE(use_predvars(object$glmod[[m]]))
+    re.form <- justRE(use_predvars(object$glmod[[m]]))
   if (!inherits(re.form, "formula"))
     stop("'re.form' must be NULL, NA, or a formula.")
   
@@ -266,7 +266,7 @@ ps_data <-
     }
   }
 
-  z <- rstanarm:::nlist(Zt, Z_names)
+  z <- nlist(Zt, Z_names)
   return(z)
 }
 

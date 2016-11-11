@@ -230,7 +230,7 @@ formula.stanjm <- function (x, fixed.only = FALSE, random.only = FALSE, ...) {
     }
     if (random.only)
       for (m in 1:M)
-        form[[m]] <- rstanarm:::justRE(form[[m]], response = TRUE)
+        form[[m]] <- justRE(form[[m]], response = TRUE)
   }
   form <- list_nms(form, M)
   
@@ -411,11 +411,11 @@ ngrps.stanjm <- function(object, ...) {
 #'
 ranef.stanjm <- function(object, ...) {
   M <- object$n_markers
-  all_names <- if (rstanarm:::used.optimizing(object))
+  all_names <- if (used.optimizing(object))
     rownames(object$stan_summary) else object$stanfit@sim$fnames_oi
   ans_list <- lapply(1:M, function(m) { 
     sel <- b_names(all_names, m)
-    ans <- object$stan_summary[sel, rstanarm:::select_median(object$algorithm)]
+    ans <- object$stan_summary[sel, select_median(object$algorithm)]
     # avoid returning the extra levels that were included
     ans <- ans[!grepl("_NEW_", names(ans), fixed = TRUE)]
     fl <- as.list(object$glmod[[m]]@flist)
@@ -454,7 +454,7 @@ sigma.stanjm <- function(object, ...) {
   nms <- grep("^Long[1-9]\\|sigma", rownames(object$stan_summary), value = TRUE)
   if (!length(nms)) 
     return(1)
-  sigma <- object$stan_summary[nms, rstanarm:::select_median(object$algorithm)]
+  sigma <- object$stan_summary[nms, select_median(object$algorithm)]
   if (M > 1L) {
     new_nms <- gsub("\\|sigma", "", nms)
     names(sigma) <- new_nms

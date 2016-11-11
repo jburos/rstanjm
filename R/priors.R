@@ -164,16 +164,16 @@
 #'   fitting function \code{\link{stan_jm}}.
 #'   
 normal <- function(location = 0, scale = NULL) {
-  rstanarm:::validate_parameter_value(scale)
-  rstanarm:::nlist(dist = "normal", df = NA, location, scale)
+  validate_parameter_value(scale)
+  nlist(dist = "normal", df = NA, location, scale)
 }
 
 #' @rdname priors
 #' @export
 student_t <- function(df = 1, location = 0, scale = NULL) {
-  rstanarm:::validate_parameter_value(scale)
-  rstanarm:::validate_parameter_value(df)
-  rstanarm:::nlist(dist = "t", df, location, scale)
+  validate_parameter_value(scale)
+  validate_parameter_value(df)
+  nlist(dist = "t", df, location, scale)
 }
 
 #' @rdname priors
@@ -185,17 +185,17 @@ cauchy <- function(location = 0, scale = NULL) {
 #' @rdname priors
 #' @export
 hs <- function(df = 3) {
-  rstanarm:::validate_parameter_value(df)
-  rstanarm:::nlist(dist = "hs", df, location = 0, scale = 1)
+  validate_parameter_value(df)
+  nlist(dist = "hs", df, location = 0, scale = 1)
 }
 
 #' @rdname priors
 #' @export
 hs_plus <- function(df1 = 3, df2 = 3) {
-  rstanarm:::validate_parameter_value(df1)
-  rstanarm:::validate_parameter_value(df2)
+  validate_parameter_value(df1)
+  validate_parameter_value(df2)
   # scale gets used as a second df hyperparameter
-  rstanarm:::nlist(dist = "hs_plus", df = df1, location = 0, scale = df2)
+  nlist(dist = "hs_plus", df = df1, location = 0, scale = df2)
 }
 
 #' @rdname priors
@@ -211,11 +211,11 @@ hs_plus <- function(df1 = 3, df2 = 3) {
 #'   distribution.
 decov <- function(regularization = 1, concentration = 1, 
                   shape = 1, scale = 1) {
-  rstanarm:::validate_parameter_value(regularization)
-  rstanarm:::validate_parameter_value(concentration)
-  rstanarm:::validate_parameter_value(shape)
-  rstanarm:::validate_parameter_value(scale)
-  rstanarm:::nlist(dist = "decov", regularization, concentration, shape, scale)
+  validate_parameter_value(regularization)
+  validate_parameter_value(concentration)
+  validate_parameter_value(shape)
+  validate_parameter_value(scale)
+  nlist(dist = "decov", regularization, concentration, shape, scale)
 }
 
 #' @rdname priors
@@ -233,9 +233,9 @@ decov <- function(regularization = 1, concentration = 1,
 priorLong_options <- function(prior_scale_for_dispersion = 5, 
                               min_prior_scale = 1e-12, 
                               scaled = TRUE) {
-  rstanarm:::validate_parameter_value(prior_scale_for_dispersion)
-  rstanarm:::validate_parameter_value(min_prior_scale)
-  rstanarm:::nlist(scaled, min_prior_scale, prior_scale_for_dispersion)
+  validate_parameter_value(prior_scale_for_dispersion)
+  validate_parameter_value(min_prior_scale)
+  nlist(scaled, min_prior_scale, prior_scale_for_dispersion)
 }
 
 #' @rdname priors
@@ -257,17 +257,17 @@ priorLong_options <- function(prior_scale_for_dispersion = 5,
 priorEvent_options <- function(prior_scale_for_basehaz = 5,
                                min_prior_scale = 1e-12, 
                                scaled = TRUE) {
-  rstanarm:::validate_parameter_value(prior_scale_for_basehaz)
-  rstanarm:::validate_parameter_value(min_prior_scale)
-  rstanarm:::nlist(scaled, min_prior_scale, prior_scale_for_basehaz)
+  validate_parameter_value(prior_scale_for_basehaz)
+  validate_parameter_value(min_prior_scale)
+  nlist(scaled, min_prior_scale, prior_scale_for_basehaz)
 }
 
 #' @rdname priors
 #' @export 
 #'
 priorAssoc_options <- function(min_prior_scale = 1e-12) {
-  rstanarm:::validate_parameter_value(min_prior_scale)
-  rstanarm:::nlist(min_prior_scale)
+  validate_parameter_value(min_prior_scale)
+  nlist(min_prior_scale)
 }
 
 

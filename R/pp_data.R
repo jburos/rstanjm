@@ -28,7 +28,7 @@ pp_data <-
     x <- .pp_data_long_x(object, newdata, m, ...)
     z <- .pp_data_long_z(object, newdata, m, re.form, ...)
     #offset <- .pp_data_offset(object, newdata, offset)
-    return(rstanarm:::nlist(x, offset = offset, Zt = z$Zt, Z_names = z$Z_names))
+    return(nlist(x, offset = offset, Zt = z$Zt, Z_names = z$Z_names))
   }
 
 
@@ -85,7 +85,7 @@ pp_data <-
       attr(rfd,"na.action") <- fixed.na.action
   }
   if (is.null(re.form)) 
-    re.form <- rstanarm:::justRE(formula(object)[[m]])
+    re.form <- justRE(formula(object)[[m]])
   if (!inherits(re.form, "formula"))
     stop("'re.form' must be NULL, NA, or a formula.")
   if (length(fit.na.action <- attr(mfnew,"na.action")) > 0) {
@@ -118,7 +118,7 @@ pp_data <-
         paste0("Long", m, "|", x, ":", new_levels[[nm]])))))
     }
   }
-  z <- rstanarm:::nlist(Zt = ReTrms$Zt, Z_names)
+  z <- nlist(Zt = ReTrms$Zt, Z_names)
   return(z)
 }
 

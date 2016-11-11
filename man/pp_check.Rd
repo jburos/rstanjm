@@ -92,7 +92,7 @@ For binomial data, plots of \eqn{y} and \eqn{y^{rep}}{yrep} show the
   proportion of 'successes' rather than the raw count.
 }
 \examples{
-
+ 
 }
 \references{
 Gelman, A., Carlin, J. B., Stern, H. S., Dunson, D. B., Vehtari,

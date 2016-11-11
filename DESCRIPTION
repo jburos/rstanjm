@@ -52,6 +52,7 @@ Imports:
     stats,
     utils
 Suggests:
+    arm,
     KernSmooth,
     knitr,
     rmarkdown,
