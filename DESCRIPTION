@@ -36,18 +36,17 @@ License: GPL (>=3)
 Depends:
     R (>= 3.0.2),
     Rcpp (>= 0.11.0),
-	  survival (>= 2.39.4),
-	  lme4 (>= 1.1-8),
+	survival (>= 2.39.4),
+	lme4 (>= 1.1-8),
     methods
 Imports:
-		rstanarm (>= 2.11.1),
+	rstanarm (>= 2.11.1),
     data.table (>= 1.9.6),
     ggplot2 (>= 2.0.0),
     cowplot (>= 0.6.2),
     Matrix (>= 1.2.6),
     nlme (>= 3.1-124),
     rstan (>= 2.9.0-3),
-    shinystan (>= 2.1.0),
     splines,
     stats,
     utils
