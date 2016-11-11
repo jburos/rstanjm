@@ -55,13 +55,13 @@ list can contain one or more of the following named elements: \cr
   event or censoring time if no new data is provided; the time specified
   in the "last_time" column if provided in the new data (see \strong{Details}
   section below); or the time of the last longitudinal measurement if new
-  data is provided but no "last_time" column is included. The default is 25.}
+  data is provided but no "last_time" column is included. The default is 15.}
   \item{\code{ext_points}}{a positive integer specifying the number of discrete 
   time points at which to calculate the estimated longitudinal response for
   \code{extrapolate = TRUE}. These time points are evenly spaced between the 
   last known observation time for each individual and the extrapolation 
   distance specifed using either \code{ext_distance} or \code{ext_prop}.
-  The default is 25.}
+  The default is 15.}
   \item{\code{ext_prop}}{a positive scalar between 0 and 1 specifying the 
   amount of time across which to extrapolate the longitudinal trajectory,
   represented as a proportion of the total observed follow up time for each
