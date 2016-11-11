@@ -42,12 +42,12 @@ stanjm <- function(object) {
   if (opt) {
     stop("Optimisation not implemented for stan_jm")
   } else {
-    stan_summary <- rstanarm:::make_stan_summary(stanfit)
+    stan_summary <- make_stan_summary(stanfit)
     nms <- collect_nms(rownames(stan_summary), M)
     
     # Coefs and SEs for longitudinal submodel(s)                    
     y_coefs <- lapply(1:M, function(m)
-      stan_summary[c(nms$y[[m]], nms$y_b[[m]]), rstanarm:::select_median(object$algorithm)])
+      stan_summary[c(nms$y[[m]], nms$y_b[[m]]), select_median(object$algorithm)])
     y_stanmat <- lapply(1:M, function(m) 
       as.matrix(stanfit)[, c(nms$y[[m]], nms$y_b[[m]]), drop = FALSE])
     y_ses <- lapply(y_stanmat, function(m) apply(m, 2L, mad))
@@ -57,7 +57,7 @@ stanjm <- function(object) {
     }
  
     # Coefs and SEs for event submodel    
-    e_coefs <- stan_summary[c(nms$e, nms$a), rstanarm:::select_median(object$algorithm)]        
+    e_coefs <- stan_summary[c(nms$e, nms$a), select_median(object$algorithm)]        
     if (length(e_coefs) == 1L) names(e_coefs) <- rownames(stan_summary)[c(nms$e, nms$a)[1L]]
     e_stanmat <- as.matrix(stanfit)[, c(nms$e, nms$a), drop = FALSE]
     e_ses <- apply(e_stanmat, 2L, mad)    
@@ -66,7 +66,7 @@ stanjm <- function(object) {
 
     # Check Rhats for all parameters
     if (object$algorithm == "sampling") 
-      rstanarm:::check_rhats(stan_summary[, "Rhat"])
+      check_rhats(stan_summary[, "Rhat"])
     
     # Covariance matrix for fixed effects                    
     stanmat <- as.matrix(stanfit)[, c(nms$alpha, nms$beta), drop = FALSE]
@@ -74,11 +74,11 @@ stanjm <- function(object) {
   }
   
   # Linear predictor, fitted values
-  y_eta <- lapply(1:M, function(m) rstanarm:::linear_predictor.default(y_coefs[[m]], x[[m]], object$offset))
+  y_eta <- lapply(1:M, function(m) linear_predictor.default(y_coefs[[m]], x[[m]], object$offset))
   y_mu  <- lapply(1:M, function(m) family[[m]]$linkinv(y_eta[[m]]))
 
   # Residuals
-  y_tmp <- lapply(1:M, function(m) if (is.factor(y[[m]])) rstanarm:::fac2bin(y[[m]]) else y[[m]])
+  y_tmp <- lapply(1:M, function(m) if (is.factor(y[[m]])) fac2bin(y[[m]]) else y[[m]])
   y_residuals <- lapply(1:M, function(m) y_tmp[[m]] - y_mu[[m]])
   for (m in 1:M) {
     names(y_eta[[m]]) <- names(y_mu[[m]]) <- names(y_residuals[[m]]) <- y_nms[[m]]
@@ -92,7 +92,7 @@ stanjm <- function(object) {
   times <- round((rstan::get_elapsed_time(object$stanfit))/60, digits = 1)
   times <- cbind(times, total = rowSums(times))
   
-  out <- rstanarm:::nlist(
+  out <- nlist(
     coefficients = list_nms(c(y_coefs, list(e_coefs)), M), 
     ses = list_nms(c(y_ses, list(e_ses)), M),
     fitted.values = list_nms(y_mu, M),

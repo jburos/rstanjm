@@ -85,10 +85,10 @@ plot.survfit.stanjm <- function(x, ids = NULL,
   x$time <- x[[time_var]]
   
   geom_defaults <- list(color = "black")
-  geom_args <- rstanarm:::set_geom_args(geom_defaults, ...)  
+  geom_args <- set_geom_args(geom_defaults, ...)  
   
   lim_defaults <- list(alpha = 0.3)
-  lim_args <- rstanarm:::set_geom_args(lim_defaults, ci_geom_args)
+  lim_args <- set_geom_args(lim_defaults, ci_geom_args)
   
   if ((!marginalised) && (length(ids) > 60L)) {
     stop("Too many individuals to plot for. Limit using 'ids' argument, or ",

@@ -28,12 +28,13 @@
 #'   that equal to the number of chains being executed.
 #'   
 #' @examples
-#' examplejm <- 
-#'   stan_jm(formulaLong = logBili ~ year + (1 | id), 
-#'           dataLong = pbcLong_subset,
-#'           formulaEvent = Surv(futimeYears, death) ~ sex + trt, 
-#'           dataEvent = pbcSurv_subset,
-#'           time_var = "year",
-#'           chains = 1, cores = 1, seed = 12345)
+#' \donttest{
+#'   examplejm <- 
+#'      stan_jm(formulaLong = logBili ~ year + (1 | id), 
+#'              dataLong = pbcLong_subset,
+#'              formulaEvent = Surv(futimeYears, death) ~ sex + trt, 
+#'              dataEvent = pbcSurv_subset,
+#'              time_var = "year",
+#'              chains = 1, cores = 1, seed = 12345)#' }
 #' 
 NULL

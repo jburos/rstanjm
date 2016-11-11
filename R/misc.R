@@ -71,7 +71,7 @@ collect_nms <- function(x, M, ...) {
   y_b <- lapply(1:M, function(m) b_names(x, m, ...))
   alpha <- grep("^.{5}\\|\\(Intercept\\)", x, ...)      
   beta <- setdiff(c(unlist(y), e, a), alpha)  
-  rstanarm:::nlist(y, y_extra, y_b, e, e_extra, a, b, alpha, beta) 
+  nlist(y, y_extra, y_b, e, e_extra, a, b, alpha, beta) 
 }
 
 # Grep for "b" parameters (ranef), can optionally be specified

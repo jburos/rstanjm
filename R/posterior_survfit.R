@@ -317,7 +317,7 @@ ps_survcalc <- function(object, data, draws = NULL) {
   Npat      <- length(t)
   quadnodes <- length(tQ)
   Q         <- quadnodes + 1
-  S <- rstanarm:::posterior_sample_size(object)
+  S <- posterior_sample_size(object)
   if (is.null(draws)) 
     draws <- S
   if (draws > S) {
@@ -340,7 +340,7 @@ ps_survcalc <- function(object, data, draws = NULL) {
   }) 
   eta_long <- lapply(seq(M), function(m) {
     lapply(seq(Q), function(q)
-      rstanarm:::linear_predictor.matrix(
+      linear_predictor.matrix(
         y_beta[[m]], y_xQ[[m]][[q]], data$offset)) 
   }) 
     
@@ -348,7 +348,7 @@ ps_survcalc <- function(object, data, draws = NULL) {
     mat <- stanmat[, nms$y_b[[m]], drop = FALSE]
     if (some_draws) 
       mat <- mat[samp, , drop = FALSE]
-    rstanarm:::pp_b_ord(mat, y_zQ[[m]]$Z_names)
+    pp_b_ord(mat, y_zQ[[m]]$Z_names)
   })
   eta_long <- lapply(seq(M), function(m) {
     lapply(seq(Q), function(q)
@@ -360,7 +360,7 @@ ps_survcalc <- function(object, data, draws = NULL) {
   if (some_draws) 
     e_beta <- e_beta[samp, , drop = FALSE] 
   eta_event <- lapply(seq(Q), function(q)
-    rstanarm:::linear_predictor.matrix(e_beta, e_xQ[[q]], offset = NULL))
+    linear_predictor.matrix(e_beta, e_xQ[[q]], offset = NULL))
   
   # Association structure
   assoc <- object$assoc

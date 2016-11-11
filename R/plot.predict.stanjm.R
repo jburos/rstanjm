@@ -97,13 +97,13 @@ plot.predict.stanjm <- function(x, ids = NULL, limits = c("ci", "pi", "none"),
   obs_dat$id <- obs_dat[[id_var]]
   
   geom_defaults <- list(color = "black", method = "loess", se = FALSE)
-  geom_args <- rstanarm:::set_geom_args(geom_defaults, ...)
+  geom_args <- set_geom_args(geom_defaults, ...)
 
   lim_defaults <- list(alpha = 0.3)
-  lim_args <- rstanarm:::set_geom_args(lim_defaults, ci_geom_args)
+  lim_args <- set_geom_args(lim_defaults, ci_geom_args)
 
   obs_defaults <- list()
-  obs_args <- rstanarm:::set_geom_args(obs_defaults)
+  obs_args <- set_geom_args(obs_defaults)
   
   
   if (length(ids) > 60L) {
