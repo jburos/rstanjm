@@ -18,14 +18,26 @@
 
 #' Example joint longitudinal and time-to-event model
 #' 
-#' A model for use in \pkg{rstanjm} examples. 
+#' A model for use in the \pkg{rstanjm} examples. 
 #' 
 #' @name examplejm
 #' @format Calling \code{example("examplejm")} will run the model in the 
-#'   Examples section, below, and the resulting stanjm object will then be
-#'   available in the global environment. The \code{cores} argument is 
-#'   optional and on a multicore system, the user may well want to set 
-#'   that equal to the number of chains being executed.
+#'   \strong{Examples} section below, and the resulting stanjm object will 
+#'   then be available in the global environment. The example uses
+#'   the Mayo Clinic's primary biliary cirrhosis dataset, however, the example
+#'   only uses a small subset of the patients so that the model runs
+#'   quickly. Type \code{help("pbc-datasets", package = "rstanjm")} for a  
+#'   brief description of the data.\cr
+#'   \cr
+#'   Also, note that by default rstanjm fits models using a single MCMC chain. 
+#'   However, the preference is to run multiple MCMC chains to help assess
+#'   convergence and also increase the effective sample size. The number of 
+#'   chains can be increased by simply specifying the \code{chains} argument
+#'   when fitting the model. If you have a multicore CPU with excess RAM, you 
+#'   can fit multiple MCMC chains in parallel by setting the \code{cores} 
+#'   argument equal to the number of chains being executed. This is preferable 
+#'   since then the multiple chains will be run in parallel, thereby saving on 
+#'   computation time.
 #'   
 #' @examples
 #' \donttest{
@@ -35,6 +47,7 @@
 #'              formulaEvent = Surv(futimeYears, death) ~ sex + trt, 
 #'              dataEvent = pbcSurv_subset,
 #'              time_var = "year",
-#'              chains = 1, cores = 1, seed = 12345)#' }
+#'              chains = 1, cores = 1, seed = 12345)
+#' }
 #' 
 NULL

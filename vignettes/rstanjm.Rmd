@@ -152,17 +152,17 @@ ps_check(f1)
 
 ### In-sample predictions
 
-We can obtain posterior predictions, either for individuals who were used in the estimation or for new individuals. For the longitudinal submodel we use the function `posterior_traj`, which by default will use the observed predictor matrix to generate posterior predictions for the longitudinal submodel:
+We can obtain posterior predictions, either for individuals who were used in the estimation or for new individuals. For the longitudinal submodel we use the function `posterior_predict`, which by default will use the observed predictor matrix to generate posterior predictions for the longitudinal submodel:
 
 ```{r long_preds}
-pt <- posterior_traj(f1)
+pt <- posterior_predict(f1)
 head(pt)
 ```
 
 To easily interpolate between observation times, so that we obtain predictions at equally spaced time points across the entire observation period for each individual, we specify `interpolate = TRUE`. Similarly, if we want to extrapolate our predictions beyond the last observation time we specify `extrapolate = TRUE`. We can then choose to plot the fitted longitudinal trajectories for a subset of individuals. The code required is as follows:
 
 ```{r long_predplot}
-pt <- posterior_traj(f1, interpolate = TRUE, extrapolate = TRUE)
+pt <- posterior_predict(f1, interpolate = TRUE, extrapolate = TRUE)
 pt_plot <- plot(pt, ids = 1:3)
 pt_plot
 ```
@@ -181,7 +181,7 @@ If we have new data for an individual who was not included in the estimation sam
 
 ```{r oos_longpred, eval = TRUE}
 df <- pbcLong[pbcLong$id == 100, c("id", "logBili", "year")]
-pt_new <- posterior_traj(f1, newdata = df, interpolate = TRUE, extrapolate = TRUE)
+pt_new <- posterior_predict(f1, newdata = df, interpolate = TRUE, extrapolate = TRUE)
 plot(pt_new)
 ```
 
