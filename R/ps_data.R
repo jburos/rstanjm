@@ -107,7 +107,7 @@ ps_data <-
     # newdata was obtained from the fitted model, and therefore time
     # variable taken to be either only observation time (single row
     # per individual) or "start" of time (for multiple row per individual)
-    newdata <- cbind(unclass(newdata[[1]]), newdata)
+    newdata <- cbind(unclass(newdata[[1]]), newdata[,-1])
     if (resp_type == "right") {
       newdata <- data.table::data.table(newdata, key = c(id_var, "time"))
       newdata[["time"]] <- as.numeric(newdata[["time"]])
