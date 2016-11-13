@@ -21,7 +21,7 @@ linear mixed model. A call to this function can be passed to the \code{family}
 argument of \code{\link{stan_jm}} to specify a negative binomial generalised
 linear mixed model for one of the longitudinal submodels. Note that the 
 overdispersion parameter \code{theta} is not provided by the user, but
-instead be estimated using the data when the model is fit using 
+rather it is estimated using the data when the model is fit using 
 \code{\link{stan_jm}}.
 }
 \examples{
