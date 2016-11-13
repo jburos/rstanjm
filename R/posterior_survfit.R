@@ -104,179 +104,184 @@
 #'   
 #' @examples
 #' 
-posterior_survfit <- function(object, newdataEvent = NULL, newdataLong = NULL, ids,  
-                              times = NULL, limits = c(.025, .975), 
-                              condition = TRUE, extrapolate = TRUE, 
-                              extrapolate_args = list(dist = NULL, prop = 0.5, 
-                                                      increments = 15), 
-                              marginalised = FALSE, 
-                              draws = NULL, fun = NULL, seed = NULL, ...) {
+posterior_survfit <- function(object, newdata = NULL,  
+                              extrapolate = TRUE, control = list(), 
+                              prob = 0.95, ids,
+                              times = NULL, standardise = FALSE, 
+                              draws = NULL, seed = NULL, offset = NULL, ...) {
   validate_stanjm_object(object)
   M <- object$n_markers
   id_var <- object$id_var
   time_var <- object$time_var
   if (missing(ids)) ids <- NULL
-  if (marginalised) {
-    if (condition || extrapolate)
-      cat("'marginalised' survival predictions were requested, therefore",
-          "'condition' and 'extrapolate' will both automatically be set",
-          "to FALSE.")
-      condition <- extrapolate <- FALSE
-    if ((!is.null(times)) && (length(times) > 1L))
-      stop("'times' can only be length 1 if 'marginalised = TRUE'.")
-  }
-  if (extrapolate) {
-    if (!is.list(extrapolate_args))
-      stop("'extrapolate_args' must be a named list.")
-    if ((!is.null(extrapolate_args$dist)) && (extrapolate_args$dist < 0))
-      stop("'extrapolate_args$dist' must be positive or NULL.")
-    if ((!is.null(extrapolate_args$prop)) && (extrapolate_args$prop < 0))
-      stop("'extrapolate_args$prop' must be positive or NULL.")
-    if (is.null(extrapolate_args$increments) || (extrapolate_args$increments < 0))
-      stop("'extrapolate_args$increments' must be a non-negative integer.")
-    extrapolate_args$increments <- as.integer(extrapolate_args$increments)
-    if ((is.null(extrapolate_args$prop)) && (is.null(extrapolate_args$dist)))
-      stop("One of 'extrapolate_args$dist' or 'extrapolate_args$prop' ", 
-           "must be specified as non-NULL if 'extrapolate = TRUE'.")    
+  if (standardise) {
+    if (is.null(times) || (length(times) > 1L))
+      stop("'times' must be specified and be of length 1 in order to obtain ",
+           "standardised survival probabilities. (The subject-specific survival ",
+           "probabilities will be calculated at the specified time point, and ",
+           "then averaged).")
+    if (condition)
+      stop("'condition' cannot be set to TRUE if standardised survival ",
+           "probabilities are requested.")
   }
   if (!is.null(seed)) 
     set.seed(seed)
-  if (!is.null(fun)) 
-    fun <- match.fun(fun)
-  if ((!is.null(newdataEvent)) && is.null(newdataLong))
-      stop("newdataLong must also be specified if specifying newdataEvent.")
-  if (!is.null(newdataLong)) {
-    if (is.null(newdataEvent))
-      stop("newdataEvent must also be specified if specifying newdataLong.")
-    newdataEvent <- as.data.frame(newdataEvent)
-    if (is.data.frame(newdataLong)) {
-      newdataLong <- list(newdataLong)
-    } else if (is(newdataLong, "list")) {
-      newdataLong <- lapply(newdataLong, as.data.frame)
-    } else {
-      stop("newdataLong should be a data frame or a list of data frames.")
-    }
-    if (!identical(length(newdataLong), M)) {
-      if (M == 1) 
-        stop("newdataLong should be a data frame.") else
-          stop(paste0("newdataLong appears to be a list of the incorrect length. ",
-                      "It should be the same length as the number of longitudinal ",
-                      "markers (M=", M))
-    }
-    lapply(c(newdataLong, list(newdataEvent)), function(x) {
-      if (!id_var %in% colnames(x))
-        stop("id_var from the original model call must appear in all ",
-             "newdata data frames.")
-    }) 
-    lapply(newdataLong, function(x) {
-      if (!time_var %in% colnames(x))
-        stop("time_var from the original model call must appear in all ",
-             "newdataLong data frames.")
-    })    
-    if (!is.null(ids)) {
-      newdataEvent <- newdataEvent[newdataEvent[[id_var]] %in% ids,]
-      newdataLong <- lapply(newdataLong, function(x) x[x[[id_var]] %in% ids, ])
-    }    
-    if (any(is.na(newdataEvent))) 
-      stop("Currently NAs are not allowed in 'newdataEvent'.")
-    lapply(newdataLong, function(x) 
-      if (any(is.na(x)))
-        stop("Currently NAs are not allowed in 'newdataLong'."))
-    ids_and_times <- do.call(rbind, lapply(newdataLong, 
-                       function(x) x[, c(id_var, time_var)]))
-    # Latest known observation time for each individual
-    lasttime <- tapply(ids_and_times[[time_var]], ids_and_times[[id_var]], FUN = max)
-  } else {
-    newdataLong <- model.frame(object)[1:M]
-    newdataEvent <- model.frame(object)$Event
-    # Latest known observation time for each individual
-    lasttime <- object$eventtime
-    if (!is.null(ids)) {
-      newdataEvent <- newdataEvent[newdataEvent[[id_var]] %in% ids,]
-      newdataLong <- lapply(newdataLong, function(x) x[x[[id_var]] %in% ids, ])
-      lasttime <- lasttime[ids]
-    }    
-  }
   
-  # Time sequence across which to generate the survival probabilities
-  max_time <- max(object$eventtime)
-  prop <- extrapolate_args$prop
-  inc <- extrapolate_args$increments
-  if (marginalised) {  
-    # marginalised predictions of survival probability
-    if (is.null(times)) {
-      max_time <- rep(max_time, length(lasttime))
-      time_seq <- lapply(0:inc, function(x) 
-        (x * max_time) / inc)
-    } else time_seq <- list(rep(times, length(lasttime)))
-  } else {
-    # subject-specific predictions
-    if ((!is.null(times)) && (length(times) == 1L))
-      times <- rep(times, length(lasttime))
-    if (extrapolate) {  
-      # extrapolate
-      # Note: prop assumes all individuals entered at time 0
-      # Note: still use whole follow up period for determining how 
-      #       far to extrapolate even if times are provided?
-      dist <- if (!is.null(prop)) prop * (lasttime - 0) else
-        extrapolate_args$dist
-      time_seq <- lapply(0:inc, function(x, t) t + dist * (x / inc), 
-        t = if (!is.null(times)) times else lasttime)
+  # Construct ndE and ndL
+  if (is.null(newdata)) {
+    ndL <- model.frame(object)[1:M]
+    ndE <- model.frame(object)$Event
+    id_list <- unique(ndE[[id_var]])
+    if (is.null(times)) 
+      times <- object$eventtime
+    if (!is.null(control$last_time)) {
+      stop("'last_time' should not be provided when 'newdata' is NULL, since ",
+           "times are taken to be the event or censoring time for each individual")
     } else {
-      # don't extrapolate
-      time_seq <- if (!is.null(times)) list(times) else list(lasttime)
+      last_time <- object$eventtime
     }
+  } else {  # user specified newdata
+    if (any(is.na(newdata))) 
+      stop("Currently NAs are not allowed in 'newdata'.")
+    if (!id_var %in% colnames(newdata))
+      stop("id_var from the original model call must appear 'newdata'.")
+    ndL <- lapply(1:M, function(m) as.data.frame(newdata))
+    ndE <- as.data.frame(newdata)
+    id_list <- unique(ndE[[id_var]])
+    if (!identical(length(id_list), nrow(ndE)))
+      stop("'newdata' should only contain one row per individual, since ",
+           "time varying covariates are not allowed in the prediction data.")
+    if (any(id_list %in% unique(model.frame(object)[[1]][[id_var]])))
+      warning("Some of the IDs in 'newdata' correspond to individuals in the ",
+              "estimation dataset. Please be sure you want to obtain subject-",
+              "specific predictions using the estimated random effects for those ",
+              "individuals. If you instead meant to marginalise over the distribution ",
+              "of the random effects, then please make sure the ID values do not ",
+              "correspond to individuals in the estimation dataset.", immediate. = TRUE)
+    if (is.null(times)) 
+      stop("'times' cannot be NULL if newdata is specified.")
+    if (!is.vector(times) || !is.numeric(times))
+      stop("'times' should be a numeric vector.")
+    if (is.null(control$last_time)) last_time <- NULL
   }
 
-  # List of ordered ids
-  id_list <- unique(newdataEvent[[id_var]])
-  id_class <- class(id_list)
+  # If user specified to predict only for a subset of IDs
+  if (!is.null(ids)) {
+    if (!all(ids %in% id_list))
+      stop("Some 'ids' do not appear in the data.")
+    ndE <- ndE[ndE[[id_var]] %in% ids,]
+    ndL <- lapply(ndL, function(x) x[x[[id_var]] %in% ids, ])
+    id_list <- id_list[id_list %in% ids]
+    if (is.null(newdata)) {
+      times <- times[as.character(ids)]
+      last_time <- last_time[as.character(ids)]
+    }
+  }
+  if (length(times) == 1L)
+    times <- rep(times, length(id_list))
+  if (is.null(last_time)) 
+    last_time <- times  
+  if (!identical(length(times), length(id_list)))
+    stop(paste0("'times' vector should be of length 1 or length equal to the ",
+                "number of individuals for whom predictions are being obtained (",
+                length(id_list), ")."))  
   
+  # User specified extrapolation
+  if (extrapolate) {
+    control_defaults <- list(ext_points = 15, ext_distance = NULL, 
+                             ext_prop = 0.2, condition = TRUE, last_time = NULL) 
+    if (!length(control)) {
+      control <- control_defaults 
+    } else if (!is.list(control)) {
+      stop("'control' should be a named list.")
+    } else {  # user specified control list
+      if (!length(control)) {
+        control <- control_defaults  
+      } else {
+        nms <- names(control)
+        allowed_nms <- c("ext_points", "ext_distance", "ext_prop", "condition", "last_time")
+        if (any(!nms %in% allowed_nms))
+          stop(paste0("'control' list can only contain the following named arguments: ",
+                      paste(allowed_nms, collapse = ", ")))
+        if (all(c("ext_distance", "ext_prop") %in% nms))
+          stop("'control' list cannot include both 'ext_distance' and 'ext_prop'.")
+        if (is.null(control$ext_points)) 
+          control$ext_points <- control_defaults$ext_points  
+        if (is.null(control$ext_distance) && is.null(control$ext_distance)) 
+          control$ext_prop <-  control_defaults$ext_prop
+        if (is.null(control$condition))
+          control$condition <- TRUE
+      }
+    }
+    prop <- control$ext_prop
+    inc <- control$ext_points 
+    # Note: prop assumes all individuals entered at time 0
+    dist <- if (!is.null(prop)) prop * (last_time - 0) else
+      control$ext_distance
+    time_seq <- lapply(0:inc, function(x, t) t + dist * (x / inc), 
+                       t = times)    
+  } else { # no extrapolation
+    if (missing(control)) control <- NULL
+    time_seq <- list(times)
+  }    
+
   surv <- lapply(time_seq, function(x) {
     dat <- ps_data(object,
-                  newdataEvent = newdataEvent,
-                  newdataLong = newdataLong,
+                  newdataEvent = ndE,
+                  newdataLong = ndL,
                   ids = id_list,
                   t = x, 
                   id_var = id_var,
                   time_var = time_var,
                   ...) 
     surv <- ps_survcalc(object, dat, draws)
-    if (!is.null(newdataEvent) && nrow(newdataEvent) == 1L) 
+    if (!is.null(newdata) && nrow(newdata) == 1L) 
       surv <- t(surv)
     # set survprob matrix at time 0 to S(t) = 1 
     # (otherwise some NaN possible due to numerical inaccuracies)
     surv[,(x == 0)] <- 1
-    if (marginalised) {
+    if (standardise) {
       surv <- matrix(rowMeans(surv), ncol = 1)
-      dimnames(surv) <- list(iterations = NULL, "marginal_survprob")
+      dimnames(surv) <- list(iterations = NULL, "standardised_survprob")
     } else {
       dimnames(surv) <- list(iterations = NULL, ids = id_list)
     }
-    if (!is.null(fun))
-      stop("'fun' not currently implemented.")
-    #  surv <- do.call(fun, list(surv))
     surv
   })
-  # Optionally condition on first survprob matrix (increment 0)
-  if (condition) {
+  # Optionally condition on survprob matrix at last_time
+  if (extrapolate && control$condition) {
+    cond_dat <- ps_data(object,
+                   newdataEvent = ndE,
+                   newdataLong = ndL,
+                   ids = id_list,
+                   t = last_time, 
+                   id_var = id_var,
+                   time_var = time_var,
+                   ...) 
+    cond_surv <- ps_survcalc(object, cond_dat, draws)
+    if (!is.null(newdata) && nrow(newdata) == 1L) 
+      cond_surv <- t(cond_surv)
+    # set survprob matrix at time 0 to S(t) = 1 
+    # (otherwise some NaN possible due to numerical inaccuracies)
+    cond_surv[,(last_time == 0)] <- 1    
     surv <- lapply(surv, function(x) {
-      vec <- x / surv[[1]]
+      vec <- x / cond_surv
       vec[is.na(vec)] <- 1
       vec})
   }
+  
   # Summarise posterior draws to get median and ci
   out <- do.call("rbind", 
-    lapply(seq_along(surv), function(x, limits, id_list, marginalised, 
+    lapply(seq_along(surv), function(x, limits, id_list, standardise, 
                                      id_var, time_var) {
       surv_med <- apply(surv[[x]], 2, median)
-      surv_lb <- apply(surv[[x]], 2, quantile, limits[1]) 
-      surv_ub <- apply(surv[[x]], 2, quantile, limits[2])  
-      out <- cbind(IDVAR = if (!marginalised) id_list, 
-                   TIMEVAR = if (!marginalised) time_seq[[x]] else unique(time_seq[[x]]),
+      surv_lb <- apply(surv[[x]], 2, quantile, (1 - prob)/2) 
+      surv_ub <- apply(surv[[x]], 2, quantile, (1 - prob)/2)  
+      out <- cbind(IDVAR = if (!standardise) id_list, 
+                   TIMEVAR = if (!standardise) time_seq[[x]] else unique(time_seq[[x]]),
                    surv_med, surv_lb, surv_ub)
       out
-    }, limits = limits, id_list = id_list, marginalised = marginalised, 
+    }, limits = limits, id_list = id_list, standardise = standardise, 
        id_var = id_var, time_var = time_var))
   rownames(out) <- NULL
   colnames(out) <- c(if ("IDVAR" %in% colnames(out)) id_var,
@@ -287,13 +292,11 @@ posterior_survfit <- function(object, newdataEvent = NULL, newdataLong = NULL, i
     out <- out[order(out[, time_var, drop = F]), , drop = F]
   }
   out <- data.frame(out)
-  if (id_var %in% names(out)) class(out[[id_var]]) <- id_class
-  
   class(out) <- c("survfit.stanjm", "data.frame")
   structure(out, id_var = id_var, time_var = time_var,
-            marginalised = marginalised, condition = condition,
-            extrapolate = extrapolate, extrapolate_args = extrapolate_args, 
-            ids = id_list, draws = draws, fun = fun, seed = seed)
+            extrapolate = extrapolate, control = control, 
+            standardise = standardise,
+            ids = id_list, draws = draws, seed = seed, offset = offset)
 }
 
 

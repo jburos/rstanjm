@@ -4,20 +4,18 @@
 \alias{posterior_survfit}
 \title{Estimate the marginal or subject-specific survival function}
 \usage{
-posterior_survfit(object, newdataEvent = NULL, newdataLong = NULL, ids,
-  times = NULL, limits = c(0.025, 0.975), condition = TRUE,
-  extrapolate = TRUE, extrapolate_args = list(dist = NULL, prop = 0.5,
-  increments = 15), marginalised = FALSE, draws = NULL, fun = NULL,
-  seed = NULL, ...)
+posterior_survfit(object, newdata = NULL, extrapolate = TRUE,
+  control = list(), prob = 0.95, ids, times = NULL, standardise = FALSE,
+  draws = NULL, seed = NULL, offset = NULL, ...)
 }
 \arguments{
 \item{object}{A fitted model object returned by the
 \code{\link{stan_jm}} modelling function. See \code{\link{stanjm-object}}.}
 
-\item{newdataLong, newdataEvent}{Optionally, new data frames in which to look 
-for variables with which to predict. The data should be provided in the same
-format as for the original call to the estimation function 
-\code{\link{stan_jm}}.}
+\item{extrapolate}{A logical specifying whether to extrapolate the estimated 
+survival function beyond the times specified in the \code{times} argument
+If \code{TRUE} then the extrapolation can be further controlled using
+the \code{extrapolate_args} argument.}
 
 \item{ids}{An optional character vector containing the IDs of individuals for 
 whom the estimated survival probabilites should be obtained. This defaults 
@@ -36,6 +34,18 @@ is specified) and extrapolate forward from there. If not specified, and
 the marginal survival probability at \code{n_increments} time points between
 baseline and the latest observation or event/censoring time for all individuals.}
 
+\item{draws}{An integer indicating the number of MCMC draws to return. The default
+and maximum number of draws is the size of the posterior sample.}
+
+\item{seed}{An optional \code{\link[=set.seed]{seed}} to use.}
+
+\item{...}{Currently unused.}
+
+\item{newdataLong, newdataEvent}{Optionally, new data frames in which to look 
+for variables with which to predict. The data should be provided in the same
+format as for the original call to the estimation function 
+\code{\link{stan_jm}}.}
+
 \item{limits}{A numeric vector of length 2 specifying the limits to use
 for the credible interval.}
 
@@ -46,11 +56,6 @@ on the latest observation time for each individual (taken to be the event
 or censoring time if \code{newdata} is not specified, or the lastest value of 
 \code{time_var} if \code{newdata} is specified). It cannot
 be set to \code{TRUE} if \code{marginalised} is set to \code{TRUE}.}
-
-\item{extrapolate}{A logical specifying whether to extrapolate the estimated 
-survival function beyond the times specified in the \code{times} argument
-If \code{TRUE} then the extrapolation can be further controlled using
-the \code{extrapolate_args} argument.}
 
 \item{extrapolate_args}{A named list with parameters controlling extrapolation 
 of the estimated survival function when \code{extrapolate = TRUE}. The list
@@ -72,16 +77,9 @@ across all individuals for whom the predictions were obtained. This can be
 used to obtain an estimate of the marginal survival probability. It cannot
 be set to \code{TRUE} if \code{condition} is set to \code{TRUE}.}
 
-\item{draws}{An integer indicating the number of MCMC draws to return. The default
-and maximum number of draws is the size of the posterior sample.}
-
 \item{fun}{An optional function to apply to the results. \code{fun} is found 
 by a call to \code{\link{match.fun}} and so can be specified as a function
 object, a string naming a function, etc.}
-
-\item{seed}{An optional \code{\link[=set.seed]{seed}} to use.}
-
-\item{...}{Currently unused.}
 }
 \value{
 A named list with two elements, 'times' and 'survprobs'. The former
