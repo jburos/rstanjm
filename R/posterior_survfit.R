@@ -276,7 +276,7 @@ posterior_survfit <- function(object, newdata = NULL,
                                      id_var, time_var) {
       surv_med <- apply(surv[[x]], 2, median)
       surv_lb <- apply(surv[[x]], 2, quantile, (1 - prob)/2) 
-      surv_ub <- apply(surv[[x]], 2, quantile, (1 - prob)/2)  
+      surv_ub <- apply(surv[[x]], 2, quantile, (1 + prob)/2)  
       out <- cbind(IDVAR = if (!standardise) id_list, 
                    TIMEVAR = if (!standardise) time_seq[[x]] else unique(time_seq[[x]]),
                    surv_med, surv_lb, surv_ub)
