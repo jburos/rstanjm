@@ -2,114 +2,231 @@
 % Please edit documentation in R/posterior_survfit.R
 \name{posterior_survfit}
 \alias{posterior_survfit}
-\title{Estimate the marginal or subject-specific survival function}
+\title{Estimate marginal or subject-specific survival probabilities}
 \usage{
-posterior_survfit(object, newdataEvent = NULL, newdataLong = NULL, ids,
-  times = NULL, limits = c(0.025, 0.975), condition = TRUE,
-  extrapolate = TRUE, extrapolate_args = list(dist = NULL, prop = 0.5,
-  increments = 15), marginalised = FALSE, draws = NULL, fun = NULL,
-  seed = NULL, ...)
+posterior_survfit(object, newdata = NULL, extrapolate = TRUE,
+  control = list(), prob = 0.95, ids, times = NULL, standardise = FALSE,
+  draws = NULL, seed = NULL, offset = NULL, ...)
 }
 \arguments{
 \item{object}{A fitted model object returned by the
 \code{\link{stan_jm}} modelling function. See \code{\link{stanjm-object}}.}
 
-\item{newdataLong, newdataEvent}{Optionally, new data frames in which to look 
-for variables with which to predict. The data should be provided in the same
-format as for the original call to the estimation function 
-\code{\link{stan_jm}}.}
-
-\item{ids}{An optional character vector containing the IDs of individuals for 
-whom the estimated survival probabilites should be obtained. This defaults 
-to \code{NULL} which returns predictions for all individuals in the original 
-model if \code{newdataEvent} is \code{NULL}, or otherwise all individuals 
-in \code{newdataEvent}.}
-
-\item{times}{An optional scalar or numeric vector specifying the values of 
-\code{time_var} in the original model at which to obtain the estimated 
-survival probabilities. If not specified, and \code{marginalised = FALSE}, 
-then the default behaviour is to use the latest observation time for each 
-individual (taken to be the event or censoring time if \code{newdata} is 
-not specified, or the lastest value of \code{time_var} if \code{newdata} 
-is specified) and extrapolate forward from there. If not specified, and
-\code{marginalised = TRUE}, then the default behaviour is to calculate
-the marginal survival probability at \code{n_increments} time points between
-baseline and the latest observation or event/censoring time for all individuals.}
-
-\item{limits}{A numeric vector of length 2 specifying the limits to use
-for the credible interval.}
-
-\item{condition}{A logical specifying whether the estimated subject-specific
-survival probabilities at time \code{t} should be conditioned on 
-survival up to a fixed time point \code{u}. The default is to condition
-on the latest observation time for each individual (taken to be the event 
-or censoring time if \code{newdata} is not specified, or the lastest value of 
-\code{time_var} if \code{newdata} is specified). It cannot
-be set to \code{TRUE} if \code{marginalised} is set to \code{TRUE}.}
+\item{newdata}{Optionally, a new data frame in which to look 
+for variables with which to predict. If omitted, the model matrices are used. 
+If new data is provided, then it should contain the covariate values needed
+for all longitudinal submodel(s) and the event submodel. There is only
+allowed to be one row of data for each individual in \code{newdata}, that
+is, time-varying covariates are not allowed in the prediction dataset. Also 
+note that if \code{newdata} is provided, then the \code{times} argument
+must also be specified. See the \strong{Details} section for further 
+important details that need to be considered when specifying \code{newdata}.}
 
 \item{extrapolate}{A logical specifying whether to extrapolate the estimated 
-survival function beyond the times specified in the \code{times} argument
+survival probabilities beyond the times specified in the \code{times} argument.
 If \code{TRUE} then the extrapolation can be further controlled using
-the \code{extrapolate_args} argument.}
+the \code{control} argument.}
 
-\item{extrapolate_args}{A named list with parameters controlling extrapolation 
+\item{control}{A named list with parameters controlling extrapolation 
 of the estimated survival function when \code{extrapolate = TRUE}. The list
-can contain the following named elements: 
-\code{dist}, a positive scalar 
-specifying the amount of time across which to forecast the estimated survival
-function; 
-\code{prop}, a positive scalar between 0 and 1 specifying the 
-amount of time across which to forecast the estimated survival function but
-represented as a proportion of the total observed follow up time for each
-individual;
-\code{increments}, a positive integer specifying the number of increments in 
-time at which to calculate the forecasted survival probabilities. 
-See the \strong{Examples} below.}
+can contain one or more of the following named elements: \cr
+\describe{
+  \item{\code{ext_points}}{a positive integer specifying the number of  
+  discrete time points at which to calculate the forecasted survival 
+  probabilities. The default is 10.}
+  \item{\code{ext_distance}}{a positive scalar specifying the amount of time 
+  across which to forecast the estimated survival function, represented 
+  in units of the time variable \code{time_var} (from fitting the model). 
+  The default is to extrapolate between the times specified in the 
+  \code{times} argument and the maximum event or censoring time in the 
+  original data. If \code{ext_distance} leads to times that are beyond
+  the maximum event or censoring time (in the original data) then the 
+  estimated survival probabilities will be truncated at that point, since
+  the estimate for the baseline hazard is not available beyond that time.}
+  \item{\code{condition}}{a logical specifying whether the estimated 
+  subject-specific survival probabilities at time \code{t} should be 
+  conditioned on survival up to a fixed time point \code{u}. The default 
+  is to condition on the latest observation time for each individual 
+  (taken to be the event or censoring time if \code{newdata} is not 
+  specified, or the value of the \code{times} if \code{newdata} is 
+  specified but no \code{last_time} is provided in the \code{control} 
+  list, or otherwise the times provided in the \code{last_time} element
+  of the \code{control} list).}
+  \item{\code{last_time}}{a scalar, a numeric vector or a character string 
+  specifying the last known survival time for each individual for whom
+  conditional predictions are being obtained. Should only be specified if
+  \code{newdata} is provided. If \code{last_time} is not provided then
+  the default is to use the value provided in the \code{times} argument.
+  A scalar will use the same last time for each individual in \code{newdata}.
+  A character string will name a column in \code{newdata}
+  in which to look for the last times.} 
+}}
 
-\item{marginalised}{A logical specifying whether the estimated 
-subject-specific survival probabilities should be averaged (marginalised)
-across all individuals for whom the predictions were obtained. This can be
-used to obtain an estimate of the marginal survival probability. It cannot
-be set to \code{TRUE} if \code{condition} is set to \code{TRUE}.}
+\item{prob}{A scalar between 0 and 1 specifying the width to use for the 
+uncertainty interval (sometimes called credible interval) for the predictions. 
+For example \code{prob = 0.95} (the default) means that the 2.5th and 97.5th  
+percentiles will be provided.}
+
+\item{ids}{An optional vector specifying a subset of IDs for whom the 
+predictions should be obtained. The default is to predict for all individuals
+who were used in estimating the model or, if \code{newdata} is specified,
+then all individuals contained in \code{newdata}.}
+
+\item{times}{A numeric vector of length 1 or a character string. Specifies the
+times at which to obtain the estimated survival probabilities. 
+If \code{newdata} is not provided, then the 
+\code{times} argument is optional; if it is not provided then \code{times} 
+will default to the last known event or censoring time for each individual,
+whereas if it is provided then it must be a numeric vector of length 1, and 
+the survival probabilities will be calculated at the same \code{times} for 
+all individuals in the estimation dataset.
+If \code{newdata} is provided, then the \code{times} argument cannot be
+\code{NULL}, rather, the user must provide a numeric vector of length 1 or
+the name of a variable in \code{newdata}, indicating the times at which 
+the survival probabilities should be calculated for the individuals in 
+\code{newdata}.}
+
+\item{standardise}{A logical specifying whether the estimated 
+subject-specific survival probabilities should be averaged
+across all individuals for whom the subject-specific predictions are 
+being obtained. This can be used to average over the covariate profile of
+either the individuals used in estimating the model, or the covariate 
+profiles of the individuals provided in \code{newdata}. This approach of
+averaging across the observed distribution of the covariates is sometimes
+referred to as a "standardised" survival curve. If \code{TRUE}, then the 
+\code{times} argument must be specified and must be of length 1 or specify
+a column in \code{newdata} that contains times which are constant across 
+individuals.}
 
 \item{draws}{An integer indicating the number of MCMC draws to return. The default
 and maximum number of draws is the size of the posterior sample.}
 
-\item{fun}{An optional function to apply to the results. \code{fun} is found 
-by a call to \code{\link{match.fun}} and so can be specified as a function
-object, a string naming a function, etc.}
-
 \item{seed}{An optional \code{\link[=set.seed]{seed}} to use.}
 
-\item{...}{Currently unused.}
-}
-\value{
-A named list with two elements, 'times' and 'survprobs'. The former
-  is a list of times at which the survival probabilities are calculated. 
-  The latter is a list containing the correponding survival probabilities.
-  Each element of 'survprobs' contains a \code{draws} by \code{levels(ids)} 
-  matrix of estimated survival probabilities. Each row of the matrix is a
-  vector of predictions generated using a single draw of the model parameters
-  from the posterior distribution.
+\item{offset}{Not currently used. A vector of offsets. Would
+only be required if \code{newdata} is specified and an \code{offset}  
+argument was specified when fitting the model, but offsets are not currently
+implemented for \code{stan_jm}.}
 }
 \description{
 The posterior predictive distribution is the distribution of the outcome 
 implied by the model after using the observed data to update our beliefs 
-about the unknown parameters in the model. Simulating data from the posterior
-predictive distribution using the observed predictors is useful for checking 
-the fit of the model. Drawing from the posterior predictive distribution at 
-interesting values of the predictors also lets us visualize how a 
-manipulation of a predictor affects (a function of) the outcome(s). With new 
-observations of predictor variables we can use the posterior predictive 
-distribution to generate predicted outcomes.
+about the unknown parameters in the model. This function allows us to 
+generate estimated survival probabilities (either subject-specific, or
+by marginalising over the distribution of the random effects) based on
+draws from the posterior predictive distribution. In both the "subject-specifc"
+and "marginal" situations, the predicted survival probabilities will still be 
+\emph{conditional} on observed values of the fixed effect covariates 
+in the longitudinal and event submodels (ie, the predictions will be obtained 
+using either the design matrices used in the original \code{\link{stan_jm}} model
+call, or using the covariate values provided in the \code{newdata} argument). However, 
+if you wish to also average over the observed distribution of the fixed effect 
+covariates then this is also possible -- however we refer to these
+as standardised survival probabilties -- see the \code{standardise} 
+argument below.
+}
+\details{
+If the user wishes to obtain predictions using the \code{newdata}
+  argument then several things need to be considered: \cr 
+  \cr
+  First, if you wish to obtain survival probabilities for "new" individuals, 
+  meaning those who were \strong{not} part of the dataset used to estimate
+  the model, then you will likely want to marginalise over the distribution 
+  of the individual-level random effects.
+  To ensure that this happens, you must ensure that the IDs provided in the 
+  \code{id_var} column of \code{newdata} do 
+  \strong{not} coincide with the IDs of individuals who were used in estimating  
+  the model. Otherwise the predictions will be obtained using draws of the random  
+  effects for the specific individual in the estimation data with the matching ID. 
+  (Note that in the situation where you do want to obtain predictions for a given
+  individual who was used in the estimation data but using new values for their 
+  covariates, for example changing their treatment code or predicting at times 
+  other than their actual observation times, then you could do this by specifying   
+  the relevant individuals ID in the \code{id_var} columns of \code{newdata}. \cr
+  \cr
+  Second, if any variables were transformed (e.g. rescaled) in the data 
+  used to fit the model, then these variables must also be transformed in 
+  \code{newdata}. This only applies if variables  
+  were transformed before passing the data to one of the modeling functions and  
+  \emph{not} if transformations were specified inside the model formula. Also  
+  see the \strong{Note} section in \code{\link{posterior_predict}} for a note  
+  about using the \code{newdata} argument with binomial models.
 }
 \examples{
-
+\donttest{
+  # Run example model if not already loaded
+  if (!exists("examplejm")) example(examplejm)
+  
+  # Obtain subject-specific survival probabilities for a few
+  # selected individuals in the estimation dataset who were  
+  # known to survive up until their censoring time . By default
+  # the posterior_survfit function will estimate the conditional
+  # survival probabilities, that is, conditional on having survived
+  # until the event or censoring time, and then by default will
+  # extrapolate the survival predictions forward from there.  
+  head(pbcSurv_subset[pbcSurv_subset$status == 0,])
+  ps1 <- posterior_survfit(examplejm, ids = c(7,13,16))
+  head(ps1)
+  # We can plot the estimated survival probabilities using the
+  # associated plot function
+  plot(ps1)
+  
+  # If we wanted to estimate the survival probabilities for the
+  # same three individuals as the previous example, but this time
+  # we won't condition on them having survived up until their 
+  # censoring time. Instead, we will estimate their probability
+  # of having survived between 0 and 5 years given their covariates
+  # and their estimated random effects.
+  # The easiest way to achieve the time scale we want (ie, 0 to 5 years)
+  # is to specify that we want the survival time estimated at time 0
+  # and then extrapolated forward 5 years. We also specify that we
+  # do not want to condition on their last known survival time.
+  ps2 <- posterior_survfit(examplejm, ids = c(7,13,16), times == 0,
+    extrapolate = TRUE, control = list(ext_distance = 5, condition = FALSE))
+  ps2
+  
+  # Instead of estimating survival probabilities for a specific individual 
+  # in the estimation dataset, we may want to estimate the marginal 
+  # survival probability, that is, marginalising over the individual-level
+  # random effects. 
+  # Here we will estimate survival between baseline and 5 years, for a 
+  # female who received either (i) D-penicillamine or (ii) placebo. 
+  # To do this we will need to provide the necessary values  
+  # of the predictors via the 'newdata' argument. However, it is important
+  # to realise that by marginalising over the random effects 
+  # distribution we will introduce a large amount of uncertainty into
+  # the estimated survival probabilities. This is because we have no 
+  # longitudinal measurements for these "new" individuals and therefore do
+  # not have any specific information with which to estimate their random
+  # effects. As such, there is a very wide 95\% uncertainty interval 
+  # associated with the estimated survival probabilities.
+  nd <- data.frame(id = c("new1", "new2"),
+                   sex = c("f", "f"), 
+                   trt = c(1, 0))
+  ps3 <- posterior_survfit(examplejm, newdata = nd, times = 0,
+    extrapolate = TRUE, control = list(ext_distance = 5, condition = FALSE))
+  ps3
+  
+  # We can then plot the estimated survival functions to compare
+  # them. To do this, we use the generic plot function.
+  plot(ps3, limits = "none")                          
+  
+  # Lastly, if we wanted to obtain "standardised" survival probabilities, 
+  # (by averaging over the observed distribution of the fixed effect 
+  # covariates, as well as averaging over the estimated random effects
+  # for individuals in our estimation sample) then we can specify
+  # 'standardise = TRUE'. We can then plot the resulting standardised
+  # survival curve.
+  ps4 <- posterior_survfit(examplejm, standardise = TRUE, 
+                           times = 0, extrapolate = TRUE)
+  plot(ps4)                         
+  
+}
+ 
 }
 \seealso{
 \code{\link{ps_check}} for for graphical checks of the estimated 
-  marginal survival function, and \code{\link{posterior_predict}} for 
-  drawing from the posterior predictive distribution for the longitudinal 
-  submodel.
+  survival function, and \code{\link{posterior_predict}} for estimating the
+  marginal or subject-specific longitudinal trajectories.
 }
 

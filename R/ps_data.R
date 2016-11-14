@@ -123,7 +123,7 @@ ps_data <-
     # newdata was specified by user, and therefore must have included 
     # time_var as one of the variables in the data frame
     if (!time_var %in% colnames(newdata)) 
-      newdata[[time_var]] <- rep(0, nrow(newdata))
+      newdata[[time_var]] <- rep(0.0, nrow(newdata))
     newdata <- data.table::data.table(newdata, key = c(id_var, time_var))
   }
   # Expand newdata based on a rolling merge between newdata at observation
@@ -176,6 +176,8 @@ ps_data <-
     NULL else lapply(mf[isFac], levels)
   # Expand newdata based on a rolling merge between newdata at observation
   # times and the identified quadrature points
+  if (!time_var %in% colnames(newdata)) 
+    newdata[[time_var]] <- rep(0.0, nrow(newdata))  
   newdata <- data.table::data.table(newdata, key = c(id_var, time_var))
   newdataQ <- lapply(t_and_tQ, function(x) 
     newdata[data.table::SJ(ids, x), roll = TRUE, rollends = c(TRUE, TRUE)]) 
@@ -197,6 +199,8 @@ ps_data <-
                            allow.new.levels = TRUE, na.action = na.pass) {
   # Expand newdata based on a rolling merge between newdata at observation
   # times and the identified quadrature points
+  if (!time_var %in% colnames(newdata)) 
+    newdata[[time_var]] <- rep(0.0, nrow(newdata))
   newdata <- data.table::data.table(newdata, key = c(id_var, time_var))
   newdataQ <- lapply(t_and_tQ, FUN = function(x) 
     newdata[data.table::SJ(ids, x), roll = TRUE, rollends = c(TRUE, TRUE)])  
