@@ -57,18 +57,16 @@
 #'   \describe{
 #'     \item{\code{ext_points}}{a positive integer specifying the number of  
 #'     discrete time points at which to calculate the forecasted survival 
-#'     probabilities. The default is 15.}
-#'     \item{\code{ext_prop}}{a positive scalar between 0 and 1 specifying the 
-#'     amount of time across which to forecast the estimated survival function,
-#'     represented as a proportion of the total observed follow up time for each
-#'     individual. For example specifying \code{ext_prop = 0.2} means that for an
-#'     individual for whom the latest of their measurement, event or censoring times
-#'     was 10 years, their estimated survival function will be extrapolated 
-#'     out to 12 years (i.e. 10 + (0.2 * 10)). The default value is 0.2.}
+#'     probabilities. The default is 10.}
 #'     \item{\code{ext_distance}}{a positive scalar specifying the amount of time 
 #'     across which to forecast the estimated survival function, represented 
 #'     in units of the time variable \code{time_var} (from fitting the model). 
-#'     This cannot be specified if \code{ext_prop} is specified.}
+#'     The default is to extrapolate between the times specified in the 
+#'     \code{times} argument and the maximum event or censoring time in the 
+#'     original data. If \code{ext_distance} leads to times that are beyond
+#'     the maximum event or censoring time (in the original data) then the 
+#'     estimated survival probabilities will be truncated at that point, since
+#'     the estimate for the baseline hazard is not available beyond that time.}
 #'     \item{\code{condition}}{a logical specifying whether the estimated 
 #'     subject-specific survival probabilities at time \code{t} should be 
 #'     conditioned on survival up to a fixed time point \code{u}. The default 
@@ -84,8 +82,7 @@
 #'     \code{newdata} is provided. If \code{last_time} is not provided then
 #'     the default is to use the value provided in the \code{times} argument.
 #'     A scalar will use the same last time for each individual in \code{newdata}.
-#'     A numeric vector should provide a last time for each individual in 
-#'     \code{newdata}. A character string should name a column in \code{newdata}
+#'     A character string will name a column in \code{newdata}
 #'     in which to look for the last times.} 
 #'   }
 #' @param ids An optional vector specifying a subset of IDs for whom the 
@@ -96,21 +93,19 @@
 #'   uncertainty interval (sometimes called credible interval) for the predictions. 
 #'   For example \code{prob = 0.95} (the default) means that the 2.5th and 97.5th  
 #'   percentiles will be provided.
-#' @param times A scalar, a numeric vector or a character string specifying the values of 
-#'   \code{time_var} in the original model at which to obtain the estimated 
-#'   survival probabilities. If \code{newdata} is not provided, then the 
-#'   \code{times} argument is optional, and if not provided then \code{times} 
-#'   will default to the last known event or censoring time for each individual.
-#'   If \code{newdata} is provided, then the \code{times} argument must be 
-#'   provided and the user has several options. If a scalar is supplied, then 
-#'   the survival probabilities will all be calculated at the time specified. 
-#'   If a numeric vector is supplied then it should be the same length as the 
-#'   number of new individuals for whom predictions are being obtained, with 
-#'   the \eqn{i}th element of the vector specifying the time at which to 
-#'   calculate the survival probability for the \eqn{i}th individual in the 
-#'   \code{newdata}. If a character string is supplied then it should be the 
-#'   name of the column in \code{newdata} which provides the times at which to
-#'   calculate the survival probabilities.
+#' @param times A numeric vector of length 1 or a character string. Specifies the  
+#'   times at which to obtain the estimated survival probabilities. 
+#'   If \code{newdata} is not provided, then the 
+#'   \code{times} argument is optional; if it is not provided then \code{times} 
+#'   will default to the last known event or censoring time for each individual,
+#'   whereas if it is provided then it must be a numeric vector of length 1, and 
+#'   the survival probabilities will be calculated at the same \code{times} for 
+#'   all individuals in the estimation dataset.
+#'   If \code{newdata} is provided, then the \code{times} argument cannot be
+#'   \code{NULL}, rather, the user must provide a numeric vector of length 1 or
+#'   the name of a variable in \code{newdata}, indicating the times at which 
+#'   the survival probabilities should be calculated for the individuals in 
+#'   \code{newdata}. 
 #' @param standardise A logical specifying whether the estimated 
 #'   subject-specific survival probabilities should be averaged
 #'   across all individuals for whom the subject-specific predictions are 
@@ -168,9 +163,7 @@
 #'     \item{a subject identifier (\code{id_var}), unless standardised survival
 #'     probabilities were estimated
 #'     \item{the time that the estimated survival probability is calculated for 
-#'     (\code{time_var})
-#'     \item{if \code{newdata} was provided, then the values of each of the
-#'     covariates used in the calculation of the estimated survival probabilities}
+#'     (\code{time_var})}
 #'   }
 #'   The returned object also includes a number of attributes.
 #' 
@@ -185,22 +178,67 @@
 #'   
 #'   # Obtain subject-specific survival probabilities for a few
 #'   # selected individuals in the estimation dataset who were  
-#'   # known to survive up until their censoring time 
+#'   # known to survive up until their censoring time . By default
+#'   # the posterior_survfit function will estimate the conditional
+#'   # survival probabilities, that is, conditional on having survived
+#'   # until the event or censoring time, and then by default will
+#'   # extrapolate the survival predictions forward from there.  
 #'   head(pbcSurv_subset[pbcSurv_subset$status == 0,])
 #'   ps1 <- posterior_survfit(examplejm, ids = c(7,13,16))
 #'   head(ps1)
+#'   # We can plot the estimated survival probabilities using the
+#'   # associated plot function
+#'   plot(ps1)
 #'   
-#'   # Obtain subject-specific predictions only for a few selected individuals
-#'   preddat2 <- posterior_predict(examplejm, ids = c(1,3,8))
+#'   # If we wanted to estimate the survival probabilities for the
+#'   # same three individuals as the previous example, but this time
+#'   # we won't condition on them having survived up until their 
+#'   # censoring time. Instead, we will estimate their probability
+#'   # of having survived between 0 and 5 years given their covariates
+#'   # and their estimated random effects.
+#'   # The easiest way to achieve the time scale we want (ie, 0 to 5 years)
+#'   # is to specify that we want the survival time estimated at time 0
+#'   # and then extrapolated forward 5 years. We also specify that we
+#'   # do not want to condition on their last known survival time.
+#'   ps2 <- posterior_survfit(examplejm, ids = c(7,13,16), times == 0,
+#'     extrapolate = TRUE, control = list(ext_distance = 5, condition = FALSE))
+#'   ps2
 #'   
-#'   # If we wanted to obtain subject-specific predictions in order to plot the 
-#'   # longitudinal trajectories, then we might want to ensure a full trajectory 
-#'   # is obtained by interpolating and extrapolating time. We can then use the 
-#'   # generic plot function to plot the subject-specific predicted trajectories
-#'   # for the first three individuals.
-#'   preddat3 <- posterior_predict(examplejm, interpolate = TRUE, extrapolate = TRUE)
-#'   head(preddat3) # predictions at additional time points compared with preddat1 
-#'   plot(preddat3, ids = 1:3)
+#'   # Instead of estimating survival probabilities for a specific individual 
+#'   # in the estimation dataset, we may want to estimate the marginal 
+#'   # survival probability, that is, marginalising over the individual-level
+#'   # random effects. 
+#'   # Here we will estimate survival between baseline and 5 years, for a 
+#'   # female who received either (i) D-penicillamine or (ii) placebo. 
+#'   # To do this we will need to provide the necessary values  
+#'   # of the predictors via the 'newdata' argument. However, it is important
+#'   # to realise that by marginalising over the random effects 
+#'   # distribution we will introduce a large amount of uncertainty into
+#'   # the estimated survival probabilities. This is because we have no 
+#'   # longitudinal measurements for these "new" individuals and therefore do
+#'   # not have any specific information with which to estimate their random
+#'   # effects. As such, there is a very wide 95% uncertainty interval 
+#'   # associated with the estimated survival probabilities.
+#'   nd <- data.frame(id = c("new1", "new2"),
+#'                    sex = c("f", "f"), 
+#'                    trt = c(1, 0))
+#'   ps3 <- posterior_survfit(examplejm, newdata = nd, times = 0,
+#'     extrapolate = TRUE, control = list(ext_distance = 5, condition = FALSE))
+#'   ps3
+#'   
+#'   # We can then plot the estimated survival functions to compare
+#'   # them. To do this, we use the generic plot function.
+#'   plot(ps3, limits = "none")                          
+#'   
+#'   # Lastly, if we wanted to obtain "standardised" survival probabilities, 
+#'   # (by averaging over the observed distribution of the fixed effect 
+#'   # covariates, as well as averaging over the estimated random effects
+#'   # for individuals in our estimation sample) then we can specify
+#'   # 'standardise = TRUE'. We can then plot the resulting standardised
+#'   # survival curve.
+#'   ps4 <- posterior_survfit(examplejm, standardise = TRUE, 
+#'                            times = 0, extrapolate = TRUE)
+#'   plot(ps4)                         
 #'   
 #' }
 #'  
@@ -215,14 +253,15 @@ posterior_survfit <- function(object, newdata = NULL,
   time_var <- object$time_var
   if (missing(ids)) ids <- NULL
   if (standardise) {
-    if (is.null(times) || (length(times) > 1L))
-      stop("'times' must be specified and be of length 1 in order to obtain ",
-           "standardised survival probabilities. (The subject-specific survival ",
+    if (is.null(times)) {
+      stop("'times' must be specified in order to obtain ",
+           "standardised survival probabilities.")
+    } else if (!all(is.numeric(times), length(times) == 1L)) {
+      stop("'times' should be a numeric vector of length 1 in order to obtain ",
+           "standardised survival probabilities (the subject-specific survival ",
            "probabilities will be calculated at the specified time point, and ",
-           "then averaged).")
-    if (condition)
-      stop("'condition' cannot be set to TRUE if standardised survival ",
-           "probabilities are requested.")
+           "then averaged).")      
+    }
   }
   if (!is.null(seed)) 
     set.seed(seed)
@@ -232,10 +271,14 @@ posterior_survfit <- function(object, newdata = NULL,
     ndL <- model.frame(object)[1:M]
     ndE <- model.frame(object)$Event
     id_list <- unique(ndE[[id_var]])
-    if (is.null(times)) 
+    if (is.null(times)) {
       times <- object$eventtime
+    } else if (!(is.numeric(times) && (length(times) == 1L))) {
+      stop("If 'newdata' is not specified, then 'times' can only ",
+           "be NULL or a numeric vector of length 1.")
+    }
     if (!is.null(control$last_time)) {
-      stop("'last_time' should not be provided when 'newdata' is NULL, since ",
+      stop("'last_time' cannot be provided when 'newdata' is NULL, since ",
            "times are taken to be the event or censoring time for each individual")
     } else {
       last_time <- object$eventtime
@@ -258,10 +301,16 @@ posterior_survfit <- function(object, newdata = NULL,
               "individuals. If you instead meant to marginalise over the distribution ",
               "of the random effects, then please make sure the ID values do not ",
               "correspond to individuals in the estimation dataset.", immediate. = TRUE)
-    if (is.null(times)) 
+    if (is.null(times)) {
       stop("'times' cannot be NULL if newdata is specified.")
-    if (!is.vector(times) || !is.numeric(times))
-      stop("'times' should be a numeric vector.")
+    } else if (is.character(times) && (length(times) == 1L)) {
+      if (!times %in% colnames(ndE))
+        stop("Variable specified in 'times' argument could not be found in 'newdata'.")
+      times <- tapply(ndE[[times]], ndE[[id_var]], FUN = max)
+    } else if (!all(is.numeric(times), length(times) == 1L)) {
+      stop("'times' should be a numeric vector of length 1, or the name of ",
+           "a variable in 'newdata'.")
+    }
     if (is.null(control$last_time)) last_time <- NULL
   }
 
@@ -272,10 +321,10 @@ posterior_survfit <- function(object, newdata = NULL,
     ndE <- ndE[ndE[[id_var]] %in% ids,]
     ndL <- lapply(ndL, function(x) x[x[[id_var]] %in% ids, ])
     id_list <- id_list[id_list %in% ids]
-    if (is.null(newdata)) {
+    if (length(times) > 1L)
       times <- times[as.character(ids)]
+    if (length(last_time) > 1L)
       last_time <- last_time[as.character(ids)]
-    }
   }
   if (length(times) == 1L)
     times <- rep(times, length(id_list))
@@ -284,42 +333,51 @@ posterior_survfit <- function(object, newdata = NULL,
   if (!identical(length(times), length(id_list)))
     stop(paste0("'times' vector should be of length 1 or length equal to the ",
                 "number of individuals for whom predictions are being obtained (",
-                length(id_list), ")."))  
+                length(id_list), ").")) 
+  
+  maxtime <- max(object$eventtime)
+  if (any(times > maxtime))
+    stop("'times' are not allowed to be greater than the last event or censoring ",
+         "time (since unable to extrapolate the baseline hazard).")
   
   # User specified extrapolation
   if (extrapolate) {
-    control_defaults <- list(ext_points = 15, ext_distance = NULL, 
-                             ext_prop = 0.2, condition = TRUE, last_time = NULL) 
-    if (!length(control)) {
-      control <- control_defaults 
-    } else if (!is.list(control)) {
+    control_defaults <- list(ext_points = 10, ext_distance = NULL, 
+                             condition = TRUE, last_time = NULL) 
+    if (!is.list(control)) {
       stop("'control' should be a named list.")
+    } else if (!length(control)) {
+      control <- control_defaults 
+      if (standardise) control$condition <- FALSE
     } else {  # user specified control list
-      if (!length(control)) {
-        control <- control_defaults  
-      } else {
-        nms <- names(control)
-        allowed_nms <- c("ext_points", "ext_distance", "ext_prop", "condition", "last_time")
-        if (any(!nms %in% allowed_nms))
-          stop(paste0("'control' list can only contain the following named arguments: ",
-                      paste(allowed_nms, collapse = ", ")))
-        if (all(c("ext_distance", "ext_prop") %in% nms))
-          stop("'control' list cannot include both 'ext_distance' and 'ext_prop'.")
-        if (is.null(control$ext_points)) 
-          control$ext_points <- control_defaults$ext_points  
-        if (is.null(control$ext_distance) && is.null(control$ext_distance)) 
-          control$ext_prop <-  control_defaults$ext_prop
-        if (is.null(control$condition))
-          control$condition <- TRUE
+      nms <- names(control)
+      allowed_nms <- c("ext_points", "ext_distance", "condition", "last_time")
+      if (any(!nms %in% allowed_nms))
+        stop(paste0("'control' list can only contain the following named arguments: ",
+                    paste(allowed_nms, collapse = ", ")))
+      if (is.null(control$ext_points)) 
+        control$ext_points <- control_defaults$ext_points  
+      if (is.null(control$ext_distance)) 
+        control$ext_distance <- control_defaults$ext_distance
+      if (is.null(control$condition)) {
+        control$condition <- if (!standardise) control_defaults$condition else FALSE
+      } else if (control$condition && standardise) {
+        stop("'condition' cannot be set to TRUE if standardised survival ",
+             "probabilities are requested.")
       }
     }
-    prop <- control$ext_prop
-    inc <- control$ext_points 
-    # Note: prop assumes all individuals entered at time 0
-    dist <- if (!is.null(prop)) prop * (last_time - 0) else
-      control$ext_distance
-    time_seq <- lapply(0:inc, function(x, t) t + dist * (x / inc), 
-                       t = times)    
+    inc <- control$ext_points
+    dist <- control$ext_distance
+    if (!is.null(dist)) {
+      endtime <- times + dist
+      # don't allow survivalprobabilities to be estimated beyond 
+      # the end of the estimated baseline hazard
+      endtime[endtime > maxtime] <- maxtime  
+    } else {
+      endtime <- maxtime
+    }
+    time_seq <- lapply(0:(inc-1), function(x, t0, t1) t0 + (t1 - t0) * (x / (inc-1)), 
+                       t0 = times, t1 = endtime)    
   } else { # no extrapolation
     if (missing(control)) control <- NULL
     time_seq <- list(times)
@@ -335,7 +393,7 @@ posterior_survfit <- function(object, newdata = NULL,
                   time_var = time_var,
                   ...) 
     surv <- ps_survcalc(object, dat, draws)
-    if (!is.null(newdata) && nrow(newdata) == 1L) 
+    if (nrow(ndE) == 1L) 
       surv <- t(surv)
     # set survprob matrix at time 0 to S(t) = 1 
     # (otherwise some NaN possible due to numerical inaccuracies)
@@ -359,7 +417,7 @@ posterior_survfit <- function(object, newdata = NULL,
                    time_var = time_var,
                    ...) 
     cond_surv <- ps_survcalc(object, cond_dat, draws)
-    if (!is.null(newdata) && nrow(newdata) == 1L) 
+    if (nrow(ndE) == 1L) 
       cond_surv <- t(cond_surv)
     # set survprob matrix at time 0 to S(t) = 1 
     # (otherwise some NaN possible due to numerical inaccuracies)
@@ -367,6 +425,9 @@ posterior_survfit <- function(object, newdata = NULL,
     surv <- lapply(surv, function(x) {
       vec <- x / cond_surv
       vec[is.na(vec)] <- 1
+      # last_time was after the time of the estimated probability, 
+      # leading to a survival probability greater than 1
+      vec[vec > 1] <- 1  
       vec})
   }
   
