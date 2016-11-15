@@ -17,13 +17,17 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #
 
-#' Plot estimated subject-specific longitudinal trajectory
+#' Plot the estimated subject-specific or marginal longitudinal trajectory
 #' 
-#' Various plots comparing the observed outcome variable from one
-#' of the longitudinal submodels \eqn{y} to simulated 
-#' datasets \eqn{y^{rep}}{yrep} from the posterior predictive distribution.
-#' This function is modelled on the \code{\link[rstanarm]{pp_check}} function
-#' from the \pkg{rstanarm} package.
+#' This generic \code{plot} method for \code{predict.stanjm} objects will
+#' plot the estimated subject-specific or marginal longitudinal trajectory
+#' using the data frame returned by a call to \code{\link{posterior_predict}}.
+#' To ensure that enough data points are available to plot the longitudinal
+#' trajectory, it is assumed that the call to \code{\link{posterior_predict}}
+#' would have included the argument \code{interpolate = TRUE}, and perhaps
+#' also \code{extrapolate = TRUE} (the latter being optional, depending on 
+#' whether or not the user wants to see extrapolation of the longitudinal 
+#' trajectory beyond the last observation time).
 #' 
 #' @method plot predict.stanjm
 #' @export
@@ -39,16 +43,17 @@
 #' @template args-scales
 #' @template args-ci-geom-args
 #' 
-#' @param x A data frame and x of class \code{predict.stanjm}
-#'   returned by a call to the function \code{\link{posterior_traj}}.
-#'   The x contains point estimates and uncertainty interval limits
-#'   for fitted values of the longitudinal response.
+#' @param x A data frame and object of class \code{predict.stanjm}
+#'   returned by a call to the function \code{\link{posterior_predict}}.
+#'   The object contains point estimates and uncertainty interval limits
+#'   for the fitted values of the longitudinal response.
 #' @param limits A quoted character string specifying the type of limits to
 #'   include in the plot. Can be one of: \code{"ci"} for the Bayesian
-#'   posterior uncertainty interval (often known as a credible interval);
-#'   \code{"pi"} for the prediction interval; or \code{"none"} for no
-#'   interval limits.
-#' @param abline A logical. If \code{TRUE} then a vertical dashed line
+#'   posterior uncertainty interval for the estimated mean longitudinal
+#'   response (often known as a credible interval);
+#'   \code{"pi"} for the prediction interval for the estimated (raw)
+#'   longitudinal response; or \code{"none"} for no interval limits.
+#' @param vline A logical. If \code{TRUE} then a vertical dashed line
 #'   is added to the plot indicating the event or censoring time for
 #'   the individual. Can only be used if each plot within the figure
 #'   is for a single individual.
@@ -56,18 +61,21 @@
 #'   longitudinal measurements are overlaid on the plot.
 #' @param ... Optional arguments passed to 
 #'   \code{\link[ggplot2]{geom_smooth}} and used to control features
-#'   of the plotted trajectory.
+#'   of the plotted longitudinal trajectory.
 #'   
-#' @return A \code{ggplot} x, also of class \code{plot.predict.stanjm}.
-#'   This x can be further customised using the \pkg{ggplot2} package.
+#' @return A \code{ggplot} object, also of class \code{plot.predict.stanjm}.
+#'   This object can be further customised using the \pkg{ggplot2} package.
 #'   It can also be passed to the function \code{\link{plot_stack}}.
 #'   
-#' @seealso \code{\link{posterior_traj}}, \code{\link{plot_stack}}
+#' @seealso \code{\link{posterior_predict}}, \code{\link{plot_stack}},
+#'   \code{\link{posterior_survfit}}, \code{\link{plot.survfit.stanjm}}   
 #'     
 #' @examples 
+#' \donttest{
+#' }
 #' 
 plot.predict.stanjm <- function(x, ids = NULL, limits = c("ci", "pi", "none"), 
-                                xlab = NULL, ylab = NULL, abline = FALSE, 
+                                xlab = NULL, ylab = NULL, vline = FALSE, 
                                 plot_observed = FALSE, facet_scales = "free_x", 
                                 ci_geom_args = NULL, ...) {
   
@@ -79,15 +87,22 @@ plot.predict.stanjm <- function(x, ids = NULL, limits = c("ci", "pi", "none"),
   obs_dat <- attr(x, "observed_data")
   if (is.null(ylab)) ylab <- paste0("Long. response (", y_var, ")")
   if (is.null(xlab)) xlab <- paste0("Time (", time_var, ")")
+  if (!id_var %in% colnames(x))
+    stop("Bug found: could not find 'id_var' column in the data frame.")
   if (!is.null(ids)) {
-    last_time <- attr(x, "last_time")[as.character(ids)]
+    ids_missing <- which(!ids %in% x[[id_var]])
+    if (length(ids_missing))
+      stop("The following 'ids' are not present in the predict.stanjm object: ",
+           paste(ids[[ids_missing]], collapse = ", "), call. = FALSE)
     plot_dat <- x[x[[id_var]] %in% ids, , drop = FALSE]
     obs_dat <- obs_dat[obs_dat[[id_var]] %in% ids, , drop = FALSE]
   } else {
-    ids <- attr(x, "ids")
-    last_time <- attr(x, "last_time")
     plot_dat <- x
   }
+  
+  # Reorder ids to match order in plotting data
+  ids <- factor(unique(plot_dat[[id_var]]))
+  last_time <- attr(x, "last_time")[as.character(ids)]
   
   plot_dat$time <- plot_dat[[time_var]]
   plot_dat$id <- plot_dat[[id_var]]
@@ -107,9 +122,8 @@ plot.predict.stanjm <- function(x, ids = NULL, limits = c("ci", "pi", "none"),
   
   
   if (length(ids) > 60L) {
-    stop("Too many individuals to plot for. Limit using 'ids' argument, or ",
-         "estimate marginal longitudinal trajectories or those based on ",
-         "specifying the 'newdata' argument.")
+    stop("Too many individuals to plot for. Perhaps limit the number of ",
+         "individuals by specifying the 'ids' argument.")
   } else if (length(ids) > 1L) {
     geom_mapp <- list(mapping = aes_string(x = "time", y = "yfit"), 
                       data = plot_dat)
@@ -159,14 +173,14 @@ plot.predict.stanjm <- function(x, ids = NULL, limits = c("ci", "pi", "none"),
                      data = obs_dat)
     graph_obs <- do.call("geom_point", c(obs_mapp, obs_args)) 
   } else graph_obs <- NULL
-  if (abline) {
-    graph_abline <- geom_vline(aes_string(xintercept = "last_time"), 
+  if (vline) {
+    graph_vline <- geom_vline(aes_string(xintercept = "last_time"), 
                                data.frame(id = ids, last_time = last_time), 
                                linetype = 2)
-  } else graph_abline <- NULL
+  } else graph_vline <- NULL
     
   
-  ret <- graph + graph_limits + graph_obs + graph_abline + labs(x = xlab, y = ylab) 
+  ret <- graph + graph_limits + graph_obs + graph_vline + labs(x = xlab, y = ylab) 
   class_ret <- class(ret)
   class(ret) <- c("plot.predict.stanjm", class_ret)
   ret

@@ -2,31 +2,32 @@
 % Please edit documentation in R/plot.predict.stanjm.R
 \name{plot.predict.stanjm}
 \alias{plot.predict.stanjm}
-\title{Plot estimated subject-specific longitudinal trajectory}
+\title{Plot the estimated subject-specific or marginal longitudinal trajectory}
 \usage{
 \method{plot}{predict.stanjm}(x, ids = NULL, limits = c("ci", "pi", "none"),
-  xlab = NULL, ylab = NULL, abline = FALSE, plot_observed = FALSE,
+  xlab = NULL, ylab = NULL, vline = FALSE, plot_observed = FALSE,
   facet_scales = "free_x", ci_geom_args = NULL, ...)
 }
 \arguments{
-\item{x}{A data frame and x of class \code{predict.stanjm}
-returned by a call to the function \code{\link{posterior_traj}}.
-The x contains point estimates and uncertainty interval limits
-for fitted values of the longitudinal response.}
+\item{x}{A data frame and object of class \code{predict.stanjm}
+returned by a call to the function \code{\link{posterior_predict}}.
+The object contains point estimates and uncertainty interval limits
+for the fitted values of the longitudinal response.}
 
 \item{ids}{An optional vector providing a subset
 of IDs for whom the predicted curves should be plotted.}
 
 \item{limits}{A quoted character string specifying the type of limits to
 include in the plot. Can be one of: \code{"ci"} for the Bayesian
-posterior uncertainty interval (often known as a credible interval);
-\code{"pi"} for the prediction interval; or \code{"none"} for no
-interval limits.}
+posterior uncertainty interval for the estimated mean longitudinal
+response (often known as a credible interval);
+\code{"pi"} for the prediction interval for the estimated (raw)
+longitudinal response; or \code{"none"} for no interval limits.}
 
 \item{xlab, ylab}{An optional axis label passed to 
 \code{\link[ggplot2]{labs}}.}
 
-\item{abline}{A logical. If \code{TRUE} then a vertical dashed line
+\item{vline}{A logical. If \code{TRUE} then a vertical dashed line
 is added to the plot indicating the event or censoring time for
 the individual. Can only be used if each plot within the figure
 is for a single individual.}
@@ -40,28 +41,35 @@ longitudinal trajectory for more than one individual.}
 
 \item{ci_geom_args}{Optional arguments passed to 
 \code{\link[ggplot2]{geom_ribbon}} and used to control features
-of the plotted interval limits.}
+of the plotted interval limits. They should be supplied as a named list.}
 
 \item{...}{Optional arguments passed to 
 \code{\link[ggplot2]{geom_smooth}} and used to control features
-of the plotted trajectory.}
+of the plotted longitudinal trajectory.}
 }
 \value{
-A \code{ggplot} x, also of class \code{plot.predict.stanjm}.
-  This x can be further customised using the \pkg{ggplot2} package.
+A \code{ggplot} object, also of class \code{plot.predict.stanjm}.
+  This object can be further customised using the \pkg{ggplot2} package.
   It can also be passed to the function \code{\link{plot_stack}}.
 }
 \description{
-Various plots comparing the observed outcome variable from one
-of the longitudinal submodels \eqn{y} to simulated 
-datasets \eqn{y^{rep}}{yrep} from the posterior predictive distribution.
-This function is modelled on the \code{\link[rstanarm]{pp_check}} function
-from the \pkg{rstanarm} package.
+This generic \code{plot} method for \code{predict.stanjm} objects will
+plot the estimated subject-specific or marginal longitudinal trajectory
+using the data frame returned by a call to \code{\link{posterior_predict}}.
+To ensure that enough data points are available to plot the longitudinal
+trajectory, it is assumed that the call to \code{\link{posterior_predict}}
+would have included the argument \code{interpolate = TRUE}, and perhaps
+also \code{extrapolate = TRUE} (the latter being optional, depending on 
+whether or not the user wants to see extrapolation of the longitudinal 
+trajectory beyond the last observation time).
 }
 \examples{
+\donttest{
+}
 
 }
 \seealso{
-\code{\link{posterior_traj}}, \code{\link{plot_stack}}
+\code{\link{posterior_predict}}, \code{\link{plot_stack}},
+  \code{\link{posterior_survfit}}, \code{\link{plot.survfit.stanjm}}
 }
 

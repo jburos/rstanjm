@@ -253,7 +253,8 @@ For binomial models with a number of trials greater than one (i.e., not
 
 }
 \seealso{
-\code{\link{pp_check}} for graphical posterior predictive checks
+\code{\link{plot.predict.stanjm}} for plotting the estimated longitudinal 
+  trajectories, \code{\link{pp_check}} for graphical posterior predictive checks
   of the longitudinal submodel(s), as well as \code{\link{posterior_survfit}}
   for generating posterior predictions for the event submodel.
 }

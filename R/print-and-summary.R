@@ -72,7 +72,11 @@ print.stanjm <- function(x, digits = 3, ...) {
       
   # Estimates table for longitudinal submodel(s)
   for (m in 1:M) {
-    cat(paste0("\nLongitudinal submodel", if (M > 1) paste0(" ", m), ":\n"))
+    terms_m <- terms(x)[[m]]
+    sel <- attr(terms_m, "response")
+    yvar <- rownames(attr(terms_m, "factors"))[sel]
+    cat(paste0("\nLongitudinal submodel", if (M > 1) paste0(" ", m), 
+               ": ", yvar,"\n"))
     coef_mat <- mat[, c(nms$y[[m]], nms$y_extra[[m]]), drop = FALSE]
     
     # Calculate median and MAD

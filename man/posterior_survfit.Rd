@@ -48,18 +48,18 @@ can contain one or more of the following named elements: \cr
   conditioned on survival up to a fixed time point \code{u}. The default 
   is to condition on the latest observation time for each individual 
   (taken to be the event or censoring time if \code{newdata} is not 
-  specified, or the value of the \code{times} if \code{newdata} is 
+  specified, or the value of the \code{times} argument if \code{newdata} is 
   specified but no \code{last_time} is provided in the \code{control} 
   list, or otherwise the times provided in the \code{last_time} element
   of the \code{control} list).}
-  \item{\code{last_time}}{a scalar, a numeric vector or a character string 
+  \item{\code{last_time}}{a scalar or a character string 
   specifying the last known survival time for each individual for whom
   conditional predictions are being obtained. Should only be specified if
-  \code{newdata} is provided. If \code{last_time} is not provided then
-  the default is to use the value provided in the \code{times} argument.
-  A scalar will use the same last time for each individual in \code{newdata}.
-  A character string will name a column in \code{newdata}
-  in which to look for the last times.} 
+  \code{newdata} is provided, and conditional survival predictions are being
+  obtained. A scalar will use the same last time for each individual in 
+  \code{newdata}. A character string will name a column in \code{newdata}
+  in which to look for the last times. If \code{last_time} is not provided then
+  the default is to use the value provided in the \code{times} argument.} 
 }}
 
 \item{prob}{A scalar between 0 and 1 specifying the width to use for the 
@@ -89,14 +89,14 @@ the survival probabilities should be calculated for the individuals in
 \item{standardise}{A logical specifying whether the estimated 
 subject-specific survival probabilities should be averaged
 across all individuals for whom the subject-specific predictions are 
-being obtained. This can be used to average over the covariate profile of
-either the individuals used in estimating the model, or the covariate 
-profiles of the individuals provided in \code{newdata}. This approach of
+being obtained. This can be used to average over the covariate distribution
+of the individuals used in estimating the model, or the individuals 
+included in \code{newdata}. This approach of
 averaging across the observed distribution of the covariates is sometimes
-referred to as a "standardised" survival curve. If \code{TRUE}, then the 
-\code{times} argument must be specified and must be of length 1 or specify
-a column in \code{newdata} that contains times which are constant across 
-individuals.}
+referred to as a "standardised" survival curve. If \code{standardise = TRUE}, 
+then the \code{times} argument must be specified and it must be constant across 
+individuals, that is, the survival probabilities must be calculated at the 
+same time for all individuals.}
 
 \item{draws}{An integer indicating the number of MCMC draws to return. The default
 and maximum number of draws is the size of the posterior sample.}
@@ -107,6 +107,20 @@ and maximum number of draws is the size of the posterior sample.}
 only be required if \code{newdata} is specified and an \code{offset}  
 argument was specified when fitting the model, but offsets are not currently
 implemented for \code{stan_jm}.}
+}
+\value{
+A data frame of class \code{survfit.stanjm}. The data frame includes 
+  columns for each of the following: 
+  (i) the median of the posterior predictions of the estimated survival
+  probabilities (\code{survfit});
+  (ii) each of the lower and upper limits of the corresponding uncertainty 
+  interval for the estimated survival probabilities (\code{ci_lb} and 
+  \code{ci_ub});
+  (iii) a subject identifier (\code{id_var}), unless standardised survival
+  probabilities were estimated;
+  (iv) the time that the estimated survival probability is calculated for 
+  (\code{time_var}).
+  The returned object also includes a number of additional attributes.
 }
 \description{
 The posterior predictive distribution is the distribution of the outcome 
@@ -121,7 +135,7 @@ in the longitudinal and event submodels (ie, the predictions will be obtained
 using either the design matrices used in the original \code{\link{stan_jm}} model
 call, or using the covariate values provided in the \code{newdata} argument). However, 
 if you wish to also average over the observed distribution of the fixed effect 
-covariates then this is also possible -- however we refer to these
+covariates then this is possible -- however we refer to these
 as standardised survival probabilties -- see the \code{standardise} 
 argument below.
 }
@@ -159,7 +173,7 @@ If the user wishes to obtain predictions using the \code{newdata}
   
   # Obtain subject-specific survival probabilities for a few
   # selected individuals in the estimation dataset who were  
-  # known to survive up until their censoring time . By default
+  # known to survive up until their censoring time. By default
   # the posterior_survfit function will estimate the conditional
   # survival probabilities, that is, conditional on having survived
   # until the event or censoring time, and then by default will
@@ -225,7 +239,8 @@ If the user wishes to obtain predictions using the \code{newdata}
  
 }
 \seealso{
-\code{\link{ps_check}} for for graphical checks of the estimated 
+\code{\link{plot.survfit.stanjm}} for plotting the estimated survival  
+  probabilities, \code{\link{ps_check}} for for graphical checks of the estimated 
   survival function, and \code{\link{posterior_predict}} for estimating the
   marginal or subject-specific longitudinal trajectories.
 }

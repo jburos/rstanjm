@@ -180,7 +180,8 @@
 #'   the number of trials. For more guidance, see the \pkg{rstanarm} package's
 #'   \emph{How to Use the rstanarm Package} vignette.
 #' 
-#' @seealso \code{\link{pp_check}} for graphical posterior predictive checks
+#' @seealso \code{\link{plot.predict.stanjm}} for plotting the estimated longitudinal 
+#'   trajectories, \code{\link{pp_check}} for graphical posterior predictive checks
 #'   of the longitudinal submodel(s), as well as \code{\link{posterior_survfit}}
 #'   for generating posterior predictions for the event submodel.
 #'   
@@ -433,13 +434,13 @@ posterior_predict <- function(object, m = 1, newdata = NULL,
   yvar <- rownames(attr(Terms, "factors"))[attr(Terms, "response")]
   xvars <- rownames(attr(Terms, "factors"))[-attr(Terms, "response")]
   dat <- if (length(xvars)) as.data.frame(newX)[, xvars, drop = FALSE] else NULL
-  class(dat[[id_var]]) <- class(newX[[id_var]])
+  dat[[id_var]] <- factor(dat[[id_var]])
   out <- data.frame(cbind(dat, yfit = mutilde_med, 
                           ci_lb = mutilde_lb, ci_ub = mutilde_ub,
                           pi_lb = ytilde_lb, pi_ub = ytilde_ub))
   
   class(out) <- c("predict.stanjm", "data.frame")
-  structure(out, observed_data = obsdata, 
+  structure(out, observed_data = obsdata, last_time = last_time,
             y_var = yvar, id_var = id_var, time_var = time_var,
             interpolate = interpolate, extrapolate = extrapolate, 
             control = control, draws = draws, fun = fun, seed = seed)  

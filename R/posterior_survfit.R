@@ -30,7 +30,7 @@
 #' using either the design matrices used in the original \code{\link{stan_jm}} model
 #' call, or using the covariate values provided in the \code{newdata} argument). However, 
 #' if you wish to also average over the observed distribution of the fixed effect 
-#' covariates then this is also possible -- however we refer to these
+#' covariates then this is possible -- however we refer to these
 #' as standardised survival probabilties -- see the \code{standardise} 
 #' argument below.
 #' 
@@ -72,18 +72,18 @@
 #'     conditioned on survival up to a fixed time point \code{u}. The default 
 #'     is to condition on the latest observation time for each individual 
 #'     (taken to be the event or censoring time if \code{newdata} is not 
-#'     specified, or the value of the \code{times} if \code{newdata} is 
+#'     specified, or the value of the \code{times} argument if \code{newdata} is 
 #'     specified but no \code{last_time} is provided in the \code{control} 
 #'     list, or otherwise the times provided in the \code{last_time} element
 #'     of the \code{control} list).}
-#'     \item{\code{last_time}}{a scalar, a numeric vector or a character string 
+#'     \item{\code{last_time}}{a scalar or a character string 
 #'     specifying the last known survival time for each individual for whom
 #'     conditional predictions are being obtained. Should only be specified if
-#'     \code{newdata} is provided. If \code{last_time} is not provided then
-#'     the default is to use the value provided in the \code{times} argument.
-#'     A scalar will use the same last time for each individual in \code{newdata}.
-#'     A character string will name a column in \code{newdata}
-#'     in which to look for the last times.} 
+#'     \code{newdata} is provided, and conditional survival predictions are being
+#'     obtained. A scalar will use the same last time for each individual in 
+#'     \code{newdata}. A character string will name a column in \code{newdata}
+#'     in which to look for the last times. If \code{last_time} is not provided then
+#'     the default is to use the value provided in the \code{times} argument.} 
 #'   }
 #' @param ids An optional vector specifying a subset of IDs for whom the 
 #'   predictions should be obtained. The default is to predict for all individuals
@@ -109,14 +109,14 @@
 #' @param standardise A logical specifying whether the estimated 
 #'   subject-specific survival probabilities should be averaged
 #'   across all individuals for whom the subject-specific predictions are 
-#'   being obtained. This can be used to average over the covariate profile of
-#'   either the individuals used in estimating the model, or the covariate 
-#'   profiles of the individuals provided in \code{newdata}. This approach of
+#'   being obtained. This can be used to average over the covariate distribution
+#'   of the individuals used in estimating the model, or the individuals 
+#'   included in \code{newdata}. This approach of
 #'   averaging across the observed distribution of the covariates is sometimes
-#'   referred to as a "standardised" survival curve. If \code{TRUE}, then the 
-#'   \code{times} argument must be specified and must be of length 1 or specify
-#'   a column in \code{newdata} that contains times which are constant across 
-#'   individuals.
+#'   referred to as a "standardised" survival curve. If \code{standardise = TRUE}, 
+#'   then the \code{times} argument must be specified and it must be constant across 
+#'   individuals, that is, the survival probabilities must be calculated at the 
+#'   same time for all individuals.
 #' @param draws An integer indicating the number of MCMC draws to return. The default
 #'   and maximum number of draws is the size of the posterior sample.
 #' @param seed An optional \code{\link[=set.seed]{seed}} to use.
@@ -153,21 +153,20 @@
 #'   about using the \code{newdata} argument with binomial models.
 #'    
 #' @return A data frame of class \code{survfit.stanjm}. The data frame includes 
-#'   columns for each of the following: \cr
-#'   \describe{
-#'     \item{the median of the posterior predictions of the estimated survival
-#'     probabilities (\code{survfit})}
-#'     \item{each of the lower and upper limits of the corresponding uncertainty 
-#'     interval for the estimated survival probabilities (\code{ci_lb} and 
-#'     \code{ci_ub})}
-#'     \item{a subject identifier (\code{id_var}), unless standardised survival
-#'     probabilities were estimated
-#'     \item{the time that the estimated survival probability is calculated for 
-#'     (\code{time_var})}
-#'   }
-#'   The returned object also includes a number of attributes.
+#'   columns for each of the following: 
+#'   (i) the median of the posterior predictions of the estimated survival
+#'   probabilities (\code{survfit});
+#'   (ii) each of the lower and upper limits of the corresponding uncertainty 
+#'   interval for the estimated survival probabilities (\code{ci_lb} and 
+#'   \code{ci_ub});
+#'   (iii) a subject identifier (\code{id_var}), unless standardised survival
+#'   probabilities were estimated;
+#'   (iv) the time that the estimated survival probability is calculated for 
+#'   (\code{time_var}).
+#'   The returned object also includes a number of additional attributes.
 #' 
-#' @seealso \code{\link{ps_check}} for for graphical checks of the estimated 
+#' @seealso \code{\link{plot.survfit.stanjm}} for plotting the estimated survival  
+#'   probabilities, \code{\link{ps_check}} for for graphical checks of the estimated 
 #'   survival function, and \code{\link{posterior_predict}} for estimating the
 #'   marginal or subject-specific longitudinal trajectories.
 #'   
@@ -178,7 +177,7 @@
 #'   
 #'   # Obtain subject-specific survival probabilities for a few
 #'   # selected individuals in the estimation dataset who were  
-#'   # known to survive up until their censoring time . By default
+#'   # known to survive up until their censoring time. By default
 #'   # the posterior_survfit function will estimate the conditional
 #'   # survival probabilities, that is, conditional on having survived
 #'   # until the event or censoring time, and then by default will
@@ -322,9 +321,9 @@ posterior_survfit <- function(object, newdata = NULL,
     ndL <- lapply(ndL, function(x) x[x[[id_var]] %in% ids, ])
     id_list <- id_list[id_list %in% ids]
     if (length(times) > 1L)
-      times <- times[as.character(ids)]
+      times <- times[as.character(id_list)]
     if (length(last_time) > 1L)
-      last_time <- last_time[as.character(ids)]
+      last_time <- last_time[as.character(id_list)]
   }
   if (length(times) == 1L)
     times <- rep(times, length(id_list))
@@ -453,10 +452,12 @@ posterior_survfit <- function(object, newdata = NULL,
     out <- out[order(out[, time_var, drop = F]), , drop = F]
   }
   out <- data.frame(out)
+  if (id_var %in% colnames(out))
+    out[[id_var]] <- factor(out[[id_var]])
   class(out) <- c("survfit.stanjm", "data.frame")
   structure(out, id_var = id_var, time_var = time_var,
             extrapolate = extrapolate, control = control, 
-            standardise = standardise, ids = id_list, 
+            standardise = standardise, ids = factor(id_list), 
             draws = draws, seed = seed, offset = offset)
 }
 

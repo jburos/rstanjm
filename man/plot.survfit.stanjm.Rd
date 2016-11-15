@@ -2,16 +2,16 @@
 % Please edit documentation in R/plot.survfit.stanjm.R
 \name{plot.survfit.stanjm}
 \alias{plot.survfit.stanjm}
-\title{Plot estimated subject-specific or marginal survival function}
+\title{Plot the estimated subject-specific or marginal survival function}
 \usage{
 \method{plot}{survfit.stanjm}(x, ids = NULL, limits = c("ci", "none"),
   xlab = NULL, ylab = NULL, facet_scales = "free", ci_geom_args = NULL,
   ...)
 }
 \arguments{
-\item{x}{A data frame and x of class \code{survfit.stanjm}
+\item{x}{A data frame and object of class \code{survfit.stanjm}
 returned by a call to the function \code{\link{posterior_survfit}}.
-The x contains point estimates and uncertainty interval limits
+The object contains point estimates and uncertainty interval limits
 for estimated values of the survival function.}
 
 \item{ids}{An optional vector providing a subset
@@ -19,8 +19,9 @@ of IDs for whom the predicted curves should be plotted.}
 
 \item{limits}{A quoted character string specifying the type of limits to
 include in the plot. Can be one of: \code{"ci"} for the Bayesian
-posterior uncertainty interval (often known as a credible interval);
-or \code{"none"} for no interval limits.}
+posterior uncertainty interval for the estimated survival probability
+(often known as a credible interval); or \code{"none"} for no interval 
+limits.}
 
 \item{xlab, ylab}{An optional axis label passed to 
 \code{\link[ggplot2]{labs}}.}
@@ -31,28 +32,74 @@ longitudinal trajectory for more than one individual.}
 
 \item{ci_geom_args}{Optional arguments passed to 
 \code{\link[ggplot2]{geom_ribbon}} and used to control features
-of the plotted interval limits.}
+of the plotted interval limits. They should be supplied as a named list.}
 
 \item{...}{Optional arguments passed to 
 \code{\link[ggplot2]{geom_line}} and used to control features
-of the plotted trajectory.}
+of the plotted survival function.}
 }
 \value{
-A \code{ggplot} x, also of class \code{plot.survfit.stanjm}.
-  This x can be further customised using the \pkg{ggplot2} package.
+A \code{ggplot} object, also of class \code{plot.survfit.stanjm}.
+  This object can be further customised using the \pkg{ggplot2} package.
   It can also be passed to the function \code{\link{plot_stack}}.
 }
 \description{
-Various plots comparing the observed outcome variable from one
-of the longitudinal submodels \eqn{y} to simulated 
-datasets \eqn{y^{rep}}{yrep} from the posterior predictive distribution.
-This function is modelled on the \code{\link[rstanarm]{pp_check}} function
-from the \pkg{rstanarm} package.
+This generic \code{plot} method for \code{survfit.stanjm} objects will
+plot the estimated subject-specific or marginal survival function
+using the data frame returned by a call to \code{\link{posterior_survfit}}.
+The call to \code{posterior_survfit} should ideally have included an
+"extrapolation" of the survival function, obtained by setting the 
+\code{extrapolate} argument to \code{TRUE}.
 }
 \examples{
+\donttest{
+  # Run example model if not already loaded
+  if (!exists("examplejm")) example(examplejm)
+  
+  # Obtain subject-specific conditional survival probabilities
+  # for all individuals in the estimation dataset.
+  ps1 <- posterior_survfit(examplejm, extrapolate = TRUE)
+  
+  # We then plot the conditional survival probabilities for
+  # a subset of individuals
+  plot(ps1, ids = c(7,13,16))
+  
+  # We can change or add attributes to the plot
+  plot(ps1, ids = c(7,13,16), limits = "none")
+  plot(ps1, ids = c(7,13,16), xlab = "Follow up time")
+  plot(ps1, ids = c(7,13,16), ci_geom_args = list(fill = "red"),
+       color = "blue", linetype = 2)
+  plot(ps1, ids = c(7,13,16), facet_scales = "fixed")
+  
+  # Since the returned plot is also a ggplot object, we can
+  # modify some of its attributes after it has been returned
+  plot1 <- plot(ps1, ids = c(7,13,16))
+  plot1 + 
+    ggplot2::theme(strip.background = element_blank()) +
+    ggplot2::coord_cartesian(xlim = c(0, 15)) +
+    ggplot2::labs(title = "Some plotted survival functions")
+    
+  # We can also combine the plot(s) of the estimated 
+  # subject-specific survival functions, with plot(s) 
+  # of the estimated longitudinal trajectories for the
+  # same individuals
+  ps1 <- posterior_survfit(examplejm, ids = c(7,13,16))
+  pt1 <- posterior_predict(examplejm, , ids = c(7,13,16),
+                           interpolate = TRUE, extrapolate = TRUE)
+  plot_surv <- plot(ps1) 
+  plot_traj <- plot(pt1, vline = TRUE, plot_observed = TRUE)
+  plot_stack(plot_traj, plot_surv)
+   
+  # Lastly, let us plot the standardised survival function
+  # based on all individuals in our estimation dataset
+  ps2 <- poserior_survfit(examplejm, standardise = TRUE, times = 0,
+                          control = list(ext_points = 20))
+  plot(ps2)   
+}
    
 }
 \seealso{
-\code{\link{posterior_survfit}}, \code{\link{plot_stack}}
+\code{\link{posterior_survfit}}, \code{\link{plot_stack}},
+  \code{\link{posterior_predict}}, \code{\link{plot.predict.stanjm}}
 }
 

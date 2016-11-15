@@ -33,7 +33,7 @@ draws is the size of the posterior sample.}
 
 \item{ci_geom_args}{Optional arguments passed to 
 \code{\link[ggplot2]{geom_ribbon}} and used to control features
-of the plotted interval limits.}
+of the plotted interval limits. They should be supplied as a named list.}
 
 \item{...}{Optional arguments passed to 
 \code{\link[ggplot2]{geom_line}} and used to control features
