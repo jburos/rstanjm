@@ -109,7 +109,7 @@ plot.predict.stanjm <- function(x, ids = NULL, limits = c("ci", "pi", "none"),
   
   obs_dat$y <- obs_dat[[y_var]]
   obs_dat$time <- obs_dat[[time_var]]
-  obs_dat$id <- obs_dat[[id_var]]
+  obs_dat$id <- factor(obs_dat[[id_var]])
   
   geom_defaults <- list(color = "black", method = "loess", se = FALSE)
   geom_args <- set_geom_args(geom_defaults, ...)
