@@ -215,7 +215,14 @@ summary.stanjm <- function(object, pars = NULL, regex_pars = NULL,
                             probs = NULL, digits = 3, ...) {
   pars <- collect_pars(object, pars, regex_pars)
   M <- object$n_markers
-  
+ 
+  # Outcome variable for each submodel
+  y_vars <- sapply(1:M, function(m, object) {
+    terms_m <- terms(object)[[m]]
+    sel <- attr(terms_m, "response")
+    ret <- rownames(attr(terms_m, "factors"))[sel]
+  }, object = object)
+   
   # Family and link for each submodel
   fam <- sapply(object$family, function(x) 
            paste0(x$family, " (", x$link, ")")) 
@@ -276,6 +283,7 @@ summary.stanjm <- function(object, pars = NULL, regex_pars = NULL,
             n_grps = object$n_grps,
             n_events = object$n_events,
             n_yobs = object$n_yobs,
+            y_vars = y_vars,
             id_var = object$id_var,
             time_var = object$time_var,
             family = fam,
@@ -302,6 +310,11 @@ print.summary.stanjm <- function(x, digits = max(1, attr(x, "print.digits")),
   
   cat(paste0("\n", if (M == 1) "Uni" else "Multi", 
              "variate joint model, consisting of:")) 
+  for (m in 1:M) {
+    cat(paste0("\n  Outcome variable", 
+               if (M > 1) paste0(" (Long ", m, ")"), 
+               ": ", atts$y_vars[m]))
+  }
   for (m in 1:M) {
     cat(paste0("\n  Family", 
                if (M > 1) paste0(" (Long ", m, ")"), 
