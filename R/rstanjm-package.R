@@ -21,6 +21,7 @@
 #' @docType package
 #' @name rstanjm-package
 #' @aliases rstanjm
+#' @useDynLib rstanjm, .registration = TRUE
 #' 
 #' @description The \pkg{rstanjm} package allows the user to fit "joint models" for 
 #' longitudinal and time-to-event data (also known as shared parameter models) under
