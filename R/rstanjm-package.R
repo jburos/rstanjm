@@ -21,7 +21,6 @@
 #' @docType package
 #' @name rstanjm-package
 #' @aliases rstanjm
-#' @useDynLib rstanjm, .registration = TRUE 
 #' 
 #' @description The \pkg{rstanjm} package allows the user to fit "joint models" for 
 #' longitudinal and time-to-event data (also known as shared parameter models) under
@@ -77,8 +76,7 @@
 #' 
 #' @seealso \code{\link{stan_jm}} for the main modelling function, as well as
 #'   \code{\link{stanjm-object}}, \code{\link{stanjm-methods}},
-#'   \code{\link{posterior_traj}}, \code{\link{posterior_survfit}}, 
-#'   \code{\link{posterior_predict}}.
+#'   \code{\link{posterior_predict}}, \code{\link{posterior_survfit}}.
 #'   
 #' @template see-also-stan-url
 #' 

@@ -124,6 +124,7 @@
 #'   only be required if \code{newdata} is specified and an \code{offset}  
 #'   argument was specified when fitting the model, but offsets are not currently
 #'   implemented for \code{stan_jm}.
+#' @param ... Currently unused.
 #'
 #' @details 
 #'   If the user wishes to obtain predictions using the \code{newdata}

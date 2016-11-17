@@ -106,7 +106,7 @@ f2 <- stan_jm(formulaLong = logBili ~ year + (year | id),
               formulaEvent = Surv(futimeYears, death) ~ sex + trt, 
               dataEvent = pbcSurv,
               time_var = "year", refresh = 250,
-			  assoc = c("etavalue", "etaslope"))
+			        assoc = c("etavalue", "etaslope"))
 ``` 
 
 In this example the subject-specific slope is actually constant across time *t* since we have a linear trajectory. Note however that we could still use the `"etaslope"` association structure even if we had a non-linear subject specific trajectory (for example modelled using cubic splines or polynomials).
@@ -119,7 +119,7 @@ f3 <- stan_jm(formulaLong = logBili ~ year + (year | id),
               formulaEvent = Surv(futimeYears, death) ~ sex + trt, 
               dataEvent = pbcSurv,
               time_var = "year", refresh = 250,
-			  assoc = "shared_b(1)")
+			        assoc = "shared_b(1)")
 ```
 
 ### Prior distributions
@@ -139,15 +139,15 @@ plot(f1, plotfun = "dens", pars = "event")
 We can also check the fit of the longitudinal and event submodels by comparing posterior predictions to the observed data. This can be easily done using the `pp_check` and `ps_check` functions. Let's start by assessing the longitudinal submodel:
 
 ```{r pp_check}
-pp_check(f1)
+#pp_check(f1)
 ```
 
 By default the `pp_check` function compares the posterior predictions for the longitudinal submodel to the observed longitudinal data. In the plot above the observed longitudinal data (measurements of log serum bilirubin) are shown by the solid blue kernel density, whilst each of the black lines show the kernel density for posterior predictions based on a single MCMC draw of the model parameters (by default the function shows 8 random draws from the total number of MCMC iterations). Note that if we had fit a multivariate joint model, then we could specify the `m` argument in the `pp_check` function call to examine the plots for each one of the longitudinal submodels separately (for example `pp_check(f1, m = 1)`, `pp_check(f1, m = 2)`, and so on).
 
-To assess the fit of the event submodel we can compare the marginal survival function (calculated using the subject-specific survival estimates, then marginalised over all individuals in the sample) based on draws from the posterior predictive distribution of the fitted joint model to the observed Kaplan-Meier survival function:  
+To assess the fit of the event submodel we can compare the observed Kaplan-Meier survival function to the standardised survival function estimated under the model (calculated by taking the estimated subject-specific survival functions for each individual in the sample, and then averaging):  
 
 ```{r ps_check}
-ps_check(f1)
+#ps_check(f1)
 ```
 
 ### In-sample predictions
@@ -159,15 +159,15 @@ pt <- posterior_predict(f1)
 head(pt)
 ```
 
-To easily interpolate between observation times, so that we obtain predictions at equally spaced time points across the entire observation period for each individual, we specify `interpolate = TRUE`. Similarly, if we want to extrapolate our predictions beyond the last observation time we specify `extrapolate = TRUE`. We can then choose to plot the fitted longitudinal trajectories for a subset of individuals. The code required is as follows:
+To easily interpolate between observation times, so that we obtain predictions at equally spaced time points across the entire observation period for each individual, we specify `interpolate = TRUE`. Similarly, if we want to extrapolate our predictions beyond the last observation time we specify `extrapolate = TRUE`. We can then choose to plot the fitted longitudinal trajectories for a subset of individuals. When plotting the predictions, we will overlay the observed longitudinal data for each individual as well as add a dashed vertical line indicating the individual's event or censoring time. The code required is as follows:
 
 ```{r long_predplot}
 pt <- posterior_predict(f1, interpolate = TRUE, extrapolate = TRUE)
-pt_plot <- plot(pt, ids = 1:3)
+pt_plot <- plot(pt, ids = 1:3, vline = TRUE, plot_observed = TRUE)
 pt_plot
 ```
 
-Similarly, we can obtain posterior predictions for the survival function. Here we will generate the estimated subject-specific survival function for each of the individuals using in estimating the model, and then for the same three individuals as used above we will plot estimated survival functions alongside the longitudinal predictions using the function `plot_stack`:
+Similarly, we can obtain posterior predictions for the survival function. Here we will generate the estimated subject-specific conditional survival function for all individuals used in estimating the model and then, for the same three individuals as above, we will plot estimated survival functions alongside the longitudinal predictions using the function `plot_stack`:
 
 ```{r surv_preds}
 ps <- posterior_survfit(f1)
@@ -180,20 +180,20 @@ plot_stack(pt_plot, ps_plot)
 If we have new data for an individual who was not included in the estimation sample, then we can easily generate posterior predictions for that individual by including the `newdata` argument as follows:
 
 ```{r oos_longpred, eval = TRUE}
-df <- pbcLong[pbcLong$id == 100, c("id", "logBili", "year")]
-pt_new <- posterior_predict(f1, newdata = df, interpolate = TRUE, extrapolate = TRUE)
-plot(pt_new)
+df_long <- pbcLong[pbcLong$id == 100, c("id", "logBili", "year")]
+pt_new <- posterior_predict(f1, newdata = df_long, interpolate = TRUE, extrapolate = TRUE)
+plot(pt_new, limits = "none")
 ```
 
-And the estimated survival function can be obtained using:
+And the estimated survival function can be obtained between 0 and 5 years using:
 
 ```{r oos_survpred, eval = TRUE}
 df_surv <- pbcSurv[pbcSurv$id == 100, c("id", "sex", "trt")]
-ps_new <- posterior_survfit(f1, newdataLong = df, newdataEvent = df_surv)
-plot(ps_new)
+ps_new <- posterior_survfit(f1, newdata = df_surv, times = 0, control = list(ext_distance = 5))
+plot(ps_new, limits = "none")
 ```
 
-Note however that the out-of-sample predictions that are obtained from using these functions are based on draws of the random effects distribution conditional on the data used to fit the model, but *not* conditional on the new data. That is, they are fitted values evaluated using the specified set of new covariate values, but they are *not* individualised dynamic predictions (see for example Taylor et al. (2013)).
+Note however that the out-of-sample predictions that are obtained from using these functions are based on draws of the random effects distribution conditional on the data used to fit the model, but *not* conditional on the new data. That is, they are predictions obtained using the specified set of new covariate values whilst marginalising over the random effects distribution, but they are *not* individualised dynamic predictions (see for example Taylor et al. (2013)). Since they marginalise over the entire random effects distribution, there is a very wide uncertainty interval associated with these predictions.
 
 ## A multivariate joint model
 
