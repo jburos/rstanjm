@@ -561,14 +561,14 @@ functions {
   *   in columns, and the individuals on the rows; the matrix is
   *   repeated (quadnodes + 1) times (bounded by rows)
   */  
-  matrix make_x_assoc_sh(vector b, int[] l, int[] p, int[,] pmat, int Npat, int quadnodes,
-	                  int[] which_b, int sum_size_which_b, int[] size_which_b, 
-                    int t_i, int M) {
+  matrix make_x_assoc_shared_b(
+    vector b, int[] l, int[] p, int[,] pmat, int Npat, int quadnodes,
+    int[] which_b, int sum_size_which_b, int[] size_which_b, int t_i, int M) {
     int prior_shift;    // num. ranefs prior to subject-specific ranefs
     int start_store;
     int end_store;	
     matrix[Npat,sum_size_which_b] temp;
-    matrix[(Npat*(quadnodes+1)),sum_size_which_b] x_assoc_sh;						  
+    matrix[(Npat*(quadnodes+1)),sum_size_which_b] x_assoc_shared_b;						  
     if (t_i == 1) prior_shift = 0;
     else prior_shift = sum(l[1:(t_i-1)]);
     for (i in 1:Npat) {
@@ -600,9 +600,9 @@ functions {
     for (i in 1:(quadnodes+1)) {
       start_store = (i - 1) * Npat + 1;
       end_store   = i * Npat;		
-      x_assoc_sh[start_store:end_store,] = temp;
+      x_assoc_shared_b[start_store:end_store,] = temp;
     }
-  return x_assoc_sh;
+  return x_assoc_shared_b;
   }
   
   /** 
@@ -635,92 +635,93 @@ functions {
   *   in columns, and the individuals on the rows; the matrix is
   *   repeated (quadnodes + 1) times (bounded by rows)
   */  
-  matrix make_x_assoc_shbeta(vector b, vector y_beta, int[] y_K,
-                    int[] l, int[] p, int[,] pmat, int Npat, int quadnodes,
-	                  int[] which_beta, int sum_size_which_beta, int[] size_which_beta, 
-	                  int t_i, int M,
-	                  int[] which_beta_xpart, int[] size_which_beta_xpart,
-                    int[] y_has_intercept, int[] y_has_intercept_unbound,
-                    int[] y_has_intercept_lobound, int[] y_has_intercept_upbound,
-                    real[] y_gamma_unbound, real[] y_gamma_lobound, real[] y_gamma_upbound) {
-    int prior_shift;    // num. ranefs prior to subject-specific ranefs
+  matrix make_x_assoc_shared_coef(
+    vector b, vector y_beta, int[] y_K, int M, int t_i,
+    int[] l, int[] p, int[,] pmat, int Npat, int quadnodes,
+    int sum_size_which_coef, int[] size_which_coef,
+    int[] which_coef_zindex, int[] which_coef_xindex,
+    int[] y_has_intercept, int[] y_has_intercept_unbound,
+    int[] y_has_intercept_lobound, int[] y_has_intercept_upbound,
+    real[] y_gamma_unbound, real[] y_gamma_lobound, real[] y_gamma_upbound) {
+      
+    # in the loops below:
+    #   t_i should only really ever equal 1 (since shared_coef association
+    #       structure is not allowed if there is more than one clustering level)
+    #   i = levels (ie, individuals)
+    #   j = indices of the shared random effecs 
+    #   m = models
+    
+    int t_shift;        // skip over group-level coefficients for earlier grouping factors
     int start_store;
     int end_store;	
-    matrix[Npat,sum_size_which_beta] temp;
-    matrix[(Npat*(quadnodes+1)),sum_size_which_beta] x_assoc_sh;						  
-    if (t_i == 1) prior_shift = 0;
-    else prior_shift = sum(l[1:(t_i-1)]);
+    matrix[Npat,sum_size_which_coef] temp;
+    matrix[(Npat*(quadnodes+1)),sum_size_which_coef] x_assoc_shared_coef;						  
+    if (t_i == 1) t_shift = 0;
+    else t_shift = sum(l[1:(t_i-1)]);
     for (i in 1:Npat) {
-      int mark;
-      int start_collect;  // index start of subject-specific ranefs for patient
+      int mark;        // counter for looping over shared coefficients
+      int i_shift;     // skip over group-level coefficients for earlier levels
       mark = 1;
-      start_collect = prior_shift + (i - 1) * p[t_i];
+      i_shift = (i - 1) * p[t_i];
       for (m in 1:M) {
-        if (size_which_beta[m] > 0) {
-          int j_shift; // shift in indexing of which_b vector
-          int shift;  // num. subject-specific ranefs in prior submodels
+        if (size_which_coef[m] > 0) {  # if model has shared coefficients
+          int j_shift;  // skip over elements of which_coef_zindex vector that are associated with earlier submodels
+          int m_shift;  // skip over individual i's group-level coefficients for earlier submodels
           int shift_nb;
           int shift_lb;
           int shift_ub;
           int shift_beta;
           if (m == 1) {
-            j_shift = 0;
-            shift = 0;
-            shift_nb = 0;
-            shift_lb = 0;
-            shift_ub = 0;
-            shift_beta = 0;
+            j_shift = 0; m_shift = 0; shift_nb = 0;
+            shift_lb = 0; shift_ub = 0; shift_beta = 0;
           }
           else {
-            j_shift = sum(size_which_beta[1:(m-1)]);
-            shift = sum(pmat[t_i, 1:(m-1)]);
+            j_shift = sum(size_which_coef[1:(m-1)]);
+            m_shift = sum(pmat[t_i, 1:(m-1)]);
             shift_nb = sum(y_has_intercept_unbound[1:(m-1)]); 
             shift_lb = sum(y_has_intercept_lobound[1:(m-1)]); 
             shift_ub = sum(y_has_intercept_upbound[1:(m-1)]); 
             shift_beta = sum(y_K[1:(m-1)]);
           }
-          for (j in 1:size_which_beta[m]) {
-            int b_collect;  // subject-specific ranefs to select for current submodel
-            int beta_collect;
-            int k_shift;
-            real val;
-            b_collect = start_collect + shift + which_beta[(j_shift + j)];
-            val = b[b_collect];
-            if (j == 1) k_shift = 0;
-            else k_shift = sum(size_which_beta_xpart[1:(j-1)]);
-            for (k in 1:size_which_beta_xpart[j]) {
-              int k_tmp;
-              k_tmp = which_beta_xpart[(k_shift + k)];
-              beta_collect = shift_beta + k_tmp;
-              if ((k_tmp == 1) && (y_has_intercept[m] == 1)) {
-                # collect intercept
-                if (y_has_intercept_unbound[m] == 1)
-                  val = val + y_gamma_unbound[sum(y_has_intercept_unbound[1:m])];
-                else if (y_has_intercept_lobound[m] == 1)
-                  val = val + y_gamma_lobound[sum(y_has_intercept_lobound[1:m])];
-                else if (y_has_intercept_upbound[m] == 1)
-                  val = val + y_gamma_upbound[sum(y_has_intercept_upbound[1:m])];
-              } 
-              else if (y_has_intercept[m] == 1) {
-                # collect parameter whilst recognising intercept isn't in y_beta
-                # and correcting for that in the indexing
-                val = val + y_beta[(beta_collect - 1)];
-              }
-              else
-                val = val + y_beta[beta_collect];
+          for (j in 1:size_which_coef[m]) {
+            int b_collect;      // group-level coefficients to extract for current i, j, m
+            int beta_collect_m; // within-submodel index of fixed effect coefficient to extract
+            int beta_collect;   // overall index of fixed effect coefficient to extract
+            real coef;
+            b_collect = t_shift + i_shift + m_shift + which_coef_zindex[(j_shift + j)];
+            beta_collect_m = which_coef_xindex[(j_shift + j)];
+            beta_collect = shift_beta + beta_collect_m;
+            coef = b[b_collect];  // start with group-level coefficient
+            if ((y_has_intercept[m] == 1) && (beta_collect == 1)) {
+              # collect intercept
+              if (y_has_intercept_unbound[m] == 1)
+                coef = coef + y_gamma_unbound[sum(y_has_intercept_unbound[1:m])];
+              else if (y_has_intercept_lobound[m] == 1)
+                coef = coef + y_gamma_lobound[sum(y_has_intercept_lobound[1:m])];
+              else if (y_has_intercept_upbound[m] == 1)
+                coef = coef + y_gamma_upbound[sum(y_has_intercept_upbound[1:m])];
+            } 
+            else if (y_has_intercept[m] == 1) {
+              # collect fixed effect whilst recognising intercept term 
+              # isn't in y_beta and correcting for that in the indexing
+              coef = coef + y_beta[(beta_collect - 1)];
             }
-            temp[i,mark] = val;
-            mark = mark + 1;
+            else
+              coef = coef + y_beta[beta_collect];
+              
+            temp[i, mark] = coef;
+            mark = mark + 1;  # move to next shared coefficient for individual i
           }
         }      
       }
     }
+    # repeat the temp matrix quadnode times (ie, rbind)
     for (i in 1:(quadnodes+1)) {
       start_store = (i - 1) * Npat + 1;
       end_store   = i * Npat;		
-      x_assoc_sh[start_store:end_store,] = temp;
+      x_assoc_shared_coef[start_store:end_store, ] = temp;
     }
-  return x_assoc_sh;
+  return x_assoc_shared_coef;
   }  
   
 }
@@ -780,8 +781,8 @@ data {
   // data for event submodel
   int<lower=0,upper=1> basehaz_weibull;  // weibull baseline hazard
   int<lower=0,upper=1> basehaz_piecewise;  // piecewise constant baseline hazard
-  int<lower=0,upper=1> basehaz_splines;  // cubic splines baseline hazard
-  int<lower=0> splines_df;  // df for cubic splines baseline hazard
+  int<lower=0,upper=1> basehaz_bs;  // B-splines baseline hazard
+  int<lower=0> bs_df;  // df for B-splines baseline hazard
   int<lower=0> piecewise_df;  // number of segments for piecewise constant baseline hazard
   int<lower=0,upper=1> e_centre;  // 1 = yes for centred predictor matrix
   int<lower=0,upper=1> e_has_intercept;  // 1 = yes
@@ -790,7 +791,7 @@ data {
   matrix[(M*nrow_y_Xq),sum_y_K] y_Xq; // predictor matrix (long submodel) at quadpoints, possibly centred              
   matrix[nrow_e_Xq,e_K] e_Xq;         // predictor matrix (event submodel) at quadpoints, possibly centred
   vector[nrow_e_Xq] e_times;          // event times and unstandardised quadrature points
-  matrix[(nrow_e_Xq*basehaz_splines),splines_df] e_ns_times; // basis for cubic splines baseline hazard
+  matrix[(nrow_e_Xq*basehaz_bs),bs_df] e_ns_times; // basis for B-splines baseline hazard
   matrix[(nrow_e_Xq*basehaz_piecewise),piecewise_df] e_times_piecedummy; // dummy indicators for piecewise constant baseline hazard
   vector[nrow_e_Xq] e_d;              // event indicator, followed by dummy indicator for quadpoints
   vector[e_K*(e_centre>0)] e_xbar;   // predictor means (event submodel)
@@ -814,13 +815,11 @@ data {
   int<lower=0,upper=M> sum_has_assoc_cs;   // num. long submodels linked via mu slope 
   int<lower=0> sum_size_which_b;           // num. of shared random effects
   int<lower=0> size_which_b[M];            // num. of shared random effects for each long submodel
-  int<lower=1> which_b[sum_size_which_b];  // which random effects are shared for each long submodel
-  int<lower=0> sum_size_which_beta;        // num. of shared random effects incl fixed component
-  int<lower=0> size_which_beta[M];         // num. of shared random effects incl fixed component for each long submodel
-  int<lower=1> which_beta[sum_size_which_beta];  // which random effects are shared incl fixed component for each long submodel
-  int<lower=0> sum_size_which_beta_xpart;  // num. of shared fixed effect components
-  int<lower=0> size_which_beta_xpart[sum_size_which_beta];   // num. of shared fixed effect components
-  int<lower=1> which_beta_xpart[sum_size_which_beta_xpart];  // which fixed effects are shared
+  int<lower=1> which_b_zindex[sum_size_which_b];  // which random effects are shared for each long submodel
+  int<lower=0> sum_size_which_coef;        // num. of shared random effects incl fixed component
+  int<lower=0> size_which_coef[M];         // num. of shared random effects incl fixed component for each long submodel
+  int<lower=1> which_coef_zindex[sum_size_which_coef];  // which random effects are shared incl fixed component for each long submodel
+  int<lower=1> which_coef_xindex[sum_size_which_coef];  // which fixed effects are shared
 
   // data for calculating slope
   real<lower=0> eps;  // time shift used for numerically calculating derivative
@@ -869,7 +868,7 @@ data {
   vector<lower=0>[a_K]   priorAssoc_df;
   vector<lower=0>[sum_y_has_dispersion] priorLong_scale_for_dispersion;
   real<lower=0> priorEvent_scale_for_weibull[basehaz_weibull];
-  vector<lower=0>[splines_df] priorEvent_scale_for_splines;
+  vector<lower=0>[bs_df] priorEvent_scale_for_bs;
   vector<lower=0>[piecewise_df] priorEvent_scale_for_piecewise;
 
   // hyperparameters for random effects model
@@ -1020,7 +1019,7 @@ parameters {
   real e_gamma[e_has_intercept];          // intercept (event model)
   vector[e_K] e_z_beta;                   // primative coefs (event submodel)
   real<lower=0> weibull_shape_unscaled[basehaz_weibull];  // unscaled weibull shape parameter 
-  vector[splines_df] splines_coefs_unscaled;       // unscaled coefs for cubic splines on log baseline hazard
+  vector[bs_df] bs_coefs_unscaled;       // unscaled coefs for cubic bs on log baseline hazard
   vector[piecewise_df] piecewise_coefs_unscaled;  // unscaled coefs for piecewise constant baseline hazard
  
   // parameters for association structure
@@ -1050,7 +1049,7 @@ transformed parameters {
   // parameters for event submodel
   vector[e_K] e_beta; 
   real weibull_shape[basehaz_weibull];
-  vector[splines_df] splines_coefs;     
+  vector[bs_df] bs_coefs;     
   vector[piecewise_df] piecewise_coefs;     
   
   // parameters for GK quadrature  
@@ -1151,8 +1150,8 @@ transformed parameters {
     if (priorEvent_scale_for_weibull[1] > 0)
       weibull_shape[1] = priorEvent_scale_for_weibull[1] * weibull_shape_unscaled[1];
     else weibull_shape[1] = weibull_shape_unscaled[1];
-  } else if (basehaz_splines == 1) {
-    splines_coefs = priorEvent_scale_for_splines .* splines_coefs_unscaled;
+  } else if (basehaz_bs == 1) {
+    bs_coefs = priorEvent_scale_for_bs .* bs_coefs_unscaled;
   } else if (basehaz_piecewise == 1) {
     piecewise_coefs = priorEvent_scale_for_piecewise .* piecewise_coefs_unscaled;
   }  
@@ -1340,27 +1339,32 @@ transformed parameters {
       }	
     }
   	if (sum_size_which_b > 0) {
-  	  int mark_end;  // used to define segment of a_beta
-  	  matrix[nrow_e_Xq,sum_size_which_b] x_assoc_sh;	  
+  	  int mark_beg;  // used to define segment of a_beta
+  	  int mark_end;
+  	  matrix[nrow_e_Xq,sum_size_which_b] x_assoc_shared_b;	  
+      mark_beg = mark + 1;	  
   	  mark_end = mark + sum_size_which_b;
-      mark = mark + 1;	  
-  	  x_assoc_sh = make_x_assoc_sh(b, l, p, pmat, Npat, quadnodes, which_b,  
-  	                               sum_size_which_b, size_which_b, t_i, M);
-  	  e_eta_q = e_eta_q + x_assoc_sh * a_beta[mark:mark_end];
-  	  mark = mark_end + 1;
+  	  x_assoc_shared_b = make_x_assoc_shared_b(
+  	    b, l, p, pmat, Npat, quadnodes, which_b_zindex,
+  	    sum_size_which_b, size_which_b, t_i, M);
+  	  e_eta_q = e_eta_q + x_assoc_shared_b * a_beta[mark_beg:mark_end];
+  	  mark = mark + sum_size_which_b;
     }	
-  	if (sum_size_which_beta > 0) {
-  	  int mark_end;  // used to define segment of a_beta
-  	  matrix[nrow_e_Xq,sum_size_which_beta] x_assoc_shbeta;	  
-  	  mark_end = mark + sum_size_which_beta;
-      mark = mark + 1;	  
-  	  x_assoc_shbeta = make_x_assoc_shbeta(b, y_beta, y_K, l, p, pmat, Npat, quadnodes, 
-  	                               which_beta, sum_size_which_beta, size_which_beta, t_i, M,
-  	                               which_beta_xpart, size_which_beta_xpart, 
-  	                               y_has_intercept, y_has_intercept_unbound,
-  	                               y_has_intercept_lobound, y_has_intercept_upbound,
-  	                               y_gamma_unbound, y_gamma_lobound, y_gamma_upbound);
-  	  e_eta_q = e_eta_q + x_assoc_shbeta * a_beta[mark:mark_end];
+  	if (sum_size_which_coef > 0) {
+  	  int mark_beg;  // used to define segment of a_beta
+  	  int mark_end;
+  	  matrix[nrow_e_Xq,sum_size_which_coef] x_assoc_shared_coef;	  
+      mark_beg = mark + 1;	  
+  	  mark_end = mark + sum_size_which_coef;
+  	  x_assoc_shared_coef = make_x_assoc_shared_coef(
+  	    b, y_beta, y_K, M, t_i, l, p, pmat, Npat, quadnodes,
+  	    sum_size_which_coef, size_which_coef,
+  	    which_coef_zindex, which_coef_xindex,
+  	    y_has_intercept, y_has_intercept_unbound,
+  	    y_has_intercept_lobound, y_has_intercept_upbound,
+  	    y_gamma_unbound, y_gamma_lobound, y_gamma_upbound);
+  	  e_eta_q = e_eta_q + x_assoc_shared_coef * a_beta[mark_beg:mark_end];
+  	  mark = mark + sum_size_which_coef;
     }    
   }
 
@@ -1370,9 +1374,9 @@ transformed parameters {
   // NB assumes Weibull baseline hazard
   if (basehaz_weibull == 1) 
 	  log_basehaz = log(weibull_shape[1]) + (weibull_shape[1] - 1) * e_log_times;
-  // NB assumes splines baseline hazard
-  else if (basehaz_splines == 1)
-	  log_basehaz = e_ns_times * splines_coefs;	
+  // NB assumes B-splines baseline hazard
+  else if (basehaz_bs == 1)
+	  log_basehaz = e_ns_times * bs_coefs;	
   // NB assumes piecewise constant baseline hazard
   else if (basehaz_piecewise == 1)
 	  log_basehaz = e_times_piecedummy * piecewise_coefs;		  
@@ -1712,8 +1716,8 @@ model {
     target += cauchy_lpdf(weibull_shape_unscaled | 0, 1);   
 
   // Log-prior for baseline hazard spline coefficients 
-  if (basehaz_splines == 1) 
-    target += normal_lpdf(splines_coefs_unscaled | 0, 1);
+  if (basehaz_bs == 1) 
+    target += normal_lpdf(bs_coefs_unscaled | 0, 1);
 
   // Log-prior for baseline hazard piecewise constant coefficients 
   if (basehaz_piecewise == 1) 

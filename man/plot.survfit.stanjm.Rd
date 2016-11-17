@@ -52,7 +52,7 @@ The call to \code{posterior_survfit} should ideally have included an
 \code{extrapolate} argument to \code{TRUE}.
 }
 \examples{
-\donttest{
+
   # Run example model if not already loaded
   if (!exists("examplejm")) example(examplejm)
   
@@ -75,7 +75,7 @@ The call to \code{posterior_survfit} should ideally have included an
   # modify some of its attributes after it has been returned
   plot1 <- plot(ps1, ids = c(7,13,16))
   plot1 + 
-    ggplot2::theme(strip.background = element_blank()) +
+    ggplot2::theme(strip.background = ggplot2::element_blank()) +
     ggplot2::coord_cartesian(xlim = c(0, 15)) +
     ggplot2::labs(title = "Some plotted survival functions")
     
@@ -95,7 +95,7 @@ The call to \code{posterior_survfit} should ideally have included an
   ps2 <- poserior_survfit(examplejm, standardise = TRUE, times = 0,
                           control = list(ext_points = 20))
   plot(ps2)   
-}
+
    
 }
 \seealso{

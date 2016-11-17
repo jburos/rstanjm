@@ -187,7 +187,7 @@ For binomial models with a number of trials greater than one (i.e., not
   \emph{How to Use the rstanarm Package} vignette.
 }
 \examples{
-\donttest{
+
   # Run example model if not already loaded
   if (!exists("examplejm")) example(examplejm)
   
@@ -249,7 +249,7 @@ For binomial models with a number of trials greater than one (i.e., not
   # example for preddat5).
   preddat6 <- posterior_predict(examplejm, newdata = nd, re.form = NA)
   head(preddat6)  # note the much narrower ci, compared with preddat5
-}
+
 
 }
 \seealso{

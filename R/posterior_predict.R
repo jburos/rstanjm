@@ -186,7 +186,7 @@
 #'   for generating posterior predictions for the event submodel.
 #'   
 #' @examples
-#' \donttest{
+#' 
 #'   # Run example model if not already loaded
 #'   if (!exists("examplejm")) example(examplejm)
 #'   
@@ -248,7 +248,7 @@
 #'   # example for preddat5).
 #'   preddat6 <- posterior_predict(examplejm, newdata = nd, re.form = NA)
 #'   head(preddat6)  # note the much narrower ci, compared with preddat5
-#' }
+#' 
 #' 
 posterior_predict <- function(object, m = 1, newdata = NULL, 
                               interpolate = FALSE, extrapolate = FALSE,
@@ -298,7 +298,10 @@ posterior_predict <- function(object, m = 1, newdata = NULL,
   } else {
     if ("last_time" %in% names(newX)) { 
       # user provided newdata with last_time column
+      if (!all(tapply(newX[["last_time"]], newX[[id_var]], FUN = sd) == 0))
+        stop("'last_time' column in 'newdata' should be constant within individuals")
       last_time <- tapply(newX[["last_time"]], newX[[id_var]], FUN = max)
+      
     } else { 
       # user provided newdata but no last_time column, last_time inferred from time_var
       last_time <- tapply(newX[[time_var]], newX[[id_var]], FUN = max)
@@ -390,7 +393,8 @@ posterior_predict <- function(object, m = 1, newdata = NULL,
     time_seq$id <- rownames(time_seq)
     time_seq <- reshape(time_seq, direction = "long", varying = paste0("V", 1:n_obs), 
                    v.names = time_var, timevar = "obs", idvar = id_var)
-    class(time_seq[[id_var]]) <- class(newX[[id_var]])
+    time_seq[[id_var]] <- factor(time_seq[[id_var]])
+    newX[[id_var]] <- factor(newX[[id_var]])
     newX[[time_var]] <- as.numeric(newX[[time_var]]) # ensures no rounding during data.table merge
     newX <- data.table::data.table(newX, key = c(id_var, time_var))
     newX <- newX[data.table::SJ(time_seq[[id_var]], time_seq[[time_var]]),
