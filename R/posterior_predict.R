@@ -308,21 +308,28 @@ posterior_predict <- function(object, m = 1, newdata = NULL,
     }
   }
   
-  # If user specified to predict only for a subset of IDs
+  # 'id_list' provides unique IDs sorted in the same order as newX[[id_var]] and obsdata[[id_var]]
   if (!is.null(ids)) {
-    newX      <- newX[newX[[id_var]] %in% ids, ]
-    obsdata   <- obsdata[obsdata[[id_var]] %in% ids, ]
-    last_time <- last_time[as.character(ids)]
+    ids_missing <- which(!ids %in% newX[[id_var]])
+    if (length(ids_missing))
+      stop("The following 'ids' are not present in the data: ",
+           paste(ids[[ids_missing]], collapse = ", "), call. = FALSE)
+    newX <- newX[newX[[id_var]] %in% ids, , drop = FALSE]
+    obsdata <- obsdata[obsdata[[id_var]] %in% ids, , drop = FALSE] 
   }
-  id_list <- names(last_time)
-  if ((!is.null(newdata)) &&
-    any(id_list %in% unique(model.frame(object)[[m]][[id_var]])))
+  id_list <- unique(newX[[id_var]])
+  last_time <- last_time[as.character(id_list)]  # potentially reorder last_time to match newX
+  
+  if (!is.null(newdata)) {
+    id_fit <- unique(model.frame(object)[[m]][[id_var]])
+    if (any(id_list %in% id_fit))
       warning("Some of the IDs in the 'newdata' correspond to individuals in the ",
               "estimation dataset. Please be sure you want to obtain subject-",
               "specific predictions using the estimated random effects for those ",
               "individuals. If you instead meant to marginalise over the distribution ",
               "of the random effects, then please make sure the ID values do not ",
               "correspond to individuals in the estimation dataset.", immediate. = TRUE)
+  }
   
   # User specified interpolation or extrapolation
   if (interpolate || extrapolate) {  
@@ -360,24 +367,21 @@ posterior_predict <- function(object, m = 1, newdata = NULL,
 
     if (interpolate) {  
       # Note: prop assumes all individuals entered at time 0
-      inter_time_seq <- sapply(0:iinc, function(x, t) t * (x / iinc), 
-                         t = last_time)
+      inter_time_seq <- sapply(0:iinc, function(x, t) t * (x / iinc), t = last_time)
       # if there is only one patient then need to transform
       if (is.vector(inter_time_seq)) {
         inter_time_seq <- t(inter_time_seq)
-        rownames(inter_time_seq) <- id_list
+        rownames(inter_time_seq) <- as.character(id_list)
       }
     }  
     if (extrapolate) {  
       # Note: prop assumes all individuals entered at time 0
-      dist <- if (!is.null(prop)) prop * (last_time - 0) else
-        control$ext_distance
-      extra_time_seq <- sapply(0:einc, function(x, t) t + dist * (x / einc), 
-                         t = last_time)
+      dist <- if (!is.null(prop)) prop * (last_time - 0) else control$ext_distance
+      extra_time_seq <- sapply(0:einc, function(x, t) t + dist * (x / einc), t = last_time)
       # if there is only one patient then need to transform
       if (is.vector(extra_time_seq)) {
         extra_time_seq <- t(extra_time_seq)
-        rownames(extra_time_seq) <- id_list
+        rownames(extra_time_seq) <- as.character(id_list)
       }
     }
     if (interpolate && extrapolate) {
@@ -390,11 +394,9 @@ posterior_predict <- function(object, m = 1, newdata = NULL,
     time_seq <- as.data.frame(time_seq)
     n_obs <- NCOL(time_seq)
     colnames(time_seq) <- paste0("V", 1:n_obs)
-    time_seq$id <- rownames(time_seq)
+    time_seq$id <- id_list
     time_seq <- reshape(time_seq, direction = "long", varying = paste0("V", 1:n_obs), 
-                   v.names = time_var, timevar = "obs", idvar = id_var)
-    time_seq[[id_var]] <- factor(time_seq[[id_var]])
-    newX[[id_var]] <- factor(newX[[id_var]])
+                        v.names = time_var, timevar = "obs", idvar = id_var)
     newX[[time_var]] <- as.numeric(newX[[time_var]]) # ensures no rounding during data.table merge
     newX <- data.table::data.table(newX, key = c(id_var, time_var))
     newX <- newX[data.table::SJ(time_seq[[id_var]], time_seq[[time_var]]),
@@ -437,9 +439,8 @@ posterior_predict <- function(object, m = 1, newdata = NULL,
   Terms <- terms(model.frame(object)[[m]])
   yvar <- rownames(attr(Terms, "factors"))[attr(Terms, "response")]
   xvars <- rownames(attr(Terms, "factors"))[-attr(Terms, "response")]
-  dat <- if (length(xvars)) as.data.frame(newX)[, xvars, drop = FALSE] else NULL
-  dat[[id_var]] <- factor(dat[[id_var]])
-  out <- data.frame(cbind(dat, yfit = mutilde_med, 
+  ret_dat <- if (length(xvars)) as.data.frame(newX)[, xvars, drop = FALSE] else NULL
+  out <- data.frame(cbind(ret_dat, yfit = mutilde_med, 
                           ci_lb = mutilde_lb, ci_ub = mutilde_ub,
                           pi_lb = ytilde_lb, pi_ub = ytilde_ub))
   

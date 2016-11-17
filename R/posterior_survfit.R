@@ -268,7 +268,6 @@ posterior_survfit <- function(object, newdata = NULL,
   if (is.null(newdata)) {
     ndL <- model.frame(object)[1:M]
     ndE <- model.frame(object)$Event
-    id_list <- unique(ndE[[id_var]])
     if (is.null(times)) {
       times <- object$eventtime
     } else if (!(is.numeric(times) && (length(times) == 1L))) {
@@ -288,17 +287,10 @@ posterior_survfit <- function(object, newdata = NULL,
       stop("id_var from the original model call must appear 'newdata'.")
     ndL <- lapply(1:M, function(m) as.data.frame(newdata))
     ndE <- as.data.frame(newdata)
-    id_list <- unique(ndE[[id_var]])
-    if (!identical(length(id_list), nrow(ndE)))
+    n_check <- table(ndE[[id_var]])
+    if (any(n_check > 1L))
       stop("'newdata' should only contain one row per individual, since ",
            "time varying covariates are not allowed in the prediction data.")
-    if (any(id_list %in% unique(model.frame(object)[[1]][[id_var]])))
-      warning("Some of the IDs in 'newdata' correspond to individuals in the ",
-              "estimation dataset. Please be sure you want to obtain subject-",
-              "specific predictions using the estimated random effects for those ",
-              "individuals. If you instead meant to marginalise over the distribution ",
-              "of the random effects, then please make sure the ID values do not ",
-              "correspond to individuals in the estimation dataset.", immediate. = TRUE)
     if (is.null(times)) {
       stop("'times' cannot be NULL if newdata is specified.")
     } else if (is.character(times) && (length(times) == 1L)) {
@@ -309,30 +301,56 @@ posterior_survfit <- function(object, newdata = NULL,
       stop("'times' should be a numeric vector of length 1, or the name of ",
            "a variable in 'newdata'.")
     }
-    if (is.null(control$last_time)) last_time <- NULL
+    last_time <- if (is.null(control$last_time)) NULL else control$last_time 
   }
 
   # If user specified to predict only for a subset of IDs
   if (!is.null(ids)) {
-    if (!all(ids %in% id_list))
-      stop("Some 'ids' do not appear in the data.")
-    ndE <- ndE[ndE[[id_var]] %in% ids,]
-    ndL <- lapply(ndL, function(x) x[x[[id_var]] %in% ids, ])
-    id_list <- id_list[id_list %in% ids]
-    if (length(times) > 1L)
-      times <- times[as.character(id_list)]
-    if (length(last_time) > 1L)
-      last_time <- last_time[as.character(id_list)]
+    ids_missing <- which(!ids %in% ndE[[id_var]])
+    if (length(ids_missing))
+      stop("The following 'ids' are not present in the data: ",
+           paste(ids[[ids_missing]], collapse = ", "), call. = FALSE)
+    ndE <- ndE[ndE[[id_var]] %in% ids, , drop = FALSE]
+    ndL <- lapply(ndL, function(x) x[x[[id_var]] %in% ids, , drop = FALSE])
   }
-  if (length(times) == 1L)
+  
+  id_list <- unique(ndE[[id_var]])
+  
+  if (length(times) == 1L) {
     times <- rep(times, length(id_list))
-  if (is.null(last_time)) 
-    last_time <- times  
+  } else {
+    times <- times[as.character(id_list)]
+  }
   if (!identical(length(times), length(id_list)))
     stop(paste0("'times' vector should be of length 1 or length equal to the ",
                 "number of individuals for whom predictions are being obtained (",
                 length(id_list), ").")) 
   
+  if (is.character(last_time) && !is.null(newdata)) {
+    if (!last_time %in% colnames(ndE))
+      stop("Cannot find 'last_time' column named in 'newdata'")
+    last_time <- ndE[[last_time]]
+  } else if (is.null(last_time)) {
+    last_time <- times 
+  } else if (is.numeric(last_time) && (length(last_time) == 1L)) {
+    last_time <- rep(last_time, length(id_list)) 
+  } else if (is.numeric(last_time) && (length(last_time) > 1L)) {
+    last_time <- last_time[as.character(id_list)]
+  } else {
+    stop("Bug found: could not reconcile last_time argument.")
+  }
+
+  if (!is.null(newdata)) {
+    id_fit <- unique(model.frame(object)[[1]][[id_var]])
+    if (any(id_list %in% id_fit))
+      warning("Some of the IDs in the 'newdata' correspond to individuals in the ",
+              "estimation dataset. Please be sure you want to obtain subject-",
+              "specific predictions using the estimated random effects for those ",
+              "individuals. If you instead meant to marginalise over the distribution ",
+              "of the random effects, then please make sure the ID values do not ",
+              "correspond to individuals in the estimation dataset.", immediate. = TRUE)
+  }  
+
   maxtime <- max(object$eventtime)
   if (any(times > maxtime))
     stop("'times' are not allowed to be greater than the last event or censoring ",
@@ -444,19 +462,18 @@ posterior_survfit <- function(object, newdata = NULL,
        id_var = id_var, time_var = time_var))
   rownames(out) <- NULL
   colnames(out) <- c(if ("IDVAR" %in% colnames(out)) id_var,
-                     time_var, "survpred", "ci_lb", "ci_ub")    
+                     time_var, "survpred", "ci_lb", "ci_ub")
+  out <- data.frame(out)
   if (id_var %in% colnames(out)) {  # data has id column -- sort by id and time
+    class(out[[id_var]]) <- class(id_list)
     out <- out[order(out[, id_var, drop = F], out[, time_var, drop = F]), , drop = F]
   } else { # data does not have id column -- sort by time only
     out <- out[order(out[, time_var, drop = F]), , drop = F]
   }
-  out <- data.frame(out)
-  if (id_var %in% colnames(out))
-    out[[id_var]] <- factor(out[[id_var]])
   class(out) <- c("survfit.stanjm", "data.frame")
   structure(out, id_var = id_var, time_var = time_var,
             extrapolate = extrapolate, control = control, 
-            standardise = standardise, ids = factor(id_list), 
+            standardise = standardise, ids = id_list, 
             draws = draws, seed = seed, offset = offset)
 }
 
