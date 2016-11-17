@@ -107,6 +107,8 @@ and maximum number of draws is the size of the posterior sample.}
 only be required if \code{newdata} is specified and an \code{offset}  
 argument was specified when fitting the model, but offsets are not currently
 implemented for \code{stan_jm}.}
+
+\item{...}{Currently unused.}
 }
 \value{
 A data frame of class \code{survfit.stanjm}. The data frame includes 

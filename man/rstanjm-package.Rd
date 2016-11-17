@@ -67,8 +67,7 @@ Reference Manual.} \url{http://mc-stan.org/documentation/}
 \seealso{
 \code{\link{stan_jm}} for the main modelling function, as well as
   \code{\link{stanjm-object}}, \code{\link{stanjm-methods}},
-  \code{\link{posterior_traj}}, \code{\link{posterior_survfit}}, 
-  \code{\link{posterior_predict}}.
+  \code{\link{posterior_predict}}, \code{\link{posterior_survfit}}.
 
 Also see \url{http://mc-stan.org/} for more information on the Stan C++ 
   package used for model fitting.

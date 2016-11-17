@@ -101,7 +101,7 @@
 #'    
 #'   # Lastly, let us plot the standardised survival function
 #'   # based on all individuals in our estimation dataset
-#'   ps2 <- poserior_survfit(examplejm, standardise = TRUE, times = 0,
+#'   ps2 <- posterior_survfit(examplejm, standardise = TRUE, times = 0,
 #'                           control = list(ext_points = 20))
 #'   plot(ps2)   
 #' 
