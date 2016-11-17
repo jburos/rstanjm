@@ -77,7 +77,7 @@ plot_stack <- function(yplot, survplot) {
   e_ids <- if (!"id" %in% colnames(e_layout)) NULL else e_layout[["id"]]
   
   lapply(y_ids, function(x, e_ids) {
-    if (!identical(factor(x), factor(e_ids))) 
+    if (!identical(sort(x), sort(e_ids))) 
       stop("The individuals in the 'yplot' and 'survplot' appear to differ. Please ",
            "reestimate the plots using a common 'ids' argument.", call. = FALSE)
     }, e_ids = e_ids)
@@ -101,9 +101,9 @@ plot_stack <- function(yplot, survplot) {
   })
   vline_found <- any(sapply(vline, function(x) x$found))
   if (!vline_found)
-    message("Could not find vertical line indicating last observation time in the ",
-            "plots of the longitudinal trajectory. You may wish to plot the longitudinal ",
-            "trajectories again with 'vline = TRUE'.", immediate. = TRUE)
+    cat("Could not find vertical line indicating last observation time in the",
+        "plot of the longitudinal trajectory; you may wish to plot the longitudinal",
+        "trajectories again with 'vline = TRUE' to aid interpretation.")
   vline_dat <- lapply(vline, function(x) x$dat)
   vline_alldat <- Reduce(function(...) merge(..., all = TRUE), vline_dat)
   vline_alldat$xintercept_max <- 

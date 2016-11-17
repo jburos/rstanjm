@@ -130,16 +130,16 @@ plot.predict.stanjm <- function(x, ids = NULL, limits = c("ci", "pi", "none"),
     plot_dat <- x
   }
   
-  # Reorder ids to match order in plotting data
-  ids <- factor(unique(plot_dat[[id_var]]))
-  last_time <- attr(x, "last_time")[as.character(ids)]
+  # 'id_list' provides unique IDs sorted in the same order as plotting data
+  id_list <- unique(plot_dat[[id_var]])
+  last_time <- attr(x, "last_time")[as.character(id_list)]  # potentially reorder last_time to match plot_dat
   
   plot_dat$time <- plot_dat[[time_var]]
   plot_dat$id <- plot_dat[[id_var]]
   
   obs_dat$y <- obs_dat[[y_var]]
   obs_dat$time <- obs_dat[[time_var]]
-  obs_dat$id <- factor(obs_dat[[id_var]])
+  obs_dat$id <- obs_dat[[id_var]]
   
   geom_defaults <- list(color = "black", method = "loess", se = FALSE)
   geom_args <- set_geom_args(geom_defaults, ...)
@@ -151,10 +151,10 @@ plot.predict.stanjm <- function(x, ids = NULL, limits = c("ci", "pi", "none"),
   obs_args <- set_geom_args(obs_defaults)
   
   
-  if (length(ids) > 60L) {
+  if (length(id_list) > 60L) {
     stop("Too many individuals to plot for. Perhaps limit the number of ",
          "individuals by specifying the 'ids' argument.")
-  } else if (length(ids) > 1L) {
+  } else if (length(id_list) > 1L) {
     geom_mapp <- list(mapping = aes_string(x = "time", y = "yfit"), 
                       data = plot_dat)
     graph <- ggplot() + theme_bw() +
@@ -205,7 +205,7 @@ plot.predict.stanjm <- function(x, ids = NULL, limits = c("ci", "pi", "none"),
   } else graph_obs <- NULL
   if (vline) {
     graph_vline <- geom_vline(aes_string(xintercept = "last_time"), 
-                               data.frame(id = ids, last_time = last_time), 
+                               data.frame(id = id_list, last_time = last_time), 
                                linetype = 2)
   } else graph_vline <- NULL
     
