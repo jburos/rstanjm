@@ -5,8 +5,8 @@
 \title{Bayesian joint longitudinal and time-to-event models via Stan}
 \usage{
 stan_jm(formulaLong, dataLong, formulaEvent, dataEvent, time_var, id_var,
-  family = gaussian, assoc = "etavalue", base_haz = c("weibull",
-  "splines", "piecewise"), df, knots, quadnodes = 15, subsetLong, subsetEvent,
+  family = gaussian, assoc = "etavalue", base_haz = c("weibull", "bs",
+  "piecewise"), df, knots, quadnodes = 15, subsetLong, subsetEvent,
   na.action = getOption("na.action", "na.omit"), weights, offset, contrasts,
   centreLong = FALSE, centreEvent = FALSE, init = "model_based", ...,
   priorLong = normal(), priorLong_intercept = normal(),
@@ -71,20 +71,20 @@ to fitting separate longitudinal and time-to-event models). See the
 \item{base_haz}{A character string indicating which baseline hazard to use
 for the event submodel. Options are a Weibull baseline hazard
 (\code{"weibull"}, the default), a B-splines approximation estimated 
-for the log baseline hazard (\code{"splines"}), or a piecewise
+for the log baseline hazard (\code{"bs"}), or a piecewise
 constant baseline hazard (\code{"piecewise"}).}
 
 \item{df}{An optional positive integer specifying the degrees of freedom 
-for the B-splines if \code{base_haz = "splines"}, or the number of
+for the B-splines if \code{base_haz = "bs"}, or the number of
 intervals used for the piecewise constant baseline hazard if 
 \code{base_haz = "piecewise"}. The default is 6.}
 
 \item{knots}{An optional numeric vector specifying the internal knot 
-locations for the B-splines if \code{base_haz = "splines"}, or the 
+locations for the B-splines if \code{base_haz = "bs"}, or the 
 internal cut-points for defining intervals of the piecewise constant 
 baseline hazard if \code{base_haz = "piecewise"}. Knots cannot be
 specified if \code{df} is specified. If not specified, then the 
-default is to use \code{df - 4} knots if \code{base_haz = "splines"},
+default is to use \code{df - 4} knots if \code{base_haz = "bs"},
 or \code{df - 1} knots if \code{base_haz = "piecewise"}, which are
 placed at equally spaced percentiles of the distribution of
 observed event times.}
@@ -155,7 +155,7 @@ event submodel, and the association parameter(s). To omit a prior on the
 dispersion parameters in the longitudinal submodel(s) set 
 \code{priorLong_ops} to \code{NULL}. To omit a prior on the 
 Weibull shape parameter (if \code{base_haz = "weibull"}) or the
-spline coefficients (if \code{base_haz = "splines"}) set 
+spline coefficients (if \code{base_haz = "bs"}) set 
 \code{priorEvent_ops} to \code{NULL}. Otherwise see \code{\link{priors}}.}
 
 \item{prior_covariance}{Cannot be \code{NULL}; see \code{\link{decov}} for
@@ -206,17 +206,17 @@ The \code{stan_jm} function can be used to fit a joint model (also
   \cr
   For the event submodel a parametric
   proportional hazards model is assumed. The baseline hazard can be estimated 
-  using either a Weibull distribution (\code{base_haz = "weibull"}) or 
-  approximated using restricted cubic splines (\code{base_haz = "splines"}). 
-  If cubic splines are used then the degrees of freedom for the 
-  splines, or the internal knot locations, can be optionally specified. If
+  using either a Weibull distribution (\code{base_haz = "weibull"}) or a
+  piecewise constant baseline hazard (\code{base_haz = "piecewise"}), or 
+  approximated using cubic B-splines (\code{base_haz = "bs"}). 
+  If either of the latter two are used then the degrees of freedom, 
+  or the internal knot locations, can be optionally specified. If
   the degrees of freedom are specified (through the \code{df} argument) then
-  the knot locations are automatically generated based
-  on the distribution of observed event times (not including censoring times)
-  -- see \code{\link[splines]{ns}} for details on the default knot placement. 
-  Otherwise the internal knot locations can be specified 
+  the knot locations are automatically generated based on the 
+  distribution of the observed event times (not including censoring times). 
+  Otherwise internal knot locations can be specified 
   directly through the \code{knots} argument. If neither \code{df} or
-  \code{knots} is specified, then the default is to set \code{df} equal to 3.
+  \code{knots} is specified, then the default is to set \code{df} equal to 6.
   It is not possible to specify both \code{df} and \code{knots}. \cr
   \cr
   The association structure for the joint model can be based on any of the 

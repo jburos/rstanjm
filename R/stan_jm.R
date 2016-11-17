@@ -66,18 +66,18 @@
 #' @param base_haz A character string indicating which baseline hazard to use
 #'   for the event submodel. Options are a Weibull baseline hazard
 #'   (\code{"weibull"}, the default), a B-splines approximation estimated 
-#'   for the log baseline hazard (\code{"splines"}), or a piecewise
+#'   for the log baseline hazard (\code{"bs"}), or a piecewise
 #'   constant baseline hazard (\code{"piecewise"}).
 #' @param df An optional positive integer specifying the degrees of freedom 
-#'   for the B-splines if \code{base_haz = "splines"}, or the number of
+#'   for the B-splines if \code{base_haz = "bs"}, or the number of
 #'   intervals used for the piecewise constant baseline hazard if 
 #'   \code{base_haz = "piecewise"}. The default is 6.
 #' @param knots An optional numeric vector specifying the internal knot 
-#'   locations for the B-splines if \code{base_haz = "splines"}, or the 
+#'   locations for the B-splines if \code{base_haz = "bs"}, or the 
 #'   internal cut-points for defining intervals of the piecewise constant 
 #'   baseline hazard if \code{base_haz = "piecewise"}. Knots cannot be
 #'   specified if \code{df} is specified. If not specified, then the 
-#'   default is to use \code{df - 4} knots if \code{base_haz = "splines"},
+#'   default is to use \code{df - 4} knots if \code{base_haz = "bs"},
 #'   or \code{df - 1} knots if \code{base_haz = "piecewise"}, which are
 #'   placed at equally spaced percentiles of the distribution of
 #'   observed event times.
@@ -137,7 +137,7 @@
 #'   dispersion parameters in the longitudinal submodel(s) set 
 #'   \code{priorLong_ops} to \code{NULL}. To omit a prior on the 
 #'   Weibull shape parameter (if \code{base_haz = "weibull"}) or the
-#'   spline coefficients (if \code{base_haz = "splines"}) set 
+#'   spline coefficients (if \code{base_haz = "bs"}) set 
 #'   \code{priorEvent_ops} to \code{NULL}. Otherwise see \code{\link{priors}}. 
 #' @param prior_covariance Cannot be \code{NULL}; see \code{\link{decov}} for
 #'   more information about the default arguments.
@@ -173,17 +173,17 @@
 #'   \cr
 #'   For the event submodel a parametric
 #'   proportional hazards model is assumed. The baseline hazard can be estimated 
-#'   using either a Weibull distribution (\code{base_haz = "weibull"}) or 
-#'   approximated using restricted cubic splines (\code{base_haz = "splines"}). 
-#'   If cubic splines are used then the degrees of freedom for the 
-#'   splines, or the internal knot locations, can be optionally specified. If
+#'   using either a Weibull distribution (\code{base_haz = "weibull"}) or a
+#'   piecewise constant baseline hazard (\code{base_haz = "piecewise"}), or 
+#'   approximated using cubic B-splines (\code{base_haz = "bs"}). 
+#'   If either of the latter two are used then the degrees of freedom, 
+#'   or the internal knot locations, can be optionally specified. If
 #'   the degrees of freedom are specified (through the \code{df} argument) then
-#'   the knot locations are automatically generated based
-#'   on the distribution of observed event times (not including censoring times)
-#'   -- see \code{\link[splines]{ns}} for details on the default knot placement. 
-#'   Otherwise the internal knot locations can be specified 
+#'   the knot locations are automatically generated based on the 
+#'   distribution of the observed event times (not including censoring times). 
+#'   Otherwise internal knot locations can be specified 
 #'   directly through the \code{knots} argument. If neither \code{df} or
-#'   \code{knots} is specified, then the default is to set \code{df} equal to 3.
+#'   \code{knots} is specified, then the default is to set \code{df} equal to 6.
 #'   It is not possible to specify both \code{df} and \code{knots}. \cr
 #'   \cr
 #'   The association structure for the joint model can be based on any of the 
@@ -318,7 +318,7 @@ stan_jm <- function(formulaLong, dataLong,
                     formulaEvent, dataEvent, 
                     time_var, id_var, family = gaussian,
                     assoc = "etavalue",
-                    base_haz = c("weibull", "splines", "piecewise"), 
+                    base_haz = c("weibull", "bs", "piecewise"), 
                     df, knots, quadnodes = 15, 
                     subsetLong, subsetEvent, 
                     na.action = getOption("na.action", "na.omit"),
@@ -345,9 +345,8 @@ stan_jm <- function(formulaLong, dataLong,
   if (!missing(offset)) 
     stop("Offsets are not yet implemented for stan_jm")
   algorithm <- match.arg(algorithm)
-  if (algorithm %in% c("meanfield", "fullrank"))
-    stop ("Meanfield and fullrank algorithms not yet implemented",
-          "for stan_jm")
+  #if (algorithm %in% c("meanfield", "fullrank"))
+  #  stop ("Meanfield and fullrank algorithms not yet implemented for stan_jm")
   if (QR) 
     stop("QR decomposition not yet implemented for stan_jm") 
 #  if ((init == "model_based") && any(unlist(c(centreLong, centreEvent)))) 
@@ -396,9 +395,7 @@ stan_jm <- function(formulaLong, dataLong,
          "joint model, a list of formula objects with length equal to the ",
          "desired number of longitudinal markers")
   }
-  if (M == 1L) cat("Univariate joint model specified")
-  if (M > 1L)  cat("Multivariate joint model specified")
-  
+
   # Is dataLong a list?
   if (is.data.frame(eval(y_mc$data))) {
     data_list <- FALSE
@@ -576,10 +573,12 @@ stan_jm <- function(formulaLong, dataLong,
     y_mod[[m]] <- eval(m_mc[[m]], parent.frame())      
 
     # Error check: time_var is one of the longitudinal covariates
-    fm_nobars <- lme4::subbars(formula(y_mod[[m]]))
-    if (!time_var %in% rownames(attr(terms(fm_nobars), "factors")))
-      stop(paste0("Variable '", time_var, "' does not appear in the ",
-                  "regression equation for the longitudinal submodel"))
+    # NB REMOVED, since difficult to check for time_var if it is 
+    #   transformed (for example used in spline terms)
+    #fm_nobars <- lme4::subbars(formula(y_mod[[m]]))
+    #if (!time_var %in% rownames(attr(terms(fm_nobars), "factors")))
+    #  stop(paste0("Variable '", time_var, "' does not appear in the ",
+    #              "regression equation for the longitudinal submodel"))
     
     # Indicator of real or integer response vector
     y_is_real[m] <- check_response_real(family[[m]]$family)
@@ -813,40 +812,44 @@ stan_jm <- function(formulaLong, dataLong,
   base_haz <- match.arg(base_haz)
   base_haz_weibull <- (base_haz == "weibull")
   base_haz_piecewise <- (base_haz == "piecewise")
-  base_haz_splines <- (base_haz == "splines")
+  base_haz_bs <- (base_haz == "bs")
 
-  if (!(base_haz_splines || base_haz_piecewise)) { # not splines or piecewise
+  if (!(base_haz_bs || base_haz_piecewise)) { # not bs or piecewise
     if (!missing(df)) {
       warning("'df' will be ignored since 'base_haz' was not set ",
-              "to splines or piecewise constant.", 
+              "to B-splines or piecewise constant.", 
               immediate. = TRUE, call. = FALSE)
     }
     if (!missing(knots)) {
       warning("'knots' will be ignored since 'base_haz' was not set ",
-              "to splines or piecewise constant.", 
+              "to B-splines or piecewise constant.", 
               immediate. = TRUE, call. = FALSE)
     }
-    df <- knots <- splines_df <- piecewise_df <- NULL    
-  } else {  # splines  or piecewise
+    df <- knots <- bs_df <- piecewise_df <- NULL    
+  } else {  # bs  or piecewise
     if ((!missing(df)) && (!missing(knots))) {
       # both specified
       stop("Cannot specify both 'df' and 'knots'.", call. = FALSE)
     } else if (missing(df) && missing(knots)) {
       # neither specified -- use default df
-      df <- splines_df <- piecewise_df <- 6L
+      df <- bs_df <- piecewise_df <- 6L
       knots <- NULL
     } else if ((!missing(df)) && (missing(knots))) {
       # only df specified
-      if (base_haz_splines) {
-        df <- splines_df <- df + 1
+      if (base_haz_bs) {
+        if (df < 3)
+          stop("'df' must be at least 3 for B-splines.")
+        df <- bs_df <- df + 1
       } else if (base_haz_piecewise) {
         piecewise_df <- df
       }
       knots <- NULL
     } else if ((!missing(knots)) && (missing(df))) {
       # only knots specified
+      if (any(knots < 0))
+        stop("'knots' must be non-negative.")
       df <- NULL
-      splines_df <- length(knots) + 4
+      bs_df <- length(knots) + 4
       piecewise_df <- length(knots) + 1
     } else stop("Bug found: unable to reconcile 'df' and ",
                 "'knots' arguments.", call. = FALSE)
@@ -925,8 +928,8 @@ stan_jm <- function(formulaLong, dataLong,
 
   # Evaluate spline basis (knots, df, etc) based on distribution
   # of observed event times
-  if (base_haz_splines) 
-    splines_basis <- splines::bs(eventtime[(d > 0)], df = df, knots = knots, 
+  if (base_haz_bs) 
+    bs_basis <- splines::bs(eventtime[(d > 0)], df = df, knots = knots, 
                                  Boundary.knots = c(0, max(eventtime)), 
                                  intercept = TRUE)
 
@@ -944,6 +947,7 @@ stan_jm <- function(formulaLong, dataLong,
       if (any(knots > max(eventtime)))
         stop("'knots' cannot be greater than the largest event ",
              "time", call. = FALSE)
+      knots <- c(0, knots, max(eventtime))
     }
   }
                  
@@ -1005,19 +1009,18 @@ stan_jm <- function(formulaLong, dataLong,
                         "muslope", "shared_b", "shared_coef")
   assoc <- lapply(1:M, validate_assoc, 
                   assoc, y_cnms, supported_assocs, id_var, x)
+  assoc <- list_nms(assoc, M)
 
   # Indicator of each association type, for each longitudinal submodel
   has_assoc <- sapply(supported_assocs, function(x) 
     sapply(assoc, function(y) as.integer(y[[x]])), simplify = FALSE)
   
-  which_b <- lapply(1:M, function(m) assoc[[m]]$which_b)
-  which_beta <- lapply(1:M, function(m) assoc[[m]]$which_beta)
-  which_beta_xpart <- lapply(1:M, function(m) assoc[[m]]$which_beta_xpart)
-  size_which_b <- sapply(which_b, length)
-  size_which_beta <- sapply(which_beta, length)
-  size_which_beta_xpart <- unlist(lapply(which_beta_xpart, function(x) 
-    if (length(x)) sapply(x, length) else numeric(0)))
-  a_K <- get_num_assoc_pars(has_assoc, which_b, which_beta)
+  which_b_zindex <- lapply(1:M, function(m) assoc[[m]]$which_b_zindex)
+  which_coef_zindex <- lapply(1:M, function(m) assoc[[m]]$which_coef_zindex)
+  which_coef_xindex <- lapply(1:M, function(m) assoc[[m]]$which_coef_xindex)
+  size_which_b <- sapply(which_b_zindex, length)
+  size_which_coef <- sapply(which_coef_zindex, length)
+  a_K <- get_num_assoc_pars(has_assoc, which_b_zindex, which_coef_zindex)
 
 
   #====================================================================
@@ -1231,10 +1234,10 @@ stan_jm <- function(formulaLong, dataLong,
   priorEvent_scaled <- priorEvent_ops$scaled
   priorEvent_min_prior_scale <- priorEvent_ops$min_prior_scale
   priorEvent_scale_for_weibull <- priorEvent_ops$prior_scale_for_basehaz
-  priorEvent_scale_for_splines <- priorEvent_ops$prior_scale_for_basehaz
+  priorEvent_scale_for_bs <- priorEvent_ops$prior_scale_for_basehaz
   priorEvent_scale_for_piecewise <- priorEvent_ops$prior_scale_for_basehaz
-  if (base_haz_splines) priorEvent_scale_for_splines <- 
-    maybe_broadcast(priorEvent_scale_for_splines, splines_df)  
+  if (base_haz_bs) priorEvent_scale_for_bs <- 
+    maybe_broadcast(priorEvent_scale_for_bs, bs_df)  
   if (base_haz_piecewise) priorEvent_scale_for_piecewise <- 
     maybe_broadcast(priorEvent_scale_for_piecewise, piecewise_df)  
   
@@ -1468,8 +1471,8 @@ stan_jm <- function(formulaLong, dataLong,
     # data for event submodel
     basehaz_weibull = as.integer(base_haz_weibull),
     basehaz_piecewise = as.integer(base_haz_piecewise),
-    basehaz_splines = as.integer(base_haz_splines),
-    splines_df = if (base_haz_splines) as.integer(splines_df) else 0,
+    basehaz_bs = as.integer(base_haz_bs),
+    bs_df = if (base_haz_bs) as.integer(bs_df) else 0,
     piecewise_df = if (base_haz_piecewise) as.integer(piecewise_df) else 0,
     e_centre = as.integer(centreEvent),
     e_has_intercept = as.integer(e_has_intercept),
@@ -1496,13 +1499,11 @@ stan_jm <- function(formulaLong, dataLong,
     sum_has_assoc_cs = as.integer(sum(has_assoc$muslope)),
     sum_size_which_b = as.integer(sum(size_which_b)),
     size_which_b = as.array(size_which_b),
-    which_b = as.array(unlist(which_b)),
-    sum_size_which_beta = as.integer(sum(size_which_beta)),
-    size_which_beta = as.array(size_which_beta),
-    which_beta = as.array(unlist(which_beta)),
-    sum_size_which_beta_xpart = as.integer(sum(size_which_beta_xpart)),
-    size_which_beta_xpart = as.array(size_which_beta_xpart),
-    which_beta_xpart = as.array(unlist(which_beta_xpart)),
+    which_b_zindex = as.array(unlist(which_b_zindex)),
+    sum_size_which_coef = as.integer(sum(size_which_coef)),
+    size_which_coef = as.array(size_which_coef),
+    which_coef_zindex = as.array(unlist(which_coef_zindex)),
+    which_coef_xindex = as.array(unlist(which_coef_xindex)),
     
     # priors
     priorLong_dist = priorLong_dist, 
@@ -1530,8 +1531,8 @@ stan_jm <- function(formulaLong, dataLong,
     priorLong_scale_for_dispersion = as.array(priorLong_scale_for_dispersion),
     priorEvent_scale_for_weibull = 
       if (base_haz_weibull) as.array(priorEvent_scale_for_weibull) else as.array(double(0)),
-    priorEvent_scale_for_splines = 
-      if (base_haz_splines) as.array(priorEvent_scale_for_splines) else as.array(double(0)),
+    priorEvent_scale_for_bs = 
+      if (base_haz_bs) as.array(priorEvent_scale_for_bs) else as.array(double(0)),
     priorEvent_scale_for_piecewise = 
       if (base_haz_piecewise) as.array(priorEvent_scale_for_piecewise) else as.array(double(0)),
     
@@ -1666,9 +1667,9 @@ stan_jm <- function(formulaLong, dataLong,
                        return_fam}))
   standata$any_fam_3 <- as.integer(any(standata$family == 3L))
   
-  # Cubic splines baseline hazard
-  standata$e_ns_times <- if (base_haz_splines) 
-    as.array(predict(splines_basis, standata$e_times)) else 
+  # B-splines baseline hazard
+  standata$e_ns_times <- if (base_haz_bs) 
+    as.array(predict(bs_basis, standata$e_times)) else 
     as.array(matrix(0,0,0))
   
   # Piecewise constant baseline hazard
@@ -1747,7 +1748,7 @@ stan_jm <- function(formulaLong, dataLong,
       e_z_beta = if (e_K) as.array(e_z_beta) else double(0),
       weibull_shape_unscaled = if (base_haz_weibull) 
         as.array(runif(1, 0.5, 3) / priorEvent_scale_for_weibull) else double(0),
-      splines_coefs_unscaled = if (base_haz_splines) as.array(rep(0, splines_df)) else double(0),
+      bs_coefs_unscaled = if (base_haz_bs) as.array(rep(0, bs_df)) else double(0),
       piecewise_coefs_unscaled = if (base_haz_piecewise) as.array(rep(0, piecewise_df)) else double(0),
       a_z_beta = if (a_K) as.array(rep(0, a_K)) else double(0),
       z_b = as.array(runif(standata$len_b, -0.5, 0.5)),
@@ -1798,11 +1799,13 @@ stan_jm <- function(formulaLong, dataLong,
             "y_dispersion", 
             if (base_haz_weibull) "weibull_shape",
             if (base_haz_piecewise) "piecewise_coefs",
-            if (base_haz_splines) "splines_coefs",
+            if (base_haz_bs) "bs_coefs",
             #"mean_PPD",
             "theta_L")
 
   #cat("\n--> Fitting joint model now...")
+  if (M == 1L) cat("Univariate joint model specified\n")
+  if (M > 1L)  cat("Multivariate joint model specified\n")
   if (algorithm == "sampling") {
     cat("\nPlease note the warmup phase may be much slower than",
       "later iterations!\n")             
@@ -1851,8 +1854,14 @@ stan_jm <- function(formulaLong, dataLong,
   }
   if (sum(size_which_b)) {
     temp_g_nms <- lapply(1:M, FUN = function(m) {
-                    all_nms <- paste0(paste0("Long", m, ":b["), y_cnms[[m]][[id_var]], "]")
-                    all_nms[which_b[[m]]]})
+      all_nms <- paste0(paste0("Long", m, ":b["), y_cnms[[m]][[id_var]], "]")
+      all_nms[which_b_zindex[[m]]]})
+    a_nms <- c(a_nms, paste0("Assoc|", unlist(temp_g_nms)))
+  }
+  if (sum(size_which_coef)) {
+    temp_g_nms <- lapply(1:M, FUN = function(m) {
+      all_nms <- paste0(paste0("Long", m, ":coef["), y_cnms[[m]][[id_var]], "]")
+      all_nms[which_coef_zindex[[m]]]})
     a_nms <- c(a_nms, paste0("Assoc|", unlist(temp_g_nms)))
   }
   
@@ -1873,7 +1882,7 @@ stan_jm <- function(formulaLong, dataLong,
                  d_nms,
                  if (base_haz_weibull) "Event|weibull-shape",               
                  if (base_haz_piecewise) paste0("Event|basehaz-coef", seq(piecewise_df)),               
-                 if (base_haz_splines) paste0("Event|basehaz-coef", seq(splines_df)),               
+                 if (base_haz_bs) paste0("Event|basehaz-coef", seq(bs_df)),               
                 #"mean_PPD",
                  paste0("theta_L", seq(standata$len_theta_L)),
                  "log-posterior")
@@ -1884,8 +1893,8 @@ stan_jm <- function(formulaLong, dataLong,
   names(p) <- cnms_nms       # p is num. of variables within each grouping factor
   
   # Attributes of baseline haz for passing to fitted object
-  if (base_haz_splines) {
-    attr <- attributes(splines_basis)[c("degree", "knots", "Boundary.knots", "intercept")] 
+  if (base_haz_bs) {
+    attr <- attributes(bs_basis)[c("degree", "knots", "Boundary.knots", "intercept")] 
   } else if (base_haz_piecewise) {
     attr <- list(df = piecewise_df, knots = knots)
   } else NULL
@@ -1944,7 +1953,7 @@ check_id_var <- function(id_var, y_cnms) {
            call. = FALSE)
     } else {
       lapply(y_cnms, function(x)  if (!(id_var %in% names(x)))
-        stop("`id_var' must be included as a grouping factor in each ",
+        stop("'id_var' must be included as a grouping factor in each ",
              "of the longitudinal submodels", call. = FALSE)) 
       return(id_var)
     }      
@@ -1957,7 +1966,7 @@ check_id_var <- function(id_var, y_cnms) {
         warning("The user specified 'id_var' (", paste(id_var), 
                 ") and the assumed ID variable based on the single ",
                 "grouping factor (", paste(only_cnm), ") are not the same; ", 
-                "`id_var' will be ignored", call. = FALSE, immediate. = TRUE)
+                "'id_var' will be ignored", call. = FALSE, immediate. = TRUE)
     return(only_cnm)
   }
 }
@@ -2019,62 +2028,75 @@ validate_assoc <- function(m, x, y_cnms, supported_assocs, id_var, xmat) {
   
   # Identify which subset of shared random effects were specified
   x <- x[[m]]
-  max_which_b <- length(y_cnms[[m]][[id_var]])
+  max_which_b_zindex <- length(y_cnms[[m]][[id_var]])
   val_b <- grep("^shared_b.*", x, value = TRUE)
-  val_beta <- grep("^shared_coef.*", x, value = TRUE)
+  val_coef <- grep("^shared_coef.*", x, value = TRUE)
   
   if (length(val_b)) {
     val_b <- unlist(strsplit(val_b, "shared_b"))[-1]
     if (length(val_b)) {
-      assoc$which_b <- tryCatch(eval(parse(text = paste0("c", val_b))), 
+      assoc$which_b_zindex <- tryCatch(eval(parse(text = paste0("c", val_b))), 
                               error = function(x) 
                                 stop("Incorrect specification of the 'shared_b' ",
                                      "association structure. See Examples in help ",
                                      "file.", call. = FALSE))
-    } else assoc$which_b <- seq_len(max_which_b)
-    if (any(assoc$which_b > max_which_b))
+    } else assoc$which_b_zindex <- seq_len(max_which_b_zindex)
+    if (any(assoc$which_b_zindex > max_which_b_zindex))
       stop(paste0("The indices specified for the shared random effects association ",
                   "structure are greater than the number of subject-specific random ", 
                   "effects (this error was encountered for longitudinal submodel ", m,
                   ")"), call. = FALSE)
-  } else assoc$which_b <- numeric(0)
+    names(assoc$which_b_zindex) <- y_cnms[[m]][[id_var]][assoc$which_b_zindex]
+  } else assoc$which_b_zindex <- numeric(0)
 
-  if (length(val_beta)) {
-    val_beta <- unlist(strsplit(val_beta, "shared_coef"))[-1]
-    if (length(val_beta)) {
-      assoc$which_beta <- tryCatch(eval(parse(text = paste0("c", val_beta))), 
+  if (length(val_coef)) {
+    val_coef <- unlist(strsplit(val_coef, "shared_coef"))[-1]
+    if (length(val_coef)) {
+      assoc$which_coef_zindex <- tryCatch(eval(parse(text = paste0("c", val_coef))), 
                                 error = function(x) 
                                   stop("Incorrect specification of the 'shared_coef' ",
                                        "association structure. See Examples in help ",
                                        "file.", call. = FALSE))
-    } else assoc$which_beta <- seq_len(max_which_b)
-    if (any(assoc$which_beta > max_which_b))
+    } else assoc$which_coef_zindex <- seq_len(max_which_b_zindex)
+    if (any(assoc$which_coef_zindex > max_which_b_zindex))
       stop(paste0("The indices specified for the shared random effects association ",
                   "structure are greater than the number of subject-specific random ", 
                   "effects (this error was encountered for longitudinal submodel ", m,
                   ")"), call. = FALSE)
-  } else assoc$which_beta <- numeric(0)  
+  } else assoc$which_coef_zindex <- numeric(0)  
 
-  if (length(intersect(assoc$which_b, assoc$which_beta)))
+  if (length(intersect(assoc$which_b_zindex, assoc$which_coef_zindex)))
     stop("The same random effects indices should not be specified in both ",
          "'shared_b' and 'shared_coef'. Specifying indices in 'shared_coef' ",
          "will include both the fixed and random components.", call. = FALSE)
 
-  if (length(assoc$which_beta)) {
+  if (length(assoc$which_coef_zindex)) {
     if (length(y_cnms[[m]]) > 1L)
       stop("'shared_coef' association structure cannot be used when there is ",
            "clustering at levels other than the individual-level.", call. = FALSE)
-    b_nms <- y_cnms[[m]][[id_var]][assoc$which_beta]
+    b_nms <- y_cnms[[m]][[id_var]][assoc$which_coef_zindex]
+    names(assoc$which_coef_zindex) <- b_nms
     beta_nms <- colnames(xmat[[m]])
-    assoc$which_beta_xpart <- lapply(b_nms, function(x, beta_nms) {
-      beta_i <- grep(x, beta_nms, fixed = TRUE)
-      vals <- strsplit(grep(x, beta_nms, fixed = TRUE, value = TRUE), ":")
-      sel <- sapply(vals, function(y, x) any(grepl(utils::glob2rx(x), y)), x)
-      beta_i[sel]
+    assoc$which_coef_xindex <- sapply(b_nms, function(x, beta_nms) {
+      beta_match <- grep(x, beta_nms, fixed = TRUE)
+      if (!length(beta_match)) {
+        stop("In association structure 'shared_coef', no matching fixed effect ",
+             "component could be found for the following random effect: ", x, 
+             ". Perhaps consider using 'shared_b' association structure instead.")
+      } else if (length(beta_match) > 1L) {
+        stop("Bug found: In association structure 'shared_coef', multiple ",
+             "fixed effect components have been found to match the following ",
+             "random effect: ", x)
+      }  
+      beta_match
     }, beta_nms)
   } else {
-    assoc$which_beta_xpart <- numeric(0)
+    assoc$which_coef_xindex <- numeric(0)
   }
+  
+  if (!identical(length(assoc$which_coef_zindex), length(assoc$which_coef_xindex)))
+    stop("Bug found: the lengths of the fixed and random components of the ",
+         "'shared_coef' association structure are not the same.")
   
   assoc
 }
@@ -2179,7 +2201,9 @@ get_control_args <- function(glmer = FALSE, norank = FALSE) {
 #   of which is a numeric vector with length equal to the number of
 #   quadrature nodes
 get_quadpoints <- function(nodes = 15) {
-  if (nodes == 15) {
+  if (!is.numeric(nodes) || (length(nodes) > 1L)) {
+    stop("'quadnodes' should be a numeric vector of length 1.")
+  } else if (nodes == 15) {
     list(
       points = c(
         -0.991455371120812639207,
@@ -2257,8 +2281,7 @@ get_quadpoints <- function(nodes = 15) {
         0.401397414775962222905,
         0.268488089868333440729,
         0.104656226026467265194))      
-  } else stop("The specified number of Gauss-Kronrod quadrature points 
-              ('quadnodes') must be either 7, 11 or 15.")  
+  } else stop("'quadnodes' must be either 7, 11 or 15.")  
 }
 
 
@@ -2316,13 +2339,15 @@ check_for_dispersion <- function(family) {
 #
 # @param has_assoc A named list specifying whether each longitudinal submodel 
 #   is linked to the event outcome using each potential type of association structure
-# @param which_b A list of numeric vectors indicating the random effects from each
+# @param which_b_zindex A list of numeric vectors indicating the random effects from each
 #   longitudinal submodel that are to be used in the shared_b association structure
+# @param which_coef_zindex A list of numeric vectors indicating the random effects from each
+#   longitudinal submodel that are to be used in the shared_coef association structure
 # @return Integer indicating the number of association parameters in the model 
-get_num_assoc_pars <- function(has_assoc, which_b, which_beta) {
+get_num_assoc_pars <- function(has_assoc, which_b_zindex, which_coef_zindex) {
   sel <- c("etavalue", "etaslope", "muvalue", "muslope")
   a_K <- sum(unlist(has_assoc[sel]))
-  a_K <- a_K + length(unlist(which_b)) + length(unlist(which_beta))
+  a_K <- a_K + length(unlist(which_b_zindex)) + length(unlist(which_coef_zindex))
   return(a_K)
 }
 

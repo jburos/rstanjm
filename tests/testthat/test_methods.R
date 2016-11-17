@@ -19,78 +19,101 @@
 # tests can be run using devtools::test() or manually by loading testthat 
 # package and then running the code below possibly with options(mc.cores = 4).
 
+
 library(rstanjm)
-
-seed <- 123
-set.seed(seed)
-
-iter <- 800
-chains <- 1
-refresh <- iter
-
-if (interactive()) options(mc.cores = parallel::detectCores())
-
-fixef_tol <- 0.10
-ranef_tol <- 0.10 
+context("check stanjm methods")
 
 
-context("Check methods for stan_jm objects")
+#--------  Models
 
-# Gaussian models
+if (!exists("examplejm")) example(examplejm)
 
-l1 <- lmer(y1gaus ~ t0 + (1 | id),
-           data = simdata_jm_cvassoc)
+if (!exists("l1")) l1 <- lmer(logBili ~ trt + year + (1 | id), data = pbcLong_subset)
 
-s1 <- coxph(Surv(t, d) ~ trt, 
-            data = simdata_jm_cvassoc_id)
+if (!exists("s1")) s1 <- coxph(Surv(futimeYears, death) ~ trt, data = pbcSurv_subset)
 
-fit1 <- stan_jm(formulaLong = y1gaus ~ t0 + (1 | id),
-               dataLong = simdata_jm_cvassoc, 
-               formulaEvent = Surv(t, d) ~ trt,
-               dataEvent = simdata_jm_cvassoc_id,
-               time_var = "t0", 
-               assoc = "etavalue",
-               iter = iter, refresh = refresh,
-               chains = chains, seed = seed)
-
-fit2 <- stan_jm(formulaLong = y1gaus ~ t0 + (1 | id),
-                   dataLong = simdata_jm_cvassoc, 
-                   formulaEvent = Surv(t0, t, d) ~ trt,
-                   dataEvent = simdata_jm_cvassoc,
-                   time_var = "t0", 
-                   assoc = "etavalue",
-                   iter = iter, refresh = refresh,
-                   chains = chains, seed = seed)
-
-# Poisson models
-
-l3 <- glmer(y1pois ~ t0 + (1 | id),
-            data = simdata_jm_cvassoc,
-            family = "poisson")
-
-fit3 <- update(formulaLong. = y1pois ~ t0 + (1 | id), 
-               family = "poisson")
+if (!exists("poissonjm")) poissonjm <- stan_jm(
+  formulaLong = y1pois ~ t0 + (1 | id),
+  dataLong = simdata_jm_cvassoc,
+  formulaEvent = Surv(t0, t, d) ~ trt,
+  dataEvent = simdata_jm_cvassoc,
+  time_var = "t0", iter = 2)
 
 
-    #--------------------#
+#--------  Helper functions
+
+att_names <- function(object) {
+  nms <- names(object)
+  att_nms <- names(attributes(object))
+  att_nms2 <- lapply(object, function(x) names(attributes(x)))
+  c(nms, att_nms, att_nms2)
+}
+
+check_att_names <- function(x,y) {
+  expect_identical(att_names(x), att_names(y))
+}
+
+check_sizes <- function(x,y) {
+  expect_equal(length(x), length(y))
+  expect_equal(lapply(x, dim), lapply(y, dim))
+}
+
+
+#--------  Tests
+
+test_that("coef returns correct structure", {
+  
+  # Longitudinal coefficients
+  coef_fit1 <- coef(examplejm)$Long1
+  coef_l1 <- coef(l1)
+  expect_s3_class(coef_fit1, class(coef_l1))
+  check_att_names(coef_fit1, coef_l1)
+  check_sizes(coef_fit1, coef_l1)
+  
+  # Event coefficients
+  nms1 <- grep("Intercept|Assoc", names(coef(examplejm)$Event), value = TRUE, invert = TRUE)
+  expect_identical(nms1, names(coef(s1)))
+  
+})
+
+
+test_that("coef returns correct structure even if no corresponding fixed effect component for a random effect", {
+  
+  l99 <- update(l1, formula = . ~ (t0 | id))
+  fit99 <- update(examplejm, formulaLong = . ~ (t0 | id), iter = 2)
+  coef_fit99 <- coef(fit99)$Long1
+  coef_l99 <- coef(l99)
+  check_att_names(coef_fit99, coef_l99)
+  check_sizes(coef_fit99, coef_l99)
+  
+})
+
+
+test_that("fitted returns correct structure", {
+  
+  expect_equal(length(fitted), examplejm$n_markers)
+  expect_equal(length(fitted(examplejm)$Long1), nobs(l1))
+  
+})
+
 
 test_that("confint and posterior_interval", {
   
-  expect_error(confint(fit1), regexp = "use posterior_interval")
+  expect_error(confint(examplejm), regexp = "use posterior_interval")
   
-  expect_silent(ci0 <- posterior_interval(fit1, prob = 0.5))
-  expect_silent(ci1 <- posterior_interval(fit1, prob = 0.5, 
+  expect_silent(ci0 <- posterior_interval(examplejm, prob = 0.5))
+  expect_silent(ci1 <- posterior_interval(examplejm, prob = 0.5, 
                                           regex_pars = c("^Long1", "^Event", "^Assoc")))
-  expect_silent(ci2 <- posterior_interval(fit1, prob = 0.95, regex_pars = "^Long1"))
-  expect_silent(ci3 <- posterior_interval(fit1, prob = 0.95, regex_pars = "Event"))
-  expect_silent(ci4 <- posterior_interval(fit1, prob = 0.95, regex_pars = "Assoc"))
-  expect_silent(ci5 <- posterior_interval(fit1, prob = 0.95, regex_pars = "b\\["))
-  expect_silent(ci6 <- posterior_interval(fit1, prob = 0.8, pars = "Long1|(Intercept)"))
-  expect_silent(ci7 <- posterior_interval(fit1, regex_pars = "b\\[",
+  expect_silent(ci2 <- posterior_interval(examplejm, prob = 0.95, regex_pars = "^Long1"))
+  expect_silent(ci3 <- posterior_interval(examplejm, prob = 0.95, regex_pars = "Event"))
+  expect_silent(ci4 <- posterior_interval(examplejm, prob = 0.95, regex_pars = "Assoc"))
+  expect_silent(ci5 <- posterior_interval(examplejm, prob = 0.95, regex_pars = "b\\["))
+  expect_silent(ci6 <- posterior_interval(examplejm, prob = 0.8, pars = "Long1|(Intercept)"))
+  expect_silent(ci7 <- posterior_interval(examplejm, regex_pars = "b\\[",
                                           pars = c("Long1|(Intercept)", "Event|weibull-shape")))
   
-  expect_identical(rownames(ci1), rownames(summary(fit1)))
-  b_nms <- rstanjm:::b_names(rownames(fit1$stan_summary), value = TRUE)
+  expect_identical(rownames(ci1), rownames(summary(examplejm)))
+  b_nms <- rstanjm:::b_names(rownames(examplejm$stan_summary), value = TRUE)
   expect_identical(rownames(ci5), b_nms[-length(b_nms)])
   expect_identical(rownames(ci6), c("Long1|(Intercept)"))
   expect_identical(rownames(ci7), c("Long1|(Intercept)", "Event|weibull-shape",
@@ -105,135 +128,77 @@ test_that("confint and posterior_interval", {
                regexp = "not a stanjm object")
   
   prob_msg <- "'prob' should be a single number greater than 0 and less than 1."
-  expect_error(posterior_interval(fit1, prob = c(0.25, 0.75)), regexp = prob_msg)
-  expect_error(posterior_interval(fit1, prob = 0), regexp = prob_msg)
-  expect_error(posterior_interval(fit1, prob = 1), regexp = prob_msg)
-  expect_error(posterior_interval(fit1, prob = 2), regexp = prob_msg)  
+  expect_error(posterior_interval(examplejm, prob = c(0.25, 0.75)), regexp = prob_msg)
+  expect_error(posterior_interval(examplejm, prob = 0), regexp = prob_msg)
+  expect_error(posterior_interval(examplejm, prob = 1), regexp = prob_msg)
+  expect_error(posterior_interval(examplejm, prob = 2), regexp = prob_msg) 
+  
 })
 
-test_that("ngrps is right", {
-  expect_equal(ngrps(fit1), ngrps(l1))
-  expect_equal(ngrps(fit2), ngrps(l1))
+
+test_that("ngrps returns correct number", {
+  
+  expect_equal(ngrps(examplejm), ngrps(l1))
+  expect_equal(ngrps(examplejm), ngrps(l1))
+
 })
+
 
 test_that("vcov returns correct structure", {
-  # Gaussian model
+
   col1 <- ncol(vcov(l1)) + ncol(vcov(s1)) + 1  # plus 1 for Weibull intercept
   expect_equal(ncol(vcov(fit1)), col1)
   expect_equal(ncol(vcov(fit2)), col1)
-  
-  # Poisson model
-  col3 <- ncol(vcov(l3)) + ncol(vcov(s1)) + 1 
-  expect_equal(ncol(vcov(fit3)), col3)
+
 })
+
 
 test_that("sigma method works", {
-  expect_double <- function(x) expect_type(x, "double")
   
-  # need to use :: because sigma is masked by lme4's sigma
+  # need to use :: because sigma may be masked by lme4's sigma
   rsigma <- rstanjm::sigma
-  expect_double(rsigma(fit1))
-  expect_double(rsigma(fit2))
-  expect_false(identical(rsigma(fit1), 1))
-  expect_false(identical(rsigma(fit2), 1))
   
+  # Gaussian model -- estimated sigma
+  expect_type(rsigma(examplejm), "double")
+  expect_false(identical(rsigma(examplejm), 1))
+
   # Poisson model -- no sigma
-  expect_identical(rsigma(fit3), 1)
+  expect_identical(rsigma(poissonjm), 1)
+  
 })
 
 
-att_names <- function(object) {
-  nms <- names(object)
-  att_nms <- names(attributes(object))
-  att_nms2 <- lapply(object, function(x) names(attributes(x)))
-  c(nms, att_nms, att_nms2)
-}
-check_att_names <- function(x,y) {
-  expect_identical(att_names(x), att_names(y))
-}
 test_that("VarCorr returns correct structure", {
-  vc_fit1 <- VarCorr(fit1); vc_l1 <- VarCorr(l1) 
-  vc_fit2 <- VarCorr(fit2)
-  vc_fit3 <- VarCorr(fit3); vc_l3 <- VarCorr(l3)
-  expect_s3_class(vc_fit1, class(vc_l1))
-  expect_s3_class(vc_fit2, class(vc_l1))
-  expect_s3_class(vc_fit3, class(vc_l3))
-  check_att_names(vc_fit1, vc_l1)
-  check_att_names(vc_fit2, vc_l1)
-  check_att_names(vc_fit3, vc_l3)
+  
+  vc_jm <- VarCorr(examplejm) 
+  vc_l1 <- VarCorr(l1) 
+  expect_s3_class(vc_jm, class(vc_l1))
+  check_att_names(vc_jm, vc_l1)
+  
 })
 
 
-check_sizes <- function(x,y) {
-  expect_equal(length(x), length(y))
-  expect_equal(lapply(x, dim), lapply(y, dim))
-}
 test_that("ranef returns correct structure", {
-  re_fit1 <- ranef(fit1)[[1]]; re_l1 <- ranef(l1)
-  re_fit2 <- ranef(fit2)[[1]]
-  re_fit3 <- ranef(fit3)[[1]]; re_l1 <- ranef(l3)
-  expect_s3_class(re_fit1, class(re_l1))
-  expect_s3_class(re_fit2, class(re_l1))
-  expect_s3_class(re_fit3, class(re_l3))
-  check_att_names(re_fit1, re_l1)
-  check_att_names(re_fit2, re_l1)
-  check_att_names(re_fit3, re_l3)
-  check_sizes(re_fit1, re_l1)
-  check_sizes(re_fit2, re_l1)
-  check_sizes(re_fit3, re_l3)
-})
-
-test_that("fixef returns the right coefs", {
-  # Longitudinal coefficients
-  expect_identical(names(fixef(fit1)$Long1), names(fixef(l1)))
-  expect_identical(names(fixef(fit2)$Long1), names(fixef(l1)))
-  expect_identical(names(fixef(fit3)$Long1), names(fixef(l3)))
   
-  # Event coefficients
-  nms1 <- grep("Intercept|Assoc", names(fixef(fit1)$Event), 
-               value = TRUE, invert = TRUE)
-  nms2 <- grep("Intercept|Assoc", names(fixef(fit2)$Event), 
-               value = TRUE, invert = TRUE)
-  nms3 <- grep("Intercept|Assoc", names(fixef(fit3)$Event), 
-               value = TRUE, invert = TRUE)
-  expect_identical(nms1, names(coef(s1)))
-  expect_identical(nms2, names(coef(s1)))
-  expect_identical(nms3, names(coef(s1)))
+  re_jm <- ranef(examplejm)$Long1
+  re_l1 <- ranef(l1)
+  expect_s3_class(re_jm, class(re_l1))
+  check_att_names(re_jm, re_l1)
+  check_sizes(re_jm, re_l1)
+
 })
 
-test_that("coef returns the right structure", {
-  # Longitudinal coefficients
-  coef_fit1 <- coef(fit1)$Long1; coef_l1 <- coef(l1)
-  coef_fit2 <- coef(fit2)$Long1; coef_l1 <- coef(l1)
-  coef_fit3 <- coef(fit3)$Long1; coef_l1 <- coef(l1)
-  expect_s3_class(coef_fit1, class(coef_l1))
-  expect_s3_class(coef_fit2, class(coef_l1))
-  expect_s3_class(coef_fit3, class(coef_l3))
-  check_att_names(coef_fit1, coef_l1)
-  check_att_names(coef_fit2, coef_l1)
-  check_att_names(coef_fit3, coef_l3)
-  check_sizes(coef_fit1, coef_l1)
-  check_sizes(coef_fit2, coef_l1)
-  check_sizes(coef_fit3, coef_l3)
+
+test_that("fixef returns correct structure", {
   
+  # Longitudinal coefficients
+  expect_identical(names(fixef(examplejm)$Long1), names(fixef(l1)))
+
   # Event coefficients
-  nms1 <- grep("Intercept|Assoc", names(coef(fit1)$Event), 
-               value = TRUE, invert = TRUE)
-  nms2 <- grep("Intercept|Assoc", names(coef(fit2)$Event), 
-               value = TRUE, invert = TRUE)
-  nms3 <- grep("Intercept|Assoc", names(coef(fit3)$Event), 
-               value = TRUE, invert = TRUE)
+  nms1 <- grep("Intercept|Assoc", names(fixef(examplejm)$Event), value = TRUE, invert = TRUE)
   expect_identical(nms1, names(coef(s1)))
-  expect_identical(nms2, names(coef(s1)))
-  expect_identical(nms3, names(coef(s1)))
+
 })
 
-test_that("coef ok if any 'ranef' missing from 'fixef'", {
-  l99 <- update(l1, formula = . ~ (t0 | id))
-  fit99 <- update(fit1, formulaLong = . ~ (t0 | id))
-  coef_fit99 <- coef(fit99)$Long1; coef_l99 <- coef(l99)
-  check_att_names(coef_fit99, coef_l99)
-  check_sizes(coef_fit99, coef_l99)
-})
 
 

@@ -40,7 +40,7 @@
 #'   computation time.
 #'   
 #' @examples
-#' \donttest{
+#' 
 #'   examplejm <- 
 #'      stan_jm(formulaLong = logBili ~ year + (1 | id), 
 #'              dataLong = pbcLong_subset,
@@ -48,6 +48,6 @@
 #'              dataEvent = pbcSurv_subset,
 #'              time_var = "year",
 #'              chains = 1, cores = 1, seed = 12345)
-#' }
+#' 
 #' 
 NULL

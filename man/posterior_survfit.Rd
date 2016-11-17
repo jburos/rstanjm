@@ -167,7 +167,7 @@ If the user wishes to obtain predictions using the \code{newdata}
   about using the \code{newdata} argument with binomial models.
 }
 \examples{
-\donttest{
+
   # Run example model if not already loaded
   if (!exists("examplejm")) example(examplejm)
   
@@ -234,8 +234,7 @@ If the user wishes to obtain predictions using the \code{newdata}
   ps4 <- posterior_survfit(examplejm, standardise = TRUE, 
                            times = 0, extrapolate = TRUE)
   plot(ps4)                         
-  
-}
+
  
 }
 \seealso{

@@ -171,7 +171,7 @@
 #'   marginal or subject-specific longitudinal trajectories.
 #'   
 #' @examples
-#' \donttest{
+#' 
 #'   # Run example model if not already loaded
 #'   if (!exists("examplejm")) example(examplejm)
 #'   
@@ -238,8 +238,7 @@
 #'   ps4 <- posterior_survfit(examplejm, standardise = TRUE, 
 #'                            times = 0, extrapolate = TRUE)
 #'   plot(ps4)                         
-#'   
-#' }
+#' 
 #'  
 posterior_survfit <- function(object, newdata = NULL,  
                               extrapolate = TRUE, control = list(), 

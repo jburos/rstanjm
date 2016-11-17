@@ -5,6 +5,9 @@ sudo: false
 r: devel
 cache: packages
 
+notifications:
+  email: false
+
 env:
   matrix: 
     - CXX_OLEVEL=2 CXX=clang++
