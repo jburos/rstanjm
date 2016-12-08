@@ -863,7 +863,7 @@ stan_jm <- function(formulaLong, dataLong,
   e_mc$x <- TRUE
   e_mod <- eval(e_mc, parent.frame())
   e_fr <- e_mf <- expand.model.frame(e_mod, id_var, na.expand = TRUE)
-  e_mf <- cbind(unclass(e_mf[,1]), e_mf[,-1])
+  e_mf <- cbind(unclass(e_mf[,1]), e_mf[, -1, drop = FALSE])
 
   # Check ID sorting
   e_id_list <- factor(unique(e_mf[, id_var]))
