@@ -957,8 +957,9 @@ stan_jm <- function(formulaLong, dataLong,
     e_x_quadtime  <- cbind("(Intercept)" = rep(1, NROW(e_x_quadtime)), e_x_quadtime)
 
   # Centering of design matrix for event model
-  e_x <- as.matrix(e_x_quadtime)  
-  e_has_intercept <- grepl("(Intercept", colnames(e_x)[1L], fixed = TRUE)
+  e_x <- as.matrix(e_x_quadtime) 
+  e_has_intercept <- if (length(colnames(e_x))) 
+    grepl("(Intercept", colnames(e_x)[1L], fixed = TRUE) else FALSE
   e_xtemp <- if (e_has_intercept) e_x[, -1L, drop=FALSE] else e_x
   if (centreEvent) {
     e_xbar <- colMeans(e_xtemp)
