@@ -172,7 +172,7 @@ plot.predict.stanjm <- function(x, ids = NULL, limits = c("ci", "pi", "none"),
                                  time = build_smoothlim$data[[1]]$x,
                                  lb = build_smoothlim$data[[1]]$y,
                                  ub = build_smoothlim$data[[2]]$y)
-      panel_id_map <- build_smoothlim$panel$layout[, c("PANEL", "id"), drop = FALSE]
+      panel_id_map <- build_smoothlim$layout$panel_layout[, c("PANEL", "id"), drop = FALSE]
       df_smoothlim <- merge(df_smoothlim, panel_id_map)
       lim_mapp <- list(mapping = aes_string(x = "time", ymin = "lb", ymax = "ub"), 
                        data = df_smoothlim)

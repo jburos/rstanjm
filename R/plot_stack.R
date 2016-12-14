@@ -68,12 +68,12 @@ plot_stack <- function(yplot, survplot) {
          call. = FALSE)   
   
   y_build <- lapply(yplot, ggplot_build)
-  y_layout <- lapply(y_build, function(x) x$panel$layout)
+  y_layout <- lapply(y_build, function(x) x$layout$panel_layout)
   y_ids <- lapply(y_layout, function(x)
     if (!"id" %in% colnames(x)) NULL else x[["id"]])
   
   e_build <- ggplot_build(survplot)
-  e_layout <- e_build$panel$layout    
+  e_layout <- e_build$layout$panel_layout    
   e_ids <- if (!"id" %in% colnames(e_layout)) NULL else e_layout[["id"]]
   
   lapply(y_ids, function(x, e_ids) {
