@@ -28,7 +28,7 @@ decov(regularization = 1, concentration = 1, shape = 1, scale = 1)
 priorLong_options(prior_scale_for_dispersion = 5, min_prior_scale = 1e-12,
   scaled = TRUE)
 
-priorEvent_options(prior_scale_for_basehaz = 5, min_prior_scale = 1e-12,
+priorEvent_options(prior_scale_for_basehaz = 50, min_prior_scale = 1e-12,
   scaled = TRUE)
 
 priorAssoc_options(min_prior_scale = 1e-12)

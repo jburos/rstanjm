@@ -1302,9 +1302,9 @@ stan_jm <- function(formulaLong, dataLong,
            paste(names(ok_intercept_dists), collapse = ", "))
     priorEvent_dist_for_intercept <- 
       ifelse(priorEvent_dist_for_intercept == "normal", 1L, 2L)
-    # !!! Need to think about whether 10 is appropriate default value here      
+    # !!! Need to think about whether 50 is appropriate default value here      
     priorEvent_scale_for_intercept <- 
-      set_prior_scale(priorEvent_scale_for_intercept, default = 10, 
+      set_prior_scale(priorEvent_scale_for_intercept, default = 50, 
                       link = "none")
     priorEvent_df_for_intercept <- min(.Machine$double.xmax, priorEvent_df_for_intercept)
   }
@@ -1332,7 +1332,7 @@ stan_jm <- function(formulaLong, dataLong,
       priorAssoc_dist <- ifelse(priorAssoc_dist == "normal", 1L, 2L)
       # !!! Need to potentially have appropriate default value here depending on 
       #     type of association structure
-      priorAssoc_scale <- set_prior_scale(priorAssoc_scale, default = 2, 
+      priorAssoc_scale <- set_prior_scale(priorAssoc_scale, default = 25, 
                                      link = "none")      
     } else {
       priorAssoc_dist <- ifelse(priorAssoc_dist == "hs", 3L, 4L)

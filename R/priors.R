@@ -254,7 +254,7 @@ priorLong_options <- function(prior_scale_for_dispersion = 5,
 #'   hazard within each interval, which are given normal distributions
 #'   with location 0.
 #'  
-priorEvent_options <- function(prior_scale_for_basehaz = 5,
+priorEvent_options <- function(prior_scale_for_basehaz = 50,
                                min_prior_scale = 1e-12, 
                                scaled = TRUE) {
   validate_parameter_value(prior_scale_for_basehaz)
