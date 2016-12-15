@@ -16,6 +16,52 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
+# Test if family object corresponds to a linear mixed model
+#
+# @param x A family object
+is.lmer <- function(x) {
+  if (!is(x, "family"))
+    stop("x should be a family object.", call. = FALSE)
+  isTRUE((x$family == "gaussian") && (x$link == "identity"))
+}
+
+# Convert a standardised quadrature node to an unstandardised value based on 
+# the specified integral limits
+#
+# @param x An unstandardised quadrature node
+# @param a The lower limit(s) of the integral, possibly a vector
+# @param b The upper limit(s) of the integral, possibly a vector
+unstandardise_quadpoints <- function(x, a, b) {
+  if (!identical(length(x), 1L) || !is.numeric(x))
+    stop("'x' should be a single numeric value.", call. = FALSE)
+  if (!all(is.numeric(a), is.numeric(b)))
+    stop("'a' and 'b' should be numeric.", call. = FALSE)
+  if (!identical(length(a), length(b)))
+    stop("'a' and 'b' should be vectors of the same length.", call. = FALSE)
+  if (any((b - a) < 0))
+    stop("The upper limits for the integral ('b' values) should be greater than ",
+         "the corresponding lower limits for the integral ('a' values).", call. = FALSE)
+  ((b - a) / 2) * x + ((b + a) / 2)
+}
+
+# Convert a standardised quadrature weight to an unstandardised value based on 
+# the specified integral limits
+#
+# @param x An unstandardised quadrature weight
+# @param a The lower limit(s) of the integral, possibly a vector
+# @param b The upper limit(s) of the integral, possibly a vector
+unstandardise_quadweights <- function(x, a, b) {
+  if (!identical(length(x), 1L) || !is.numeric(x))
+    stop("'x' should be a single numeric value.", call. = FALSE)
+  if (!all(is.numeric(a), is.numeric(b)))
+    stop("'a' and 'b' should be numeric.", call. = FALSE)
+  if (!identical(length(a), length(b)))
+    stop("'a' and 'b' should be vectors of the same length.", call. = FALSE)
+  if (any((b - a) < 0))
+    stop("The upper limits for the integral ('b' values) should be greater than ",
+         "the corresponding lower limits for the integral ('a' values).", call. = FALSE)
+  ((b - a) / 2) * x
+}
 
 # Test if object is stanjm class
 #

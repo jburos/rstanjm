@@ -797,6 +797,7 @@ stan_jm <- function(formulaLong, dataLong,
     }
   })
     
+  is_lmer <- lapply(family, is.lmer)
   
   #=========================
   # Data for event submodel
@@ -873,65 +874,68 @@ stan_jm <- function(formulaLong, dataLong,
 
   e_y <- e_mod$y
   
-  # For each individual, identify final event time and event indicator
+  # Entry and exit times
+  entrytime <- rep(0, length(id_list)) # entry times current assumed to be zero for all individuals
   if (attr(e_y, "type") == "counting") {
     tvc         <- TRUE
-    mf_event    <- do.call(rbind, lapply(
-                             split(e_mf, e_mf[, id_var]),
-                             function(d) d[which.max(d[,"stop"]), ]))
-    flist_event <- mf_event[, id_var]
-    eventtime   <- mf_event$stop
-    d           <- mf_event$status
-    names(eventtime) <- names(d) <- flist_event
+    mf_event    <- do.call(rbind, lapply(split(e_mf, e_mf[, id_var]), function(d) d[which.max(d[,"stop"]), ]))
+    eventtime   <- mf_event[["stop"]]
+  } else if (attr(e_y, "type") == "right") {
+    tvc         <- FALSE 
+    mf_event    <- e_mf
+    eventtime   <- mf_event[["time"]]
+  } else stop("Only 'right' or 'counting' type Surv objects are allowed 
+               on the LHS of the event submodel formula")
+  
+  # Event indicator and ID list
+  d           <- mf_event[["status"]]  
+  flist_event <- mf_event[[id_var]]
+  names(eventtime) <- names(d) <- flist_event
+  
+  # Unstandardised quadrature points
+  quadpoint <- lapply(quadpoints$points, unstandardise_quadpoints, entrytime, eventtime)
+  t_q <- c(list(eventtime), quadpoint)
+  names(quadpoint) <- paste0("quadpoint", seq(quadnodes))
+  names(t_q) <- c("eventtime", names(quadpoint))
+  
+  # Obtain design matrix at event times and unstandardised quadrature points
+  
+  if (tvc) {  # time varying covariates in event model
     
+    # Model frame at event times
     e_mf           <- data.table(e_mf, key = c(id_var, "start"))
     e_mf[["start"]] <- as.numeric(e_mf[["start"]])
     e_mf_eventtime <- e_mf[, .SD[.N], by = get(id_var)]
-    e_mf_eventtime <- e_mf_eventtime[, get := NULL]
-    # Unstandardised quadrature points
-    quadpoint <- lapply(quadpoints$points, FUN = function(x) 
-                          (eventtime/2) * x + (eventtime/2))
+    e_mf_eventtime <- e_mf_eventtime[, get := NULL]   
+    
     # Model frame corresponding to observation times which are 
     #   as close as possible to the unstandardised quadrature points                      
-    e_mf_quadtime  <- do.call(rbind, lapply(quadpoint, FUN = function(x) 
-                         e_mf[data.table::SJ(flist_event, x), 
-                         roll = TRUE, rollends = c(TRUE, TRUE)]))
+    e_mf_q  <- do.call(rbind, lapply(quadpoint, FUN = function(x)
+      e_mf[data.table::SJ(flist_event, x), roll = TRUE, rollends = c(TRUE, TRUE)]))
+    
     # Model frame evaluated at both event times and quadrature points
-    e_mf_quadtime <- rbind(e_mf_eventtime, e_mf_quadtime, idcol = "xbind.id")
+    e_mf_q <- rbind(e_mf_eventtime, e_mf_q)
+    
     # Design matrix evaluated at event times and quadrature points
     #   NB Here there are time varying covariates in the event submodel and
     #   therefore the design matrix differs depending on the quadrature point 
     fm_RHS <- delete.response(terms(e_mod))
-    e_x_quadtime   <- model.matrix(fm_RHS, data = e_mf_quadtime)
-  } else if (attr(e_y, "type") == "right") {
-    tvc         <- FALSE 
-    mf_event    <- e_mf
-    flist_event <- mf_event[, id_var]
-    eventtime   <- mf_event$time
-    d           <- mf_event$status
-    names(eventtime) <- names(d) <- flist_event
-    # Unstandardised quadrature points
-    quadpoint <- lapply(quadpoints$points, FUN = function(x) {
-      tmp <- (eventtime/2) * x + (eventtime/2)
-      names(tmp) <- flist_event
-      tmp
-    })
-    names(quadpoint) <- paste0("quadpoint", seq(quadnodes))
+    e_x_quadtime   <- model.matrix(fm_RHS, data = e_mf_q)
+    
+  } else {  # no time varying covariates in event model
+    
     # Design matrix evaluated at event times and quadrature points
     #   NB Here there are no time varying covariates in the event submodel and
     #   therefore the design matrix is identical at event time and at all
     #   quadrature points
-    e_x_quadtime   <- do.call(rbind, lapply(1:(quadnodes + 1), 
-                                            FUN = function(x) e_mod$x))
-  } else stop("Only 'right' or 'counting' type Surv objects are allowed 
-               on the LHS of the event submodel formula")
+    e_x_quadtime   <- do.call(rbind, lapply(1:(quadnodes + 1), FUN = function(x) e_mod$x))
+    
+  }
 
-  # Evaluate spline basis (knots, df, etc) based on distribution
-  # of observed event times
+  # Evaluate spline basis (knots, df, etc) based on distributionof observed event times
   if (base_haz_bs) 
     bs_basis <- splines::bs(eventtime[(d > 0)], df = df, knots = knots, 
-                                 Boundary.knots = c(0, max(eventtime)), 
-                                 intercept = TRUE)
+                            Boundary.knots = c(0, max(eventtime)), intercept = TRUE)
 
   # Evaluate cut points for piecewise constant
   if (base_haz_piecewise) {
@@ -950,7 +954,7 @@ stan_jm <- function(formulaLong, dataLong,
       knots <- c(0, knots, max(eventtime))
     }
   }
-                 
+            
   # Incorporate intercept term (since Cox model does not have intercept)
   # -- depends on baseline hazard
   if (base_haz_weibull & (!"(Intercept)" %in% colnames(e_x_quadtime)))
@@ -967,10 +971,8 @@ stan_jm <- function(formulaLong, dataLong,
   }
   e_K <- NCOL(e_xtemp)
   Npat <- length(eventtime)
-  weights_rep <- rep(quadpoints$weights, each = Npat)  
-  eventtime_rep <- rep(eventtime, times = quadnodes)  
-  weights_times_half_eventtime <- 0.5 * weights_rep * eventtime_rep   
-
+  quadweight <- unlist(lapply(quadpoints$weights, unstandardise_quadweights, entrytime, eventtime))
+  
   # Construct weights for event submodel
   if (has_weights) {
     flist_df <- data.frame(id = flist_event)
@@ -983,10 +985,6 @@ stan_jm <- function(formulaLong, dataLong,
     e_weights_rep <- rep(0.0, Npat * quadnodes)
   }
  
-  # Model based initial values or informative priors
-  e_beta <- e_mod$coef
-  se_e_beta <- sqrt(diag(e_mod$var))
-    
   # Error checks for the ID variable
   if (!identical(id_list, factor(sort(unique(flist_event)))))
     stop("The patient IDs (levels of the grouping factor) included ",
@@ -996,7 +994,10 @@ stan_jm <- function(formulaLong, dataLong,
          "event submodels. Perhaps you intended to use 'start/stop' notation ",
          "for the Surv() object.")
     
-
+  # Initial values
+  e_beta <- e_mod$coef
+  se_e_beta <- sqrt(diag(e_mod$var))
+  
   #================================
   # Data for association structure
   #================================
@@ -1007,7 +1008,7 @@ stan_jm <- function(formulaLong, dataLong,
   
   # Check association structure
   supported_assocs <- c("null", "etavalue", "muvalue", "etaslope", 
-                        "muslope", "shared_b", "shared_coef")
+                        "muslope", "etalag", "mulag", "shared_b", "shared_coef")
   assoc <- lapply(1:M, validate_assoc, 
                   assoc, y_cnms, supported_assocs, id_var, x)
   assoc <- list_nms(assoc, M)
@@ -1016,66 +1017,61 @@ stan_jm <- function(formulaLong, dataLong,
   has_assoc <- sapply(supported_assocs, function(x) 
     sapply(assoc, function(y) as.integer(y[[x]])), simplify = FALSE)
   
-  which_b_zindex <- lapply(1:M, function(m) assoc[[m]]$which_b_zindex)
-  which_coef_zindex <- lapply(1:M, function(m) assoc[[m]]$which_coef_zindex)
-  which_coef_xindex <- lapply(1:M, function(m) assoc[[m]]$which_coef_xindex)
+  which_b_zindex <- lapply(assoc, `[[`, "which_b_zindex")
+  which_coef_zindex <- lapply(assoc, `[[`, "which_coef_zindex")
+  which_coef_xindex <- lapply(assoc, `[[`, "which_coef_xindex")
   size_which_b <- sapply(which_b_zindex, length)
   size_which_coef <- sapply(which_coef_zindex, length)
   a_K <- get_num_assoc_pars(has_assoc, which_b_zindex, which_coef_zindex)
 
 
-  #====================================================================
-  # Longitudinal submodel: calculate design matrices, and id vector 
+  #==================================================
+  # Longitudinal submodel: calculate design matrices 
   # at the event times and quadrature points
-  #====================================================================
+  #==================================================
     
   # Items to store for each longitudinal submodel
-  y_mod_q         <- list()   # fitted long. submodels at quadpoints
+  y_mod_q         <- list()   # fitted long. submodels at event times and quadrature points
   y_fr            <- list()   # model frame with the addition of time_var
-  xq              <- list()   # design matrix before removing intercept 
-                              # and centering
-  xqtemp          <- list()   # design matrix (without intercept) for 
-                              # longitudinal submodel calculated at event 
-                              # and quad times, possibly centred
+  xq              <- list()   # design matrix before removing intercept and centering
+  xqtemp          <- list()   # design matrix after removing intercept and possibly centred
   Zq              <- list()   # random effects matrix
-  y_cnmsq         <- list()
+  y_cnmsq         <- list() 
   y_flistq        <- list()
+  
   y_mod_q_eps     <- list()   # fitted long. submodels under time shift of epsilon
-  xq_eps          <- list()   # xq with time shift of epsilon
-  xqtemp_eps      <- list()   # xqtemp with time shift of epsilon  
-  Zq_eps          <- list()   # random effects matrix with time shift of epsilon
+  xq_eps          <- list()   
+  xqtemp_eps      <- list()  
+  Zq_eps          <- list()  
   y_cnmsq_eps     <- list()
   y_flistq_eps    <- list()
+  
+  y_mod_q_lag     <- list()   # fitted long. submodels under time lag
+  xq_lag          <- list()  
+  xqtemp_lag      <- list()  
+  Zq_lag          <- list()  
+  y_cnmsq_lag     <- list()
+  y_flistq_lag    <- list()
   
   # Set up a second longitudinal model frame which includes the time variable
   for (m in 1:M) {
     m_mc_temp         <- m_mc[[m]]
     m_mc_temp[[1]]    <- quote(lme4::glFormula)    
-    m_mc_temp$formula <- do.call(update.formula, list(
-                                    m_mc[[m]]$formula, 
-                                    paste0("~ . +", time_var))) 
-    if ((family[[m]]$family == "gaussian") && (family[[m]]$link == "identity")) {
-      m_mc_temp$control <- get_control_args(norank = TRUE)
-    } else {
-      m_mc_temp$control <- get_control_args(glmer = TRUE, norank = TRUE)
-    }     
+    m_mc_temp$formula <- do.call(update.formula, list(m_mc[[m]]$formula, paste0("~ . +", time_var))) 
+    m_mc_temp$control <- get_control_args(glmer = !is_lmer[[m]], norank = TRUE)
     
     # Obtain model frame with time_var definitely included
     y_mod_wtime <- eval(m_mc_temp, parent.frame())      
     y_fr[[m]] <- y_mod_wtime$fr
     
-    # Update model based on predvars and obtain new model frame
+    # Convert model frame to data.table
     mf <- data.table::data.table(y_mod_wtime$fr, key = c(id_var, time_var))
     mf[[time_var]] <- as.numeric(mf[[time_var]])
   
-    # Identify which row in longitudinal data is closest to event time
-    mf_eventtime <- mf[data.table::SJ(flist_event, eventtime), 
-                          roll = TRUE, rollends = c(FALSE, TRUE)]
-  
-    # Identify which row in longitudinal data is closest to quadrature point
+    # Identify row in longitudinal data closest to event time or quadrature point
     #   NB if the quadrature point is earlier than the first observation time, 
-    #   then covariates values are carried back to avoid missing values - I
-    #   should add a warning for when this is the case! In any other case, the 
+    #   then covariates values are carried back to avoid missing values.
+    #   In any other case, the 
     #   observed covariates values from the most recent observation time
     #   preceeding the quadrature point are carried forward to represent the 
     #   covariate value(s) at the quadrature point. (To avoid missingness  
@@ -1083,21 +1079,18 @@ stan_jm <- function(formulaLong, dataLong,
     #   values can be carried). If no time varying covariates are present in
     #   the longitudinal submodel (other than the time variable) then nothing 
     #   is carried forward or backward.
-    mf_quadtime <- do.call(rbind, lapply(quadpoint, FUN = function(x) 
-                           mf[data.table::SJ(flist_event, x), 
-                           roll = TRUE, rollends = c(TRUE, TRUE)]))
-    has_assoc$etaslope[m]
+    mf_q <- do.call(rbind, lapply(t_q, FUN = function(x) 
+      mf[data.table::SJ(flist_event, x), roll = TRUE, rollends = c(TRUE, TRUE)]))
+    
     # Obtain long design matrix evaluated at event times (xbind.id == 1) and  
     #   quadrature points (xbind.id == 2)
-    names(mf_eventtime)[names(mf_eventtime) == "eventtime"] <- time_var
-    names(mf_quadtime)[names(mf_quadtime) == "quadpoint"]   <- time_var
-    mf_quadtime <- rbind(mf_eventtime, mf_quadtime, idcol = "xbind.id")
+    names(mf_q)[names(mf_q) == "t_q"] <- time_var
     m_mc_temp$formula <- m_mc[[m]]$formula  # return to original formula
     m_mc_temp$formula <- use_these_vars(y_mod[[m]], 
                                         c(y_vars[[m]]$formvars$fixed[-1], y_vars[[m]]$formvars$random[-1]), 
                                         c(y_vars[[m]]$predvars$fixed[-1], y_vars[[m]]$predvars$random[-1]))
     m_mc_temp$control <- m_mc[[m]]$control  # return to original control args
-    m_mc_temp$data    <- mf_quadtime        # data at event and quadrature times
+    m_mc_temp$data    <- mf_q               # data at event and quadrature times
     y_mod_q[[m]] <- eval(m_mc_temp, parent.frame())     
          
     xq[[m]] <- as.matrix(y_mod_q[[m]]$X)
@@ -1115,10 +1108,10 @@ stan_jm <- function(formulaLong, dataLong,
     # If association structure is based on slope, then calculate design 
     # matrices under a time shift of epsilon
     if (sum(has_assoc$etaslope, has_assoc$muslope)) {
-      mf_quadtime_eps <- mf_quadtime
-      mf_quadtime_eps[[time_var]] <- mf_quadtime_eps[[time_var]] + eps
+      mf_q_eps <- mf_q
+      mf_q_eps[[time_var]] <- mf_q_eps[[time_var]] + eps
       m_mc_temp_eps <- m_mc_temp
-      m_mc_temp_eps$data    <- mf_quadtime_eps
+      m_mc_temp_eps$data <- mf_q_eps
       y_mod_q_eps[[m]] <- eval(m_mc_temp_eps, parent.frame())
       xq_eps[[m]] <- as.matrix(y_mod_q_eps[[m]]$X)
       xqtemp_eps[[m]] <- if (y_has_intercept[m]) xq_eps[[m]][, -1L, drop=FALSE] else xq_eps[[m]]  
@@ -1126,6 +1119,27 @@ stan_jm <- function(formulaLong, dataLong,
       Zq_eps[[m]] <- Matrix::t(y_mod_q_eps[[m]]$reTrms$Zt)
       y_cnmsq_eps[[m]] <- y_mod_q_eps[[m]]$reTrms$cnms
       y_flistq_eps[[m]] <- y_mod_q_eps[[m]]$reTrms$flist
+    } 
+    
+    # If association structure is based on a time lag, then calculate design 
+    # matrices under the specified time lag
+    if (sum(has_assoc$etalag, has_assoc$mulag)) {
+      t_q_lag <- lapply(t_q, function(x) {
+        tmp <- x - assoc[[m]]$which_lag
+        tmp[tmp < 0] <- 0.0  # use baseline where lagged t is before baseline
+        tmp
+      })
+      mf_q_lag <- do.call(rbind, lapply(t_q_lag, FUN = function(x) 
+        mf[data.table::SJ(flist_event, x), roll = TRUE, rollends = c(TRUE, TRUE)]))
+      m_mc_temp_lag <- m_mc_temp
+      m_mc_temp_lag$data <- mf_q_lag
+      y_mod_q_lag[[m]] <- eval(m_mc_temp_lag, parent.frame())
+      xq_lag[[m]] <- as.matrix(y_mod_q_lag[[m]]$X)
+      xqtemp_lag[[m]] <- if (y_has_intercept[m]) xq_lag[[m]][, -1L, drop=FALSE] else xq_lag[[m]]  
+      if (centreLong) xqtemp_lag[[m]] <- sweep(xqtemp_lag[[m]], 2, xbar[[m]], FUN = "-")
+      Zq_lag[[m]] <- Matrix::t(y_mod_q_lag[[m]]$reTrms$Zt)
+      y_cnmsq_lag[[m]] <- y_mod_q_lag[[m]]$reTrms$cnms
+      y_flistq_lag[[m]] <- y_mod_q_lag[[m]]$reTrms$flist
     }    
   }
   
@@ -1486,18 +1500,22 @@ stan_jm <- function(formulaLong, dataLong,
     e_xbar = if (centreEvent) as.array(e_xbar) else double(0),
     e_weights = as.array(e_weights),
     e_weights_rep = as.array(e_weights_rep),
-    quadweight_times_half_eventtime = weights_times_half_eventtime,
+    quadweight = quadweight,
     
     # data for association structure
     assoc = as.integer(a_K > 0L),
     has_assoc_ev = as.array(as.integer(has_assoc$etavalue)),
     has_assoc_es = as.array(as.integer(has_assoc$etaslope)),
-    has_assoc_cv = as.array(as.integer(has_assoc$muvalue)),
-    has_assoc_cs = as.array(as.integer(has_assoc$muslope)),
+    has_assoc_el = as.array(as.integer(has_assoc$etalag)),
+    has_assoc_mv = as.array(as.integer(has_assoc$muvalue)),
+    has_assoc_ms = as.array(as.integer(has_assoc$muslope)),
+    has_assoc_ml = as.array(as.integer(has_assoc$mulag)),
     sum_has_assoc_ev = as.integer(sum(has_assoc$etavalue)),
     sum_has_assoc_es = as.integer(sum(has_assoc$etaslope)),
-    sum_has_assoc_cv = as.integer(sum(has_assoc$muvalue)),
-    sum_has_assoc_cs = as.integer(sum(has_assoc$muslope)),
+    sum_has_assoc_el = as.integer(sum(has_assoc$etalag)),
+    sum_has_assoc_mv = as.integer(sum(has_assoc$muvalue)),
+    sum_has_assoc_ms = as.integer(sum(has_assoc$muslope)),
+    sum_has_assoc_ml = as.integer(sum(has_assoc$mulag)),
     sum_size_which_b = as.integer(sum(size_which_b)),
     size_which_b = as.array(size_which_b),
     which_b_zindex = as.array(unlist(which_b_zindex)),
@@ -1638,7 +1656,25 @@ stan_jm <- function(formulaLong, dataLong,
   standata$w_Zq_eps <- parts_Zq_eps$w
   standata$v_Zq_eps <- parts_Zq_eps$v
   standata$u_Zq_eps <- as.array(parts_Zq_eps$u)    
+
+  # data for calculating eta lag in GK quadrature 
+  standata$y_Xq_lag <- if (sum(has_assoc$etalag, has_assoc$mulag))
+    as.array(as.matrix(Matrix::bdiag(xqtemp_lag))) else as.array(matrix(0,0,sum_y_K))
+  if (length(Zq_lag)) {
+    groupq_lag <- lapply(1:M, function(x) {
+      pad_reTrms(Z = Zq_lag[[x]], 
+                 cnms = y_cnmsq_lag[[x]], 
+                 flist = y_flistq_lag[[x]])})
+    Zq_lag <- lapply(1:M, function(x) groupq_lag[[x]]$Z)
+    Zq_lag_merge <- Matrix::bdiag(Zq_lag) 
+  } else Zq_lag_merge <- matrix(0,0,0)
+  parts_Zq_lag <- rstan::extract_sparse_parts(Zq_lag_merge)
+  standata$num_non_zero_Zq_lag <- as.integer(length(parts_Zq_lag$w))
+  standata$w_Zq_lag <- parts_Zq_lag$w
+  standata$v_Zq_lag <- parts_Zq_lag$v
+  standata$u_Zq_lag <- as.array(parts_Zq_lag$u)    
   
+    
   # hyperparameters for random effects model
   if (prior_covariance$dist == "decov") {
     decov_args <- prior_covariance
@@ -1852,6 +1888,8 @@ stan_jm <- function(formulaLong, dataLong,
     if (has_assoc$muvalue[m]) a_nms <- c(a_nms, paste0("Assoc|Long", m,":mu-value"))
     if (has_assoc$etaslope[m]) a_nms <- c(a_nms, paste0("Assoc|Long", m,":eta-slope"))
     if (has_assoc$muslope[m]) a_nms <- c(a_nms, paste0("Assoc|Long", m,":mu-slope"))
+    if (has_assoc$etalag[m]) a_nms <- c(a_nms, paste0("Assoc|Long", m,":eta-lagged"))
+    if (has_assoc$mulag[m]) a_nms <- c(a_nms, paste0("Assoc|Long", m,":mu-lagged"))
   }
   if (sum(size_which_b)) {
     temp_g_nms <- lapply(1:M, FUN = function(m) {
@@ -1915,7 +1953,7 @@ stan_jm <- function(formulaLong, dataLong,
   fit <- nlist(stanfit, family, formula = c(formulaLong, formulaEvent), 
                           id_var, time_var, offset = NULL, quadnodes,
                           base_haz = list(type = base_haz, attr = attr),
-                          M, cnms, y_N, y_cnms, y_flist, Npat, n_grps, assoc = has_assoc, 
+                          M, cnms, y_N, y_cnms, y_flist, Npat, n_grps, assoc = lapply(has_assoc, as.logical), 
                           fr = c(y_fr, list(e_fr)),
                           x = lapply(1:M, function(i) 
                             if (getRversion() < "3.2.0") Matrix::cBind(x[[i]], Z[[i]]) else cbind2(x[[i]], Z[[i]])),
@@ -2004,6 +2042,8 @@ validate_assoc <- function(m, x, y_cnms, supported_assocs, id_var, xmat) {
   if (!is.null(x_tmp)) {
     x_tmp <- gsub("^shared_b.*", "shared_b", x_tmp) 
     x_tmp <- gsub("^shared_coef\\(.*", "shared_coef", x_tmp) 
+    x_tmp <- gsub("^etalag\\(.*", "etalag", x_tmp) 
+    x_tmp <- gsub("^mulag\\(.*", "mulag", x_tmp) 
   }
   assoc <- sapply(supported_assocs, function(y) y %in% x_tmp, simplify = FALSE)
   if (is.null(x_tmp)) {
@@ -2021,7 +2061,10 @@ validate_assoc <- function(m, x, y_cnms, supported_assocs, id_var, xmat) {
            "together", call. = FALSE)
     if (assoc$etaslope && assoc$muslope)
       stop("In 'assoc' argument, 'etaslope' and 'muslope' cannot be specified ",
-           "together", call. = FALSE)    
+           "together", call. = FALSE)   
+    if (assoc$etavalue && assoc$muvalue)
+      stop("In 'assoc' argument, 'etalag' and 'mulag' cannot be specified ",
+           "together", call. = FALSE)
   } else { 
     stop("'assoc' argument should be a character vector or, for a multivariate ",
          "joint model, possibly a list of character vectors.", call. = FALSE)
@@ -2098,7 +2141,32 @@ validate_assoc <- function(m, x, y_cnms, supported_assocs, id_var, xmat) {
   if (!identical(length(assoc$which_coef_zindex), length(assoc$which_coef_xindex)))
     stop("Bug found: the lengths of the fixed and random components of the ",
          "'shared_coef' association structure are not the same.")
-  
+
+  # Identify which lags were requested
+  if (assoc$etalag || assoc$mulag) {
+    if (assoc$etalag) {
+      val_etalag <- grep("^etalag.*", x, value = TRUE)
+      val_lag <- unlist(strsplit(val_etalag, "etalag"))[-1]
+    } else if (assoc$mulag) {
+      val_mulag <- grep("^mulag.*", x, value = TRUE)
+      val_lag <- unlist(strsplit(val_mulag, "mulag"))[-1]
+    }
+    if (length(val_lag)) {
+      assoc$which_lag <- tryCatch(eval(parse(text = paste0("c", val_lag))), 
+                                  error = function(x) 
+                                    stop("Incorrect specification of the lagged ",
+                                         "association structure. See Examples in help ",
+                                         "file.", call. = FALSE))
+      if (length(assoc$which_lag) > 1L) 
+        stop("Currently only one lag time is allowed for the lagged association ",
+             "structure.", call. = FALSE)
+    } else {
+      stop("'etalag' association structure was specified incorrectly. It should ",
+           "include a suffix with the desired lag inside parentheses. See the ",
+           "help file for details.", call. = FALSE)    
+    }    
+  } else assoc$which_lag <- 0
+
   assoc
 }
 
@@ -2346,7 +2414,7 @@ check_for_dispersion <- function(family) {
 #   longitudinal submodel that are to be used in the shared_coef association structure
 # @return Integer indicating the number of association parameters in the model 
 get_num_assoc_pars <- function(has_assoc, which_b_zindex, which_coef_zindex) {
-  sel <- c("etavalue", "etaslope", "muvalue", "muslope")
+  sel <- c("etavalue", "etaslope", "etalag", "muvalue", "muslope", "mulag")
   a_K <- sum(unlist(has_assoc[sel]))
   a_K <- a_K + length(unlist(which_b_zindex)) + length(unlist(which_coef_zindex))
   return(a_K)
