@@ -811,12 +811,22 @@ data {
   int<lower=0,upper=1> has_assoc_mv[M];    // mu value
   int<lower=0,upper=1> has_assoc_ms[M];    // mu slope
   int<lower=0,upper=1> has_assoc_ml[M];    // mu lag
+  int<lower=0,upper=1> has_assoc_evi[M];   // eta value interacted with data
+  int<lower=0,upper=1> has_assoc_esi[M];   // eta slope interacted with data
+  int<lower=0,upper=1> has_assoc_mvi[M];   // mu value interacted with data
+  int<lower=0,upper=1> has_assoc_msi[M];   // mu slope interacted with data 
   int<lower=0,upper=M> sum_has_assoc_ev;   // num. long submodels linked via eta value
   int<lower=0,upper=M> sum_has_assoc_es;   // num. long submodels linked via eta slope
   int<lower=0,upper=M> sum_has_assoc_el;   // num. long submodels linked via eta lag
   int<lower=0,upper=M> sum_has_assoc_mv;   // num. long submodels linked via mu value
   int<lower=0,upper=M> sum_has_assoc_ms;   // num. long submodels linked via mu slope 
   int<lower=0,upper=M> sum_has_assoc_ml;   // num. long submodels linked via mu lag
+  int<lower=0,upper=M> sum_has_assoc_evi;  // num. long submodels linked via eta value interacted with data
+  int<lower=0,upper=M> sum_has_assoc_esi;  // num. long submodels linked via eta slope interacted with data
+  int<lower=0,upper=M> sum_has_assoc_mvi;  // num. long submodels linked via mu value interacted with data
+  int<lower=0,upper=M> sum_has_assoc_msi;  // num. long submodels linked via mu slope interacted with data 
+  int<lower=0,upper=a_K> sum_a_K_int;      // num. of parameters devoted to interaction terms in association structure
+  int<lower=0,upper=sum_a_K_int> a_K_int[4*M]; // num. of parameters devoted to interaction terms in association structure, by submodel and by ev/es/mv/ms interactions
   int<lower=0> sum_size_which_b;           // num. of shared random effects
   int<lower=0> size_which_b[M];            // num. of shared random effects for each long submodel
   int<lower=1> which_b_zindex[sum_size_which_b];  // which random effects are shared for each long submodel
@@ -843,6 +853,9 @@ data {
   int<lower=0> v_Zq_lag[num_non_zero_Zq_lag]; // column indices for w (at lagged quadpoints)
   int<lower=0> u_Zq_lag[(M*nrow_y_Xq*((sum_has_assoc_el + sum_has_assoc_ml) > 0) + 1)]; 
     // where the non-zeros start in each row (at lagged quadpoints)
+
+  // data for calculating interactions in association structure
+  vector[nrow_e_Xq] y_Xq_int[sum_a_K_int]; // design matrix for interacting with ev/es/mv/ms at quadpoints            
 
   // data for random effects model
   int<lower=1> t;     	        // num. of grouping factors
@@ -1253,7 +1266,9 @@ transformed parameters {
 
   if (assoc == 1) {
     int mark;
+  	int mark2;  // tracks index within a_K_int vector, which is vector specifying the number of columns used for each possible interaction-based association structure
 	  mark = 0;
+	  mark2 = 0;
     for (m in 1:M) {
       vector[nrow_y_Xq] ysep_eta_q;     // linear predictor (each long submodel) evaluated at quadpoints
       vector[nrow_y_Xq] ysep_q;         // expected long. outcome at event and quad times   
@@ -1289,7 +1304,7 @@ transformed parameters {
       }
       
       # Linear predictor at time plus epsilon
-      if ((has_assoc_es[m] == 1) || (has_assoc_ms[m] == 1)) {
+      if ((has_assoc_es[m] == 1) || (has_assoc_esi[m] == 1) || (has_assoc_ms[m] == 1) || (has_assoc_msi[m] == 1)) {
         ysep_eta_q_eps = segment(y_eta_q_eps, ((m-1) * nrow_y_Xq) + 1, nrow_y_Xq);
         if (y_has_intercept[m] == 1) {
           if (y_has_intercept_unbound[m] == 1) 
@@ -1341,7 +1356,7 @@ transformed parameters {
       } 
       
       # Expected value 
-      if ((has_assoc_mv[m] == 1) || (has_assoc_ms[m] == 1)) {
+      if ((has_assoc_mv[m] == 1) || (has_assoc_mvi[m] == 1) || (has_assoc_ms[m] == 1) || (has_assoc_msi[m] == 1)) {
         if (family[m] == 1) 
           ysep_q = linkinv_gauss(ysep_eta_q, link[m]);
         else if (family[m] == 2) 
@@ -1355,7 +1370,7 @@ transformed parameters {
       }	      
       
       # Expected value at time plus epsilon
-       if (has_assoc_ms[m] == 1) {
+       if ((has_assoc_ms[m] == 1) || (has_assoc_msi[m] == 1)) {
         if (family[m] == 1) 
           ysep_q_eps = linkinv_gauss(ysep_eta_q_eps, link[m]);
         else if (family[m] == 2) 
@@ -1382,36 +1397,112 @@ transformed parameters {
 		      ysep_q_lag = linkinv_binom(ysep_eta_q_lag, link[m]); 
       }	 
 
+
       # Evaluate association structures
+      
+      # etavalue and any interactions
+      mark2 = mark2 + 1;
       if (has_assoc_ev[m] == 1) {
         mark = mark + 1;
 	      e_eta_q = e_eta_q + a_beta[mark] * ysep_eta_q;
       }	
-      if (has_assoc_mv[m] == 1) {
-        mark = mark + 1;
-        e_eta_q = e_eta_q + a_beta[mark] * ysep_q; 
-      }	
-      if (has_assoc_es[m] == 1) {
+      if (has_assoc_evi[m] == 1) {
+  	    int tmp;
+  	    int j_shift;
+  	    if (mark2 == 1) j_shift = 0;
+  	    else j_shift = sum(a_K_int[1:(mark2-1)]);
+  	    tmp = a_K_int[mark2];  
+        for (j in 1:tmp) {
+          int sel;
+          sel = j_shift + j;
+          mark = mark + 1;
+          e_eta_q = e_eta_q + (ysep_eta_q .* y_Xq_int[sel]) * a_beta[mark];
+        }
+      }
+      
+      # etaslope and any interactions
+      mark2 = mark2 + 1;
+      if ((has_assoc_es[m] == 1) || (has_assoc_esi[m] == 1)) {
         vector[nrow_y_Xq] dydt_eta_q;
         dydt_eta_q = (ysep_eta_q_eps - ysep_eta_q) / eps;
-        mark = mark + 1;
-        e_eta_q = e_eta_q + a_beta[mark] * dydt_eta_q;          
+        if (has_assoc_es[m] == 1) {
+          mark = mark + 1;
+          e_eta_q = e_eta_q + a_beta[mark] * dydt_eta_q;
+        }
+        if (has_assoc_esi[m] == 1) {
+    	    int tmp;
+    	    int j_shift;
+    	    if (mark2 == 1) j_shift = 0;
+    	    else j_shift = sum(a_K_int[1:(mark2-1)]);
+    	    tmp = a_K_int[mark2];  
+          for (j in 1:tmp) {
+            int sel;
+            sel = j_shift + j;
+            mark = mark + 1;
+            e_eta_q = e_eta_q + (dydt_eta_q .* y_Xq_int[sel]) * a_beta[mark];
+          }    
+        }         
       }
-      if (has_assoc_ms[m] == 1) {
-        vector[nrow_y_Xq] dydt_q;
-        dydt_q = (ysep_q_eps - ysep_q) / eps;
-        mark = mark + 1;
-        e_eta_q = e_eta_q + a_beta[mark] * dydt_q;          
-      }
+      
+      # etalag
       if (has_assoc_el[m] == 1) {
         mark = mark + 1;
         e_eta_q = e_eta_q + a_beta[mark] * ysep_eta_q_lag;          
+      }  
+      
+      # muvalue and any interactions
+      mark2 = mark2 + 1;
+      if (has_assoc_mv[m] == 1) {
+        mark = mark + 1;
+        e_eta_q = e_eta_q + a_beta[mark] * ysep_q; 
       }
+      if (has_assoc_mvi[m] == 1) {
+  	    int tmp;
+  	    int j_shift;
+  	    if (mark2 == 1) j_shift = 0;
+  	    else j_shift = sum(a_K_int[1:(mark2-1)]);
+  	    tmp = a_K_int[mark2];  
+        for (j in 1:tmp) {
+          int sel;
+          sel = j_shift + j;
+          mark = mark + 1;
+          e_eta_q = e_eta_q + (ysep_q .* y_Xq_int[sel]) * a_beta[mark];
+        }      
+      }     
+
+      # muslope and any interactions
+      mark2 = mark2 + 1;
+      if ((has_assoc_es[m] == 1) || (has_assoc_esi[m] == 1)) {
+        vector[nrow_y_Xq] dydt_q;
+        dydt_q = (ysep_q_eps - ysep_q) / eps;
+        if (has_assoc_ms[m] == 1) {
+          mark = mark + 1;
+          e_eta_q = e_eta_q + a_beta[mark] * dydt_q;          
+        }
+        if (has_assoc_msi[m] == 1) {
+    	    int tmp;
+    	    int j_shift;
+    	    if (mark2 == 1) j_shift = 0;
+    	    else j_shift = sum(a_K_int[1:(mark2-1)]);
+    	    tmp = a_K_int[mark2];  
+          for (j in 1:tmp) {
+            int sel;
+            sel = j_shift + j;
+            mark = mark + 1;
+            e_eta_q = e_eta_q + (dydt_q .* y_Xq_int[sel]) * a_beta[mark];
+          }          
+        } 
+      }
+      
+      # mulag
       if (has_assoc_ml[m] == 1) {
         mark = mark + 1;
         e_eta_q = e_eta_q + a_beta[mark] * ysep_q_lag;          
-      }      
+      }
+
     }
+    
+    # shared random effects
   	if (sum_size_which_b > 0) {
   	  int mark_beg;  // used to define segment of a_beta
   	  int mark_end;
@@ -1478,6 +1569,7 @@ transformed parameters {
   if (debug == 1) print("Debug location 8")
 
 }
+
 model {
   int disp_mark;
   int nois_mark;
