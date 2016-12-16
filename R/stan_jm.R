@@ -53,8 +53,8 @@
 #'   family for one of the longitudinal submodels.
 #' @param assoc A character string or character vector specifying the joint
 #'   model association structure. Possible association structures that can
-#'   be used include: "etavalue" (the default); "etaslope"; "etalag"; "muvalue"; 
-#'   "mulag"; "shared_b"; "shared_coef"; or "null". These are described in the 
+#'   be used include: "etavalue" (the default); "etaslope"; "muvalue"; 
+#'   "shared_b"; "shared_coef"; or "null". These are described in the 
 #'   \strong{Details} section below. For a multivariate joint model, 
 #'   different association structures can optionally be used for 
 #'   each longitudinal submodel by specifying a list of character
@@ -190,13 +190,9 @@
 #'   following parameterisations: current value of the linear predictor in the 
 #'   longitudinal submodel (\code{"etavalue"}); first derivative 
 #'   (slope) of the linear predictor in the longitudinal submodel 
-#'   (\code{"etaslope"}); lagged value of the linear predictor in the 
-#'   longitudinal submodel (\code{"etalag(#)"}, replacing \code{#} with the
-#'   desired lag in units of the time variable); current expected value of the 
-#'   longitudinal submodel (\code{"muvalue"}); lagged expected value of the
-#'   longitudinal submodel (\code{"mulag(#)"}, replacing \code{#} with the
-#'   desired lag in units of the time variable); shared individual-level random  
-#'   effects (\code{"shared_b"}); shared individual-level random effects which also
+#'   (\code{"etaslope"}); current expected value of the longitudinal submodel 
+#'   (\code{"muvalue"}); shared individual-level random effects 
+#'   (\code{"shared_b"}); shared individual-level random effects which also
 #'   incorporate the corresponding fixed effect as well as any corresponding 
 #'   random effects for clustering levels higher than the individual)
 #'   (\code{"shared_coef"}); or no 
@@ -204,9 +200,6 @@
 #'   and event models) (\code{"null"} or \code{NULL}). 
 #'   More than one association structure can be specified, however,
 #'   not all possible combinations are allowed.   
-#'   Note that for the lagged association structures (\code{"etalag(#)"} and 
-#'   \code{"mulag(#)"}) use baseline values (time = 0) for the instances where the 
-#'   time lag results in a time prior to baseline.
 #'   By default, \code{"shared_b"} and \code{"shared_coef"} contribute all 
 #'   random effects to the association structure; however, a subset of the random effects can 
 #'   be chosen by specifying their indices between parentheses as a suffix, for 
@@ -344,7 +337,7 @@
 #'               time_var = "year",
 #'               assoc = c("etavalue", "etavalue_interact(~ trt)"))
 #' summary(f4)  
-#'                      
+#'                     
 #' }
 #' 
 #' @export
@@ -1045,13 +1038,8 @@ stan_jm <- function(formulaLong, dataLong,
   eps <- 1E-5
   
   # Check association structure
-  supported_assocs <- c("null", 
-                        "etavalue",          "muvalue", 
-                        "etaslope",          "muslope", 
-                        "etalag",            "mulag", 
-                        "etavalue_interact", "muvalue_interact",
-                        "etaslope_interact", "muslope_interact",
-                        "shared_b",          "shared_coef")
+  supported_assocs <- c("null", "etavalue", "muvalue", "etaslope", 
+                        "muslope", "etalag", "mulag", "shared_b", "shared_coef")
   assoc <- lapply(1:M, validate_assoc, 
                   assoc, y_cnms, supported_assocs, id_var, x)
   assoc <- list_nms(assoc, M)
@@ -2150,14 +2138,10 @@ validate_assoc <- function(m, x, y_cnms, supported_assocs, id_var, xmat) {
   
   # Identify which association types were specified
   if (!is.null(x_tmp)) {
-    x_tmp <- gsub("^etalag\\(.*", "etalag", x_tmp) 
-    x_tmp <- gsub("^mulag\\(.*", "mulag", x_tmp) 
     x_tmp <- gsub("^shared_b.*", "shared_b", x_tmp) 
     x_tmp <- gsub("^shared_coef\\(.*", "shared_coef", x_tmp) 
-    x_tmp <- gsub("^etavalue_interact\\(.*", "etavalue_interact", x_tmp) 
-    x_tmp <- gsub("^muvalue_interact\\(.*", "muvalue_interact", x_tmp) 
-    x_tmp <- gsub("^etaslope_interact\\(.*", "etaslope_interact", x_tmp) 
-    x_tmp <- gsub("^muslope_interact\\(.*", "muslope_interact", x_tmp) 
+    x_tmp <- gsub("^etalag\\(.*", "etalag", x_tmp) 
+    x_tmp <- gsub("^mulag\\(.*", "mulag", x_tmp) 
   }
   assoc <- sapply(supported_assocs, function(y) y %in% x_tmp, simplify = FALSE)
   if (is.null(x_tmp)) {
@@ -2310,7 +2294,7 @@ validate_assoc <- function(m, x, y_cnms, supported_assocs, id_var, xmat) {
   if (!identical(length(assoc$which_coef_zindex), length(assoc$which_coef_xindex)))
     stop("Bug found: the lengths of the fixed and random components of the ",
          "'shared_coef' association structure are not the same.")
-  
+
   assoc
 }
 
