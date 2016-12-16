@@ -53,8 +53,8 @@
 #'   family for one of the longitudinal submodels.
 #' @param assoc A character string or character vector specifying the joint
 #'   model association structure. Possible association structures that can
-#'   be used include: "etavalue" (the default); "etaslope"; "etalag"; "muvalue"; 
-#'   "mulag"; "shared_b"; "shared_coef"; or "null". These are described in the 
+#'   be used include: "etavalue" (the default); "etaslope"; "muvalue"; 
+#'   "shared_b"; "shared_coef"; or "null". These are described in the 
 #'   \strong{Details} section below. For a multivariate joint model, 
 #'   different association structures can optionally be used for 
 #'   each longitudinal submodel by specifying a list of character
@@ -190,13 +190,9 @@
 #'   following parameterisations: current value of the linear predictor in the 
 #'   longitudinal submodel (\code{"etavalue"}); first derivative 
 #'   (slope) of the linear predictor in the longitudinal submodel 
-#'   (\code{"etaslope"}); lagged value of the linear predictor in the 
-#'   longitudinal submodel (\code{"etalag(#)"}, replacing \code{#} with the
-#'   desired lag in units of the time variable); current expected value of the 
-#'   longitudinal submodel (\code{"muvalue"}); lagged expected value of the
-#'   longitudinal submodel (\code{"mulag(#)"}, replacing \code{#} with the
-#'   desired lag in units of the time variable); shared individual-level random  
-#'   effects (\code{"shared_b"}); shared individual-level random effects which also
+#'   (\code{"etaslope"}); current expected value of the longitudinal submodel 
+#'   (\code{"muvalue"}); shared individual-level random effects 
+#'   (\code{"shared_b"}); shared individual-level random effects which also
 #'   incorporate the corresponding fixed effect as well as any corresponding 
 #'   random effects for clustering levels higher than the individual)
 #'   (\code{"shared_coef"}); or no 
@@ -204,9 +200,6 @@
 #'   and event models) (\code{"null"} or \code{NULL}). 
 #'   More than one association structure can be specified, however,
 #'   not all possible combinations are allowed.   
-#'   Note that for the lagged association structures (\code{"etalag(#)"} and 
-#'   \code{"mulag(#)"}) use baseline values (time = 0) for the instances where the 
-#'   time lag results in a time prior to baseline.
 #'   By default, \code{"shared_b"} and \code{"shared_coef"} contribute all 
 #'   random effects to the association structure; however, a subset of the random effects can 
 #'   be chosen by specifying their indices between parentheses as a suffix, for 
@@ -314,20 +307,7 @@
 #'         time_var = "year",
 #'         chains = 3, refresh = 25,
 #'         cores = parallel::detectCores())
-#' summary(mv2)  
-#' 
-#' #####
-#' # Univariate joint model, with an example of specifying an association
-#' # structure based on the lagged value of the linear predictor, where the
-#' # lag is 2 time units (in this example, 2 years)
-#' f1 <- stan_jm(formulaLong = logBili ~ year + (1 | id), 
-#'               dataLong = pbcLong_subset,
-#'               formulaEvent = Surv(futimeYears, death) ~ sex + trt, 
-#'               dataEvent = pbcSurv_subset,
-#'               time_var = "year",
-#'               assoc = "etalag(2)")
-#' summary(f1) 
-#'                      
+#' summary(mv2)            
 #' }
 #' 
 #' @export
@@ -1027,13 +1007,8 @@ stan_jm <- function(formulaLong, dataLong,
   eps <- 1E-5
   
   # Check association structure
-  supported_assocs <- c("null", 
-                        "etavalue",          "muvalue", 
-                        "etaslope",          "muslope", 
-                        "etalag",            "mulag", 
-                        "etavalue_interact", "muvalue_interact",
-                        "etaslope_interact", "muslope_interact",
-                        "shared_b",          "shared_coef")
+  supported_assocs <- c("null", "etavalue", "muvalue", "etaslope", 
+                        "muslope", "etalag", "mulag", "shared_b", "shared_coef")
   assoc <- lapply(1:M, validate_assoc, 
                   assoc, y_cnms, supported_assocs, id_var, x)
   assoc <- list_nms(assoc, M)
@@ -2061,21 +2036,14 @@ check_id_list <- function(id_var, y_flist) {
 # @param id_var The name of the id variable 
 # @return A list of logicals indicating the desired association types
 validate_assoc <- function(m, x, y_cnms, supported_assocs, id_var, xmat) {
-
-  # Select association structure for submodel m only
-  # 'x_tmp' will be changed in code below, whilst 'x' stays equal to user input
-  x_tmp <- x <- x[[m]]
-    
+  
   # Identify which association types were specified
+  x_tmp <- x[[m]]
   if (!is.null(x_tmp)) {
-    x_tmp <- gsub("^etalag\\(.*", "etalag", x_tmp) 
-    x_tmp <- gsub("^mulag\\(.*", "mulag", x_tmp) 
     x_tmp <- gsub("^shared_b.*", "shared_b", x_tmp) 
     x_tmp <- gsub("^shared_coef\\(.*", "shared_coef", x_tmp) 
-    x_tmp <- gsub("^etavalue_interact\\(.*", "etavalue_interact", x_tmp) 
-    x_tmp <- gsub("^muvalue_interact\\(.*", "muvalue_interact", x_tmp) 
-    x_tmp <- gsub("^etaslope_interact\\(.*", "etaslope_interact", x_tmp) 
-    x_tmp <- gsub("^muslope_interact\\(.*", "muslope_interact", x_tmp) 
+    x_tmp <- gsub("^etalag\\(.*", "etalag", x_tmp) 
+    x_tmp <- gsub("^mulag\\(.*", "mulag", x_tmp) 
   }
   assoc <- sapply(supported_assocs, function(y) y %in% x_tmp, simplify = FALSE)
   if (is.null(x_tmp)) {
@@ -2101,39 +2069,9 @@ validate_assoc <- function(m, x, y_cnms, supported_assocs, id_var, xmat) {
     stop("'assoc' argument should be a character vector or, for a multivariate ",
          "joint model, possibly a list of character vectors.", call. = FALSE)
   }
- 
-  # Identify which lags were requested
-  if (assoc$etalag || assoc$mulag) {
-    if (assoc$etalag) {
-      val_etalag <- grep("^etalag.*", x, value = TRUE)
-      val_lag <- unlist(strsplit(val_etalag, "etalag"))[-1]
-    } else if (assoc$mulag) {
-      val_mulag <- grep("^mulag.*", x, value = TRUE)
-      val_lag <- unlist(strsplit(val_mulag, "mulag"))[-1]
-    }
-    if (length(val_lag)) {
-      assoc$which_lag <- tryCatch(eval(parse(text = paste0("c", val_lag))), 
-                                  error = function(x) 
-                                    stop("Incorrect specification of the lagged ",
-                                         "association structure. See Examples in help ",
-                                         "file.", call. = FALSE))
-      if (length(assoc$which_lag) > 1L) 
-        stop("Currently only one lag time is allowed for the lagged association ",
-             "structure.", call. = FALSE)
-    } else {
-      stop("'etalag' association structure was specified incorrectly. It should ",
-           "include a suffix with the desired lag inside parentheses. See the ",
-           "help file for details.", call. = FALSE)    
-    }    
-  } else assoc$which_lag <- 0  
-   
-  # Check interaction formula was specified correctly
-  if (any(assoc$etavalue_interact, assoc$muvalue_interact, 
-          assoc$etaslope_interact, assoc$muslope_interact)) {
-    
-  }
   
   # Identify which subset of shared random effects were specified
+  x <- x[[m]]
   max_which_b_zindex <- length(y_cnms[[m]][[id_var]])
   val_b <- grep("^shared_b.*", x, value = TRUE)
   val_coef <- grep("^shared_coef.*", x, value = TRUE)
@@ -2203,6 +2141,31 @@ validate_assoc <- function(m, x, y_cnms, supported_assocs, id_var, xmat) {
   if (!identical(length(assoc$which_coef_zindex), length(assoc$which_coef_xindex)))
     stop("Bug found: the lengths of the fixed and random components of the ",
          "'shared_coef' association structure are not the same.")
+
+  # Identify which lags were requested
+  if (assoc$etalag || assoc$mulag) {
+    if (assoc$etalag) {
+      val_etalag <- grep("^etalag.*", x, value = TRUE)
+      val_lag <- unlist(strsplit(val_etalag, "etalag"))[-1]
+    } else if (assoc$mulag) {
+      val_mulag <- grep("^mulag.*", x, value = TRUE)
+      val_lag <- unlist(strsplit(val_mulag, "mulag"))[-1]
+    }
+    if (length(val_lag)) {
+      assoc$which_lag <- tryCatch(eval(parse(text = paste0("c", val_lag))), 
+                                  error = function(x) 
+                                    stop("Incorrect specification of the lagged ",
+                                         "association structure. See Examples in help ",
+                                         "file.", call. = FALSE))
+      if (length(assoc$which_lag) > 1L) 
+        stop("Currently only one lag time is allowed for the lagged association ",
+             "structure.", call. = FALSE)
+    } else {
+      stop("'etalag' association structure was specified incorrectly. It should ",
+           "include a suffix with the desired lag inside parentheses. See the ",
+           "help file for details.", call. = FALSE)    
+    }    
+  } else assoc$which_lag <- 0
 
   assoc
 }
