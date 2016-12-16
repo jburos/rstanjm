@@ -5,17 +5,18 @@
 \title{Bayesian joint longitudinal and time-to-event models via Stan}
 \usage{
 stan_jm(formulaLong, dataLong, formulaEvent, dataEvent, time_var, id_var,
-  family = gaussian, assoc = "etavalue", base_haz = c("weibull", "bs",
-  "piecewise"), df, knots, quadnodes = 15, subsetLong, subsetEvent,
-  na.action = getOption("na.action", "na.omit"), weights, offset, contrasts,
-  centreLong = FALSE, centreEvent = FALSE, init = "model_based", ...,
-  priorLong = normal(), priorLong_intercept = normal(),
-  priorLong_ops = priorLong_options(), priorEvent = normal(),
-  priorEvent_intercept = normal(), priorEvent_ops = priorEvent_options(),
-  priorAssoc = normal(), priorAssoc_ops = priorAssoc_options(),
-  prior_covariance = decov(), prior_PD = FALSE, adapt_delta = NULL,
-  max_treedepth = NULL, QR = FALSE, algorithm = c("sampling", "meanfield",
-  "fullrank"), debug = FALSE)
+  family = gaussian, assoc = "etavalue", interaction_data,
+  base_haz = c("weibull", "bs", "piecewise"), df, knots, quadnodes = 15,
+  subsetLong, subsetEvent, na.action = getOption("na.action", "na.omit"),
+  weights, offset, contrasts, centreLong = FALSE, centreEvent = FALSE,
+  init = "model_based", ..., priorLong = normal(),
+  priorLong_intercept = normal(), priorLong_ops = priorLong_options(),
+  priorEvent = normal(), priorEvent_intercept = normal(),
+  priorEvent_ops = priorEvent_options(), priorAssoc = normal(),
+  priorAssoc_ops = priorAssoc_options(), prior_covariance = decov(),
+  prior_PD = FALSE, adapt_delta = NULL, max_treedepth = NULL,
+  QR = FALSE, algorithm = c("sampling", "meanfield", "fullrank"),
+  debug = FALSE)
 }
 \arguments{
 \item{formulaLong}{A two-sided linear formula object describing both the 
@@ -57,8 +58,8 @@ family for one of the longitudinal submodels.}
 
 \item{assoc}{A character string or character vector specifying the joint
 model association structure. Possible association structures that can
-be used include: "etavalue" (the default); "etaslope"; "muvalue"; 
-"shared_b"; "shared_coef"; or "null". These are described in the 
+be used include: "etavalue" (the default); "etaslope"; "etalag"; "muvalue"; 
+"mulag"; "shared_b"; "shared_coef"; or "null". These are described in the 
 \strong{Details} section below. For a multivariate joint model, 
 different association structures can optionally be used for 
 each longitudinal submodel by specifying a list of character
@@ -223,9 +224,13 @@ The \code{stan_jm} function can be used to fit a joint model (also
   following parameterisations: current value of the linear predictor in the 
   longitudinal submodel (\code{"etavalue"}); first derivative 
   (slope) of the linear predictor in the longitudinal submodel 
-  (\code{"etaslope"}); current expected value of the longitudinal submodel 
-  (\code{"muvalue"}); shared individual-level random effects 
-  (\code{"shared_b"}); shared individual-level random effects which also
+  (\code{"etaslope"}); lagged value of the linear predictor in the 
+  longitudinal submodel (\code{"etalag(#)"}, replacing \code{#} with the
+  desired lag in units of the time variable); current expected value of the 
+  longitudinal submodel (\code{"muvalue"}); lagged expected value of the
+  longitudinal submodel (\code{"mulag(#)"}, replacing \code{#} with the
+  desired lag in units of the time variable); shared individual-level random  
+  effects (\code{"shared_b"}); shared individual-level random effects which also
   incorporate the corresponding fixed effect as well as any corresponding 
   random effects for clustering levels higher than the individual)
   (\code{"shared_coef"}); or no 
@@ -233,6 +238,9 @@ The \code{stan_jm} function can be used to fit a joint model (also
   and event models) (\code{"null"} or \code{NULL}). 
   More than one association structure can be specified, however,
   not all possible combinations are allowed.   
+  Note that for the lagged association structures (\code{"etalag(#)"} and 
+  \code{"mulag(#)"}) use baseline values (time = 0) for the instances where the 
+  time lag results in a time prior to baseline.
   By default, \code{"shared_b"} and \code{"shared_coef"} contribute all 
   random effects to the association structure; however, a subset of the random effects can 
   be chosen by specifying their indices between parentheses as a suffix, for 
@@ -326,7 +334,37 @@ mv2 <- stan_jm(formulaLong = list(
         time_var = "year",
         chains = 3, refresh = 25,
         cores = parallel::detectCores())
-summary(mv2)            
+summary(mv2)  
+
+#####
+# Here we provide an example of specifying an association structure 
+# based on the lagged value of the linear predictor, where the lag
+# is 2 time units (i.e. 2 years in this example)
+f3 <- stan_jm(formulaLong = logBili ~ year + (1 | id), 
+              dataLong = pbcLong_subset,
+              formulaEvent = Surv(futimeYears, death) ~ sex + trt, 
+              dataEvent = pbcSurv_subset,
+              time_var = "year",
+              assoc = "etalag(2)")
+summary(f3) 
+
+#####
+# Here we provide an example of specifying an association structure with 
+# interaction terms. Here we specify that we want to use an association
+# structure based on the current value of the linear predictor from
+# the longitudinal submodel ("etavalue"), but we will also specify
+# that we want to interact this with the treatment covariate (trt) from
+# pbcLong_subset data frame so that we can estimate a different association 
+# parameter (i.e. estimated effect of log serum bilirubin on the log hazard 
+# of death) for each treatment group
+f4 <- stan_jm(formulaLong = logBili ~ year + (1 | id), 
+              dataLong = pbcLong_subset,
+              formulaEvent = Surv(futimeYears, death) ~ sex + trt, 
+              dataEvent = pbcSurv_subset,
+              time_var = "year",
+              assoc = c("etavalue", "etavalue_interact(~ trt)"))
+summary(f4)  
+                     
 }
 
 }
