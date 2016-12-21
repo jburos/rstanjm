@@ -808,9 +808,11 @@ data {
   int<lower=0,upper=1> has_assoc_ev[M];    // eta value
   int<lower=0,upper=1> has_assoc_es[M];    // eta slope
   int<lower=0,upper=1> has_assoc_el[M];    // eta lag
+  int<lower=0,upper=1> has_assoc_ea[M];    // eta auc
   int<lower=0,upper=1> has_assoc_mv[M];    // mu value
   int<lower=0,upper=1> has_assoc_ms[M];    // mu slope
   int<lower=0,upper=1> has_assoc_ml[M];    // mu lag
+  int<lower=0,upper=1> has_assoc_ma[M];    // mu auc
   int<lower=0,upper=1> has_assoc_evi[M];   // eta value interacted with data
   int<lower=0,upper=1> has_assoc_esi[M];   // eta slope interacted with data
   int<lower=0,upper=1> has_assoc_mvi[M];   // mu value interacted with data
@@ -818,9 +820,11 @@ data {
   int<lower=0,upper=M> sum_has_assoc_ev;   // num. long submodels linked via eta value
   int<lower=0,upper=M> sum_has_assoc_es;   // num. long submodels linked via eta slope
   int<lower=0,upper=M> sum_has_assoc_el;   // num. long submodels linked via eta lag
+  int<lower=0,upper=M> sum_has_assoc_ea;   // num. long submodels linked via eta auc
   int<lower=0,upper=M> sum_has_assoc_mv;   // num. long submodels linked via mu value
   int<lower=0,upper=M> sum_has_assoc_ms;   // num. long submodels linked via mu slope 
   int<lower=0,upper=M> sum_has_assoc_ml;   // num. long submodels linked via mu lag
+  int<lower=0,upper=M> sum_has_assoc_ma;   // num. long submodels linked via mu auc
   int<lower=0,upper=M> sum_has_assoc_evi;  // num. long submodels linked via eta value interacted with data
   int<lower=0,upper=M> sum_has_assoc_esi;  // num. long submodels linked via eta slope interacted with data
   int<lower=0,upper=M> sum_has_assoc_mvi;  // num. long submodels linked via mu value interacted with data
@@ -853,6 +857,18 @@ data {
   int<lower=0> v_Zq_lag[num_non_zero_Zq_lag]; // column indices for w (at lagged quadpoints)
   int<lower=0> u_Zq_lag[(M*nrow_y_Xq*((sum_has_assoc_el + sum_has_assoc_ml) > 0) + 1)]; 
     // where the non-zeros start in each row (at lagged quadpoints)
+
+  // data for calculating auc
+  int<lower=0> nrow_y_Xq_auc;     // num. rows in long. predictor matrix at auc quad points
+  int<lower=0> auc_quadnodes;              // num. of nodes for Gauss-Kronrod quadrature for area under marker trajectory 
+  vector[nrow_y_Xq_auc] auc_quadweight;
+  matrix[(M*nrow_y_Xq_auc*((sum_has_assoc_ea + sum_has_assoc_ma) > 0)),sum_y_K] 
+    y_Xq_auc; // predictor matrix (long submodel) at auc quadpoints            
+  int<lower=0> num_non_zero_Zq_auc;        // number of non-zero elements in the Zq_lag matrix (at auc quadpoints)
+  vector[num_non_zero_Zq_auc] w_Zq_auc;    // non-zero elements in the implicit Zq_lag matrix (at auc quadpointsn)
+  int<lower=0> v_Zq_auc[num_non_zero_Zq_auc]; // column indices for w (at auc quadpoints)
+  int<lower=0> u_Zq_auc[(M*nrow_y_Xq_auc*((sum_has_assoc_ea + sum_has_assoc_ma) > 0) + 1)]; 
+    // where the non-zeros start in each row (at auc quadpoints)
 
   // data for calculating interactions in association structure
   vector[nrow_e_Xq] y_Xq_int[sum_a_K_int]; // design matrix for interacting with ev/es/mv/ms at quadpoints            
@@ -1084,6 +1100,8 @@ transformed parameters {
     // linear predictor (all long submodels) evaluated at quadpoints plus time shift of epsilon
   vector[(M*nrow_y_Xq)*((sum_has_assoc_el + sum_has_assoc_ml) > 0)] y_eta_q_lag; 
     // linear predictor (all long submodels) evaluated at lagged quadpoints
+  vector[(M*nrow_y_Xq_auc)*((sum_has_assoc_ea + sum_has_assoc_ma) > 0)] y_eta_q_auc; 
+    // linear predictor (all long submodels) evaluated at lagged quadpoints
   vector[nrow_e_Xq] e_eta_q;      // linear predictor (event submodel) evaluated at quadpoints
   vector[nrow_e_Xq] log_basehaz;      // baseline hazard evaluated at quadpoints
   vector[nrow_e_Xq] ll_haz_q;     // log hazard contribution to the log likelihood for the event model at event time and quad points
@@ -1251,6 +1269,14 @@ transformed parameters {
     y_eta_q_lag = y_eta_q_lag + csr_matrix_times_vector((M*nrow_y_Xq), len_b, w_Zq_lag, v_Zq_lag, u_Zq_lag, b_by_model);
   }  
   
+  // Longitudinal submodel(s): linear predictor at marker auc quadtimes
+  if ((sum_has_assoc_ea > 0) || (sum_has_assoc_ma > 0)) {
+    if (sum_y_K > 0) y_eta_q_auc = y_Xq_auc * y_beta;
+    else y_eta_q_auc = rep_vector(0.0, (M*nrow_y_Xq_auc));
+    // !!! if (y_has_offset == 1) y_eta_q_auc = y_eta_q_auc + y_offset; # ignore offset?
+    y_eta_q_auc = y_eta_q_auc + csr_matrix_times_vector((M*nrow_y_Xq_auc), len_b, w_Zq_auc, v_Zq_auc, u_Zq_auc, b_by_model);
+  }   
+  
   // Event submodel: linear predictor at event and quad times
   if (e_K > 0) e_eta_q = e_Xq * e_beta;
   else e_eta_q = rep_vector(0.0, nrow_e_Xq);
@@ -1276,7 +1302,9 @@ transformed parameters {
       vector[nrow_y_Xq] ysep_q_eps;     
       vector[nrow_y_Xq] ysep_eta_q_lag;  
       vector[nrow_y_Xq] ysep_q_lag;     
-            
+      vector[nrow_y_Xq_auc] ysep_eta_q_auc;  
+      vector[nrow_y_Xq_auc] ysep_q_auc;  
+      
       # Prep work for association structures
       
       # Linear predictor
@@ -1355,6 +1383,32 @@ transformed parameters {
         }
       } 
       
+      # Linear predictor at auc quadpoints
+      if ((has_assoc_ea[m] == 1) || (has_assoc_ma[m] == 1)) {
+        ysep_eta_q_auc = segment(y_eta_q_auc, ((m-1) * nrow_y_Xq_auc) + 1, nrow_y_Xq_auc);
+        if (y_has_intercept[m] == 1) {
+          if (y_has_intercept_unbound[m] == 1) 
+            ysep_eta_q_auc = ysep_eta_q_auc +
+                               y_gamma_unbound[sum(y_has_intercept_unbound[1:m])];
+          else if (y_has_intercept_lobound[m] == 1)
+            ysep_eta_q_auc = ysep_eta_q_auc - min(ysep_eta_q_lag) + 
+                               y_gamma_lobound[sum(y_has_intercept_lobound[1:m])];
+    	    else if (y_has_intercept_upbound[m] == 1)
+            ysep_eta_q_auc = ysep_eta_q_auc - max(ysep_eta_q_lag) + 
+                               y_gamma_upbound[sum(y_has_intercept_upbound[1:m])];
+        }
+        else if (y_centre == 1) {
+          int mark_beg;
+          int mark_end;
+          if (m == 1) mark_beg = 1;
+          else mark_beg = sum(y_K[1:(m-1)]) + 1;
+          mark_end = sum(y_K[1:m]);   
+          // correction to eta if model has no intercept (and X is centered)
+          ysep_eta_q_auc = ysep_eta_q_auc + 
+                dot_product(y_xbar[mark_beg:mark_end], y_beta[mark_beg:mark_end]); 
+        }
+      }      
+      
       # Expected value 
       if ((has_assoc_mv[m] == 1) || (has_assoc_mvi[m] == 1) || (has_assoc_ms[m] == 1) || (has_assoc_msi[m] == 1)) {
         if (family[m] == 1) 
@@ -1397,7 +1451,21 @@ transformed parameters {
 		      ysep_q_lag = linkinv_binom(ysep_eta_q_lag, link[m]); 
       }	 
 
-
+      # Expected value at auc quadpoints
+       if (has_assoc_ma[m] == 1) {
+        if (family[m] == 1) 
+          ysep_q_auc = linkinv_gauss(ysep_eta_q_auc, link[m]);
+        else if (family[m] == 2) 
+          ysep_q_auc = linkinv_gamma(ysep_eta_q_auc, link[m]);
+        else if (family[m] == 3)
+          ysep_q_auc = linkinv_inv_gaussian(ysep_eta_q_auc, link[m]);
+        else if (family[m] == 4)
+          ysep_q_auc = linkinv_bern(ysep_eta_q_auc, link[m]);	
+        else if (family[m] == 5)		  
+		      ysep_q_auc = linkinv_binom(ysep_eta_q_auc, link[m]); 
+      }
+      
+      
       # Evaluate association structures
       
       # etavalue and any interactions
@@ -1450,6 +1518,20 @@ transformed parameters {
         e_eta_q = e_eta_q + a_beta[mark] * ysep_eta_q_lag;          
       }  
       
+      # etaauc
+      if (has_assoc_ea[m] == 1) {
+        vector[nrow_y_Xq] ysep_eta_q_auc_tmp;  
+        mark = mark + 1;
+        for (r in 1:nrow_y_Xq) {
+          vector[auc_quadnodes] val_tmp;
+          vector[auc_quadnodes] wgt_tmp;
+          val_tmp = ysep_eta_q_auc[((r-1) * auc_quadnodes + 1):(r * auc_quadnodes)];
+          wgt_tmp = auc_quadweight[((r-1) * auc_quadnodes + 1):(r * auc_quadnodes)];
+          ysep_eta_q_auc_tmp[r] = sum(wgt_tmp .* val_tmp);
+        }
+        e_eta_q = e_eta_q + a_beta[mark] * ysep_eta_q_auc_tmp;          
+      }       
+      
       # muvalue and any interactions
       mark2 = mark2 + 1;
       if (has_assoc_mv[m] == 1) {
@@ -1499,6 +1581,20 @@ transformed parameters {
         mark = mark + 1;
         e_eta_q = e_eta_q + a_beta[mark] * ysep_q_lag;          
       }
+
+      # muauc
+      if (has_assoc_ma[m] == 1) {
+        vector[nrow_y_Xq] ysep_q_auc_tmp;  
+        mark = mark + 1;
+        for (r in 1:nrow_y_Xq) {
+          vector[auc_quadnodes] val_tmp;
+          vector[auc_quadnodes] wgt_tmp;
+          val_tmp = ysep_q_auc[((r-1) * auc_quadnodes + 1):(r * auc_quadnodes)];
+          wgt_tmp = auc_quadweight[((r-1) * auc_quadnodes + 1):(r * auc_quadnodes)];
+          ysep_q_auc_tmp[r] = sum(wgt_tmp .* val_tmp);
+        }
+        e_eta_q = e_eta_q + a_beta[mark] * ysep_q_auc_tmp;          
+      }  
 
     }
     

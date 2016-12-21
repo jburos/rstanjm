@@ -53,15 +53,16 @@
 #'   family for one of the longitudinal submodels.
 #' @param assoc A character string or character vector specifying the joint
 #'   model association structure. Possible association structures that can
-#'   be used include: "etavalue" (the default); "etaslope"; "muvalue"; 
-#'   "shared_b"; "shared_coef"; or "null". These are described in the 
+#'   be used include: "etavalue" (the default); "etaslope"; "etalag"; "etaauc; "muvalue"; 
+#'   "muslope"; "mulag"; "muauc"; "shared_b"; "shared_coef"; or "null". 
+#'   These are described in the 
 #'   \strong{Details} section below. For a multivariate joint model, 
 #'   different association structures can optionally be used for 
 #'   each longitudinal submodel by specifying a list of character
 #'   vectors, with each element of the list specifying the desired association 
 #'   structure for one of the longitudinal submodels. Specifying \code{assoc = NULL}
 #'   will fit a joint model with no association structure (equivalent  
-#'   to fitting separate longitudinal and time-to-event models). See the
+#'   to fitting separate longitudinal and time-to-event models). Also see the
 #'   \strong{Examples} section below.
 #' @param base_haz A character string indicating which baseline hazard to use
 #'   for the event submodel. Options are a Weibull baseline hazard
@@ -190,9 +191,17 @@
 #'   following parameterisations: current value of the linear predictor in the 
 #'   longitudinal submodel (\code{"etavalue"}); first derivative 
 #'   (slope) of the linear predictor in the longitudinal submodel 
-#'   (\code{"etaslope"}); current expected value of the longitudinal submodel 
-#'   (\code{"muvalue"}); shared individual-level random effects 
-#'   (\code{"shared_b"}); shared individual-level random effects which also
+#'   (\code{"etaslope"}); lagged value of the linear predictor in the 
+#'   longitudinal submodel (\code{"etalag(#)"}, replacing \code{#} with the
+#'   desired lag in units of the time variable); the area under the curve of 
+#'   the linear predictor in the longitudinal submodel (\code{"etaauc"}); 
+#'   current expected value of the 
+#'   longitudinal submodel (\code{"muvalue"}); lagged expected value of the
+#'   longitudinal submodel (\code{"mulag(#)"}, replacing \code{#} with the
+#'   desired lag in units of the time variable); the area under the curve of 
+#'   the expected value from the longitudinal submodel (\code{"muauc"}); 
+#'   shared individual-level random  
+#'   effects (\code{"shared_b"}); shared individual-level random effects which also
 #'   incorporate the corresponding fixed effect as well as any corresponding 
 #'   random effects for clustering levels higher than the individual)
 #'   (\code{"shared_coef"}); or no 
@@ -200,6 +209,11 @@
 #'   and event models) (\code{"null"} or \code{NULL}). 
 #'   More than one association structure can be specified, however,
 #'   not all possible combinations are allowed.   
+#'   Note that for the lagged association structures (\code{"etalag(#)"} and 
+#'   \code{"mulag(#)"}) use baseline values (time = 0) for the instances where the 
+#'   time lag results in a time prior to baseline. When using the 
+#'   \code{"etaauc"} or \code{"muauc"} association structures, the area under
+#'   the curve is evaluated using Gauss-Kronrod quadrature with 15 quadrature nodes. 
 #'   By default, \code{"shared_b"} and \code{"shared_coef"} contribute all 
 #'   random effects to the association structure; however, a subset of the random effects can 
 #'   be chosen by specifying their indices between parentheses as a suffix, for 
@@ -225,7 +239,7 @@
 #'   that are available. \cr
 #'   \cr
 #'   Gauss-Kronrod quadrature is used to numerically evaluate the integral  
-#'   over the cumulative hazard in the likelihood function for the joint model.
+#'   over the cumulative hazard in the likelihood function for the event submodel.
 #'   The accuracy of the numerical approximation can be controlled using the
 #'   number of quadrature nodes, specified through the \code{quadnodes} 
 #'   argument. Using a higher number of quadrature nodes will result in a more 
@@ -1038,8 +1052,14 @@ stan_jm <- function(formulaLong, dataLong,
   eps <- 1E-5
   
   # Check association structure
-  supported_assocs <- c("null", "etavalue", "muvalue", "etaslope", 
-                        "muslope", "etalag", "mulag", "shared_b", "shared_coef")
+  supported_assocs <- c("null", 
+                        "etavalue", "muvalue", 
+                        "etaslope", "muslope", 
+                        "etalag",   "mulag",
+                        "etaauc",   "muauc",
+                        "shared_b", "shared_coef",
+                        "etavalue_interact", "muvalue_interact",
+                        "etaslope_interact", "muslope_interact")
   assoc <- lapply(1:M, validate_assoc, 
                   assoc, y_cnms, supported_assocs, id_var, x)
   assoc <- list_nms(assoc, M)
@@ -1055,6 +1075,13 @@ stan_jm <- function(formulaLong, dataLong,
   size_which_coef <- sapply(which_coef_zindex, length)
   a_K <- get_num_assoc_pars(has_assoc, which_b_zindex, which_coef_zindex)  # doesn't include parameters for interaction terms (added on later)
   
+  # Unstandardised quadrature nodes for AUC association structure
+  auc_quadnodes <- 15
+  auc_quadpoints <- get_quadpoints(auc_quadnodes)
+  auc_quadweight <- unlist(
+    lapply(t_q, function(x) 
+      lapply(x, function(y) 
+        lapply(auc_quadpoints$weights, unstandardise_quadweights, 0, y))))
   
   #==================================================
   # Longitudinal submodel: calculate design matrices 
@@ -1083,6 +1110,13 @@ stan_jm <- function(formulaLong, dataLong,
   Zq_lag          <- list()  
   y_cnmsq_lag     <- list()
   y_flistq_lag    <- list()
+  
+  y_mod_q_auc     <- list()   # fitted long. submodels at subquadrature points
+  xq_auc          <- list()  
+  xqtemp_auc      <- list()  
+  Zq_auc          <- list()  
+  y_cnmsq_auc     <- list()
+  y_flistq_auc    <- list()  
   
   xq_int          <- list()   # design matrix for covariates to interact with etavalue, etaslope, etc
   xqtemp_int      <- list()
@@ -1117,8 +1151,7 @@ stan_jm <- function(formulaLong, dataLong,
     mf_q <- do.call(rbind, lapply(t_q, FUN = function(x) 
       mf[data.table::SJ(flist_event, x), roll = TRUE, rollends = c(TRUE, TRUE)]))
     
-    # Obtain long design matrix evaluated at event times (xbind.id == 1) and  
-    #   quadrature points (xbind.id == 2)
+    # Obtain long design matrix evaluated at event times and quadrature points
     names(mf_q)[names(mf_q) == "t_q"] <- time_var
     m_mc_temp$formula <- m_mc[[m]]$formula  # return to original formula
     m_mc_temp$formula <- use_these_vars(y_mod[[m]], 
@@ -1175,7 +1208,26 @@ stan_jm <- function(formulaLong, dataLong,
       Zq_lag[[m]] <- Matrix::t(y_mod_q_lag[[m]]$reTrms$Zt)
       y_cnmsq_lag[[m]] <- y_mod_q_lag[[m]]$reTrms$cnms
       y_flistq_lag[[m]] <- y_mod_q_lag[[m]]$reTrms$flist
-    }  
+    } 
+    
+    # If association structure is based on area under the marker trajectory, then 
+    # calculate design matrices at the subquadrature points
+    if (sum(has_assoc$etaauc, has_assoc$muauc)) {
+      # Return a design matrix that is (quadnodes * auc_quadnodes * Npat) rows
+      t_q_auc <- lapply(t_q, function(x) 
+        unlist(lapply(x, function(y) lapply(auc_quadpoints$points, unstandardise_quadpoints, 0, y))))
+      mf_q_auc <- do.call(rbind, lapply(t_q_auc, function(x)
+          mf[data.table::SJ(rep(flist_event, each = auc_quadnodes), x), roll = TRUE, rollends = c(TRUE, TRUE)]))
+      m_mc_temp_auc <- m_mc_temp
+      m_mc_temp_auc$data <- mf_q_auc
+      y_mod_q_auc[[m]] <- eval(m_mc_temp_auc, parent.frame())
+      xq_auc[[m]] <- as.matrix(y_mod_q_auc[[m]]$X)
+      xqtemp_auc[[m]] <- if (y_has_intercept[m]) xq_auc[[m]][, -1L, drop=FALSE] else xq_auc[[m]]  
+      if (centreLong) xqtemp_auc[[m]] <- sweep(xqtemp_auc[[m]], 2, xbar[[m]], FUN = "-")
+      Zq_auc[[m]] <- Matrix::t(y_mod_q_auc[[m]]$reTrms$Zt)
+      y_cnmsq_auc[[m]] <- y_mod_q_auc[[m]]$reTrms$cnms
+      y_flistq_auc[[m]] <- y_mod_q_auc[[m]]$reTrms$flist
+    }      
     
     # If association structure is based on interactions with data, then calculate 
     # the design matrix which will be multiplied by etavalue, etaslope, muvalue or muslope
@@ -1532,7 +1584,7 @@ stan_jm <- function(formulaLong, dataLong,
     sum_y_K = as.integer(sum_y_K),
     e_K = as.integer(e_K),
     a_K = as.integer(a_K),
-    quadnodes = quadnodes,
+    quadnodes = as.integer(quadnodes),
     Npat_times_quadnodes = as.integer(Npat * quadnodes),
     sum_y_has_intercept = as.integer(sum_y_has_intercept), 
     sum_y_has_intercept_unbound = as.integer(sum_y_has_intercept_unbound), 
@@ -1579,16 +1631,18 @@ stan_jm <- function(formulaLong, dataLong,
     e_xbar = if (centreEvent) as.array(e_xbar) else double(0),
     e_weights = as.array(e_weights),
     e_weights_rep = as.array(e_weights_rep),
-    quadweight = quadweight,
+    quadweight = as.array(quadweight),
     
     # data for association structure
     assoc = as.integer(a_K > 0L),
     has_assoc_ev = as.array(as.integer(has_assoc$etavalue)),
     has_assoc_es = as.array(as.integer(has_assoc$etaslope)),
     has_assoc_el = as.array(as.integer(has_assoc$etalag)),
+    has_assoc_ea = as.array(as.integer(has_assoc$etaauc)),
     has_assoc_mv = as.array(as.integer(has_assoc$muvalue)),
     has_assoc_ms = as.array(as.integer(has_assoc$muslope)),
     has_assoc_ml = as.array(as.integer(has_assoc$mulag)),
+    has_assoc_ma = as.array(as.integer(has_assoc$muauc)),
     has_assoc_evi = as.array(as.integer(has_assoc$etavalue_interact)),
     has_assoc_esi = as.array(as.integer(has_assoc$etaslope_interact)),
     has_assoc_mvi = as.array(as.integer(has_assoc$muvalue_interact)),
@@ -1596,13 +1650,19 @@ stan_jm <- function(formulaLong, dataLong,
     sum_has_assoc_ev = as.integer(sum(has_assoc$etavalue)),
     sum_has_assoc_es = as.integer(sum(has_assoc$etaslope)),
     sum_has_assoc_el = as.integer(sum(has_assoc$etalag)),
+    sum_has_assoc_ea = as.integer(sum(has_assoc$etaauc)),
     sum_has_assoc_mv = as.integer(sum(has_assoc$muvalue)),
     sum_has_assoc_ms = as.integer(sum(has_assoc$muslope)),
     sum_has_assoc_ml = as.integer(sum(has_assoc$mulag)),
+    sum_has_assoc_ma = as.integer(sum(has_assoc$muauc)),
     sum_has_assoc_evi = as.integer(sum(has_assoc$etavalue_interact)),
     sum_has_assoc_esi = as.integer(sum(has_assoc$etaslope_interact)),
     sum_has_assoc_mvi = as.integer(sum(has_assoc$muvalue_interact)),
     sum_has_assoc_msi = as.integer(sum(has_assoc$muslope_interact)),
+    auc_quadnodes = as.integer(auc_quadnodes),
+    auc_quadweight = as.array(auc_quadweight),
+    nrow_y_Xq_auc = as.integer(auc_quadnodes * NROW(xqtemp[[1]])),
+    Npat_times_auc_quadnodes = as.integer(Npat * auc_quadnodes),
     sum_size_which_b = as.integer(sum(size_which_b)),
     size_which_b = as.array(size_which_b),
     which_b_zindex = as.array(unlist(which_b_zindex)),
@@ -1760,6 +1820,23 @@ stan_jm <- function(formulaLong, dataLong,
   standata$w_Zq_lag <- parts_Zq_lag$w
   standata$v_Zq_lag <- parts_Zq_lag$v
   standata$u_Zq_lag <- as.array(parts_Zq_lag$u)    
+  
+  # data for calculating eta auc in GK quadrature 
+  standata$y_Xq_auc <- if (sum(has_assoc$etaauc, has_assoc$muauc))
+    as.array(as.matrix(Matrix::bdiag(xqtemp_auc))) else as.array(matrix(0,0,sum_y_K))
+  if (length(Zq_auc)) {
+    groupq_auc <- lapply(1:M, function(x) {
+      pad_reTrms(Z = Zq_auc[[x]], 
+                 cnms = y_cnmsq_auc[[x]], 
+                 flist = y_flistq_auc[[x]])})
+    Zq_auc <- lapply(1:M, function(x) groupq_auc[[x]]$Z)
+    Zq_auc_merge <- Matrix::bdiag(Zq_auc) 
+  } else Zq_auc_merge <- matrix(0,0,0)
+  parts_Zq_auc <- rstan::extract_sparse_parts(Zq_auc_merge)
+  standata$num_non_zero_Zq_auc <- as.integer(length(parts_Zq_auc$w))
+  standata$w_Zq_auc <- parts_Zq_auc$w
+  standata$v_Zq_auc <- parts_Zq_auc$v
+  standata$u_Zq_auc <- as.array(parts_Zq_auc$u)    
   
   # data for calculating interactions in GK quadrature 
   standata$y_Xq_int <- as.array(t(as.matrix(do.call("cbind", (xqtemp_int)))))
@@ -1980,11 +2057,13 @@ stan_jm <- function(formulaLong, dataLong,
     if (has_assoc$etaslope[m]) a_nms <- c(a_nms, paste0("Assoc|Long", m,"|etaslope"))
     if (has_assoc$etaslope_interact[m]) a_nms <- c(a_nms, paste0("Assoc|Long", m,"|etaslope:", colnames(xq_int[[m]][["etaslope_interact"]])))    
     if (has_assoc$etalag[m]) a_nms <- c(a_nms, paste0("Assoc|Long", m,"|etalag"))
+    if (has_assoc$etaauc[m]) a_nms <- c(a_nms, paste0("Assoc|Long", m,"|etaauc"))
     if (has_assoc$muvalue[m]) a_nms <- c(a_nms, paste0("Assoc|Long", m,"|muvalue"))
     if (has_assoc$muvalue_interact[m]) a_nms <- c(a_nms, paste0("Assoc|Long", m,"|muvalue:", colnames(xq_int[[m]][["muvalue_interact"]])))    
     if (has_assoc$muslope[m]) a_nms <- c(a_nms, paste0("Assoc|Long", m,"|muslope"))
     if (has_assoc$muslope_interact[m]) a_nms <- c(a_nms, paste0("Assoc|Long", m,"|muslope:", colnames(xq_int[[m]][["muslope_interact"]])))    
     if (has_assoc$mulag[m]) a_nms <- c(a_nms, paste0("Assoc|Long", m,"|mulag"))
+    if (has_assoc$muauc[m]) a_nms <- c(a_nms, paste0("Assoc|Long", m,"|muauc"))
   }
   if (sum(size_which_b)) {
     temp_g_nms <- lapply(1:M, FUN = function(m) {
@@ -2138,10 +2217,14 @@ validate_assoc <- function(m, x, y_cnms, supported_assocs, id_var, xmat) {
   
   # Identify which association types were specified
   if (!is.null(x_tmp)) {
-    x_tmp <- gsub("^shared_b.*", "shared_b", x_tmp) 
-    x_tmp <- gsub("^shared_coef\\(.*", "shared_coef", x_tmp) 
     x_tmp <- gsub("^etalag\\(.*", "etalag", x_tmp) 
     x_tmp <- gsub("^mulag\\(.*", "mulag", x_tmp) 
+    x_tmp <- gsub("^shared_b.*", "shared_b", x_tmp) 
+    x_tmp <- gsub("^shared_coef\\(.*", "shared_coef", x_tmp) 
+    x_tmp <- gsub("^etavalue_interact\\(.*", "etavalue_interact", x_tmp) 
+    x_tmp <- gsub("^muvalue_interact\\(.*", "muvalue_interact", x_tmp) 
+    x_tmp <- gsub("^etaslope_interact\\(.*", "etaslope_interact", x_tmp) 
+    x_tmp <- gsub("^muslope_interact\\(.*", "muslope_interact", x_tmp) 
   }
   assoc <- sapply(supported_assocs, function(y) y %in% x_tmp, simplify = FALSE)
   if (is.null(x_tmp)) {
@@ -2542,7 +2625,7 @@ check_for_dispersion <- function(family) {
 #   longitudinal submodel that are to be used in the shared_coef association structure
 # @return Integer indicating the number of association parameters in the model 
 get_num_assoc_pars <- function(has_assoc, which_b_zindex, which_coef_zindex) {
-  sel <- c("etavalue", "etaslope", "etalag", "muvalue", "muslope", "mulag")
+  sel <- c("etavalue", "etaslope", "etalag", "etaauc", "muvalue", "muslope", "mulag", "muauc")
   a_K <- sum(unlist(has_assoc[sel]))
   a_K <- a_K + length(unlist(which_b_zindex)) + length(unlist(which_coef_zindex))
   return(a_K)
