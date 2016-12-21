@@ -58,15 +58,16 @@ family for one of the longitudinal submodels.}
 
 \item{assoc}{A character string or character vector specifying the joint
 model association structure. Possible association structures that can
-be used include: "etavalue" (the default); "etaslope"; "etalag"; "muvalue"; 
-"mulag"; "shared_b"; "shared_coef"; or "null". These are described in the 
+be used include: "etavalue" (the default); "etaslope"; "etalag"; "etaauc; "muvalue"; 
+"muslope"; "mulag"; "muauc"; "shared_b"; "shared_coef"; or "null". 
+These are described in the 
 \strong{Details} section below. For a multivariate joint model, 
 different association structures can optionally be used for 
 each longitudinal submodel by specifying a list of character
 vectors, with each element of the list specifying the desired association 
 structure for one of the longitudinal submodels. Specifying \code{assoc = NULL}
 will fit a joint model with no association structure (equivalent  
-to fitting separate longitudinal and time-to-event models). See the
+to fitting separate longitudinal and time-to-event models). Also see the
 \strong{Examples} section below.}
 
 \item{base_haz}{A character string indicating which baseline hazard to use
@@ -226,10 +227,14 @@ The \code{stan_jm} function can be used to fit a joint model (also
   (slope) of the linear predictor in the longitudinal submodel 
   (\code{"etaslope"}); lagged value of the linear predictor in the 
   longitudinal submodel (\code{"etalag(#)"}, replacing \code{#} with the
-  desired lag in units of the time variable); current expected value of the 
+  desired lag in units of the time variable); the area under the curve of 
+  the linear predictor in the longitudinal submodel (\code{"etaauc"}); 
+  current expected value of the 
   longitudinal submodel (\code{"muvalue"}); lagged expected value of the
   longitudinal submodel (\code{"mulag(#)"}, replacing \code{#} with the
-  desired lag in units of the time variable); shared individual-level random  
+  desired lag in units of the time variable); the area under the curve of 
+  the expected value from the longitudinal submodel (\code{"muauc"}); 
+  shared individual-level random  
   effects (\code{"shared_b"}); shared individual-level random effects which also
   incorporate the corresponding fixed effect as well as any corresponding 
   random effects for clustering levels higher than the individual)
@@ -240,7 +245,9 @@ The \code{stan_jm} function can be used to fit a joint model (also
   not all possible combinations are allowed.   
   Note that for the lagged association structures (\code{"etalag(#)"} and 
   \code{"mulag(#)"}) use baseline values (time = 0) for the instances where the 
-  time lag results in a time prior to baseline.
+  time lag results in a time prior to baseline. When using the 
+  \code{"etaauc"} or \code{"muauc"} association structures, the area under
+  the curve is evaluated using Gauss-Kronrod quadrature with 15 quadrature nodes. 
   By default, \code{"shared_b"} and \code{"shared_coef"} contribute all 
   random effects to the association structure; however, a subset of the random effects can 
   be chosen by specifying their indices between parentheses as a suffix, for 
@@ -266,7 +273,7 @@ The \code{stan_jm} function can be used to fit a joint model (also
   that are available. \cr
   \cr
   Gauss-Kronrod quadrature is used to numerically evaluate the integral  
-  over the cumulative hazard in the likelihood function for the joint model.
+  over the cumulative hazard in the likelihood function for the event submodel.
   The accuracy of the numerical approximation can be controlled using the
   number of quadrature nodes, specified through the \code{quadnodes} 
   argument. Using a higher number of quadrature nodes will result in a more 
@@ -364,7 +371,7 @@ f4 <- stan_jm(formulaLong = logBili ~ year + (1 | id),
               time_var = "year",
               assoc = c("etavalue", "etavalue_interact(~ trt)"))
 summary(f4)  
-                     
+                    
 }
 
 }
