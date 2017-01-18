@@ -895,16 +895,7 @@ stan_jm <- function(formulaLong, dataLong,
   e_mod <- eval(e_mc, parent.frame())
   e_fr <- e_mf <- expand.model.frame(e_mod, id_var, na.expand = TRUE)
   e_mf <- cbind(unclass(e_mf[,1]), e_mf[, -1, drop = FALSE])
-  
-  # Check ID sorting
-  e_id_list <- factor(unique(e_mf[, id_var]))
-  if (!identical(id_list, sort(e_id_list)))
-    stop("The patient IDs (levels of the grouping factor) included ",
-         "in the longitudinal and event submodels do not match")
-  if (!identical(id_list, e_id_list))
-    stop("'dataEvent' needs to be sorted by the subject ",
-         "ID/grouping variable", call. = FALSE)
-  
+
   e_y <- e_mod$y
   
   # Entry and exit times
@@ -924,7 +915,19 @@ stan_jm <- function(formulaLong, dataLong,
   d           <- mf_event[["status"]]  
   flist_event <- mf_event[[id_var]]
   names(eventtime) <- names(d) <- flist_event
-  
+
+  # Error checks for the ID variable
+  if (!identical(id_list, factor(sort(unique(flist_event)))))
+    stop("The patient IDs (levels of the grouping factor) included ",
+         "in the longitudinal and event submodels do not match")
+  if (!identical(id_list, factor(unique(flist_event))))
+    stop("'dataEvent' needs to be sorted by the subject ",
+         "ID/grouping variable", call. = FALSE)
+  if (!identical(length(id_list), length(eventtime)))
+    stop("The number of patients differs between the longitudinal and ",
+         "event submodels. Perhaps you intended to use 'start/stop' notation ",
+         "for the Surv() object.")
+    
   # Unstandardised quadrature points
   quadpoint <- lapply(quadpoints$points, unstandardise_quadpoints, entrytime, eventtime)
   t_q <- c(list(eventtime), quadpoint)
@@ -1020,16 +1023,7 @@ stan_jm <- function(formulaLong, dataLong,
     e_weights <- rep(0.0, Npat)
     e_weights_rep <- rep(0.0, Npat * quadnodes)
   }
-  
-  # Error checks for the ID variable
-  if (!identical(id_list, factor(sort(unique(flist_event)))))
-    stop("The patient IDs (levels of the grouping factor) included ",
-         "in the longitudinal and event submodels do not match")
-  if (!identical(length(id_list), length(eventtime)))
-    stop("The number of patients differs between the longitudinal and ",
-         "event submodels. Perhaps you intended to use 'start/stop' notation ",
-         "for the Surv() object.")
-  
+
   # Model based initial values
   e_beta <- e_mod$coef
   se_e_beta <- sqrt(diag(e_mod$var))
