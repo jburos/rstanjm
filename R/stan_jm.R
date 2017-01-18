@@ -2624,7 +2624,7 @@ get_num_assoc_pars <- function(has_assoc, which_b_zindex, which_coef_zindex) {
 # @param Ztlist ranef indicator matrices
 # @param cnms group$cnms
 # @param flist group$flist
-#' @importFrom Matrix rBind
+#' @importFrom Matrix rBind t
 pad_reTrms <- function(Ztlist, cnms, flist) {
   stopifnot(is.list(Ztlist))
   l <- sapply(attr(flist, "assign"), function(i) nlevels(flist[[i]]))
