@@ -15,8 +15,7 @@ stan_jm(formulaLong, dataLong, formulaEvent, dataEvent, time_var, id_var,
   priorEvent_ops = priorEvent_options(), priorAssoc = normal(),
   priorAssoc_ops = priorAssoc_options(), prior_covariance = decov(),
   prior_PD = FALSE, adapt_delta = NULL, max_treedepth = NULL,
-  QR = FALSE, algorithm = c("sampling", "meanfield", "fullrank"),
-  debug = FALSE)
+  QR = FALSE, algorithm = c("sampling", "meanfield", "fullrank"))
 }
 \arguments{
 \item{formulaLong}{A two-sided linear formula object describing both the 

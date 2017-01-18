@@ -898,6 +898,9 @@ stan_jm <- function(formulaLong, dataLong,
   
   # Check ID sorting
   e_id_list <- factor(unique(e_mf[, id_var]))
+  if (!identical(id_list, sort(e_id_list)))
+    stop("The patient IDs (levels of the grouping factor) included ",
+         "in the longitudinal and event submodels do not match")
   if (!identical(id_list, e_id_list))
     stop("'dataEvent' needs to be sorted by the subject ",
          "ID/grouping variable", call. = FALSE)
