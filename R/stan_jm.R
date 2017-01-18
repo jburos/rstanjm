@@ -377,8 +377,7 @@ stan_jm <- function(formulaLong, dataLong,
                     priorAssoc_ops = priorAssoc_options(),
                     prior_covariance = decov(), prior_PD = FALSE,
                     adapt_delta = NULL, max_treedepth = NULL, QR = FALSE, 
-                    algorithm = c("sampling", "meanfield", "fullrank"),
-                    debug = FALSE) {
+                    algorithm = c("sampling", "meanfield", "fullrank")) {
   
   
   #=============================
@@ -388,14 +387,14 @@ stan_jm <- function(formulaLong, dataLong,
   # Check for arguments not yet implemented
   if (!missing(offset)) 
     stop("Offsets are not yet implemented for stan_jm")
-  algorithm <- match.arg(algorithm)
-  #if (algorithm %in% c("meanfield", "fullrank"))
-  #  stop ("Meanfield and fullrank algorithms not yet implemented for stan_jm")
   if (QR) 
-    stop("QR decomposition not yet implemented for stan_jm") 
-  #  if ((init == "model_based") && any(unlist(c(centreLong, centreEvent)))) 
-  #    stop("Cannot use model based initial values when 'centreLong = TRUE'",
-  #         " or 'centreEvent = TRUE'.")  
+    stop("QR decomposition not yet implemented for stan_jm")   
+  algorithm <- match.arg(algorithm)
+#  if (algorithm %in% c("meanfield", "fullrank"))
+#    stop ("Meanfield and fullrank algorithms not yet implemented for stan_jm")
+#  if ((init == "model_based") && any(unlist(c(centreLong, centreEvent)))) 
+#    stop("Cannot use model based initial values when 'centreLong = TRUE'",
+#         " or 'centreEvent = TRUE'.")  
   if (missing(weights)) weights <- NULL
   if (missing(id_var)) id_var <- NULL
   if (missing(subsetLong)) subsetLong <- NULL
@@ -404,20 +403,17 @@ stan_jm <- function(formulaLong, dataLong,
   # Matched call
   call <- match.call(expand.dots = TRUE)    
   mc <- match.call(expand.dots = FALSE)
-  mc$time_var <- mc$id_var <- 
-    mc$assoc <- mc$base_haz <- 
-    mc$df <- mc$knots <- 
-    mc$quadnodes <- 
-    mc$centreLong <- mc$centreEvent <- mc$init <- NULL
+  mc$time_var <- mc$id_var <- mc$assoc <- mc$base_haz <- 
+    mc$df <- mc$knots <- mc$quadnodes <- 
+    mc$centreLong <- mc$centreEvent <- NULL
   mc$priorLong <- mc$priorLong_intercept <- mc$priorLong_ops <- 
     mc$priorEvent <- mc$priorEvent_intercept <- mc$priorEvent_ops <-
-    mc$priorAssoc <- mc$priorAssoc_ops <-
-    mc$prior_covariance <- mc$prior_PD <- mc$algorithm <- mc$scale <- 
-    mc$concentration <- mc$shape <-
+    mc$priorAssoc <- mc$priorAssoc_ops <- mc$prior_covariance <-
+    mc$prior_PD <- mc$algorithm <- mc$scale <- 
+    mc$concentration <- mc$shape <- mc$init <- 
     mc$adapt_delta <- mc$max_treedepth <- 
     mc$... <- mc$QR <- NULL
   mc$weights <- NULL
-  mc$debug <- NULL
   
   # Create call for longitudinal submodel  
   y_mc <- mc
@@ -499,9 +495,6 @@ stan_jm <- function(formulaLong, dataLong,
          "event outcome.")
   }
   if (length(assoc) != M) assoc <- rep(assoc, M)
-  if ((M > 1) && (prior_covariance$dist == "lkjcorr"))
-    stop("LKJ prior cannot be used for models with more than one ",
-         "clustering level.", call. = FALSE)
   
   # Check family and link
   supported_families <- c("binomial", "gaussian", "Gamma", "inverse.gaussian",
@@ -579,7 +572,7 @@ stan_jm <- function(formulaLong, dataLong,
   y_K           <- c()        # num. predictors (excluding intercept)
   y_weights     <- list()     # prior weights
   y_offset      <- list()     # offsets
-  Z             <- list()     # Z matrices
+  Ztlist        <- list()     # Z matrices
   y_cnms          <- list()   
   y_flist         <- list()   
   y_gamma         <- c()      # initial values for intercepts
@@ -596,11 +589,6 @@ stan_jm <- function(formulaLong, dataLong,
   ord             <- list()   # ordering of y vector, only present if outcome is bernoulli
   
   for (m in 1:M) {
-    
-    #if (M == 1) 
-    #cat("\n--> Fitting separate longitudinal model now...") 
-    #else 
-    #cat(paste0("\n--> Fitting separate longitudinal model for marker ", m, " now..."))  
     
     # Fit separate longitudinal model
     if ((family[[m]]$family == "gaussian") && (family[[m]]$link == "identity")) {
@@ -665,7 +653,7 @@ stan_jm <- function(formulaLong, dataLong,
     } else trials[[m]] <- rep(0L, length(y[[m]]))
     
     # Random effect terms
-    Z[[m]]     <- lme4::getME(y_mod[[m]], "Z")
+    Ztlist[[m]] <- lme4::getME(y_mod[[m]], "Ztlist")
     y_cnms[[m]]  <- lme4::getME(y_mod[[m]], "cnms")
     y_flist[[m]] <- lme4::getME(y_mod[[m]], "flist")
     y_offset[[m]] <- lme4::getME(y_mod[[m]], "offset")
@@ -683,7 +671,7 @@ stan_jm <- function(formulaLong, dataLong,
       y[[m]] <- y[[m]][ord[[m]]]
       trials[[m]] <- trials[[m]][ord[[m]]]
       xtemp[[m]] <- xtemp[[m]][ord[[m]], , drop = FALSE]  
-      Z[[m]] <- Z[[m]][ord[[m]], , drop = FALSE]
+      Ztlist[[m]] <- lapply(Ztlist[[m]], function(x) x[, ord[[m]], drop = FALSE])
       y_N01[[m]] <- sapply(0:1, function(x) sum(y[[m]] == x))
     } else y_N01[[m]] <- rep(0L, 2)  # dud entry if not bernoulli
     
@@ -851,9 +839,6 @@ stan_jm <- function(formulaLong, dataLong,
   # Items to store for event submodel
   e_beta <- c()
   
-  # Survival submodel
-  #cat("\n--> Fitting separate survival model now...") 
-  
   # Baseline hazard
   base_haz <- match.arg(base_haz)
   base_haz_weibull <- (base_haz == "weibull")
@@ -1014,11 +999,14 @@ stan_jm <- function(formulaLong, dataLong,
     e_xbar <- colMeans(e_xtemp)
     e_xtemp <- sweep(e_xtemp, 2, e_xbar, FUN = "-")
   }
+  
+    
+  # Some additional bits -- NB weights here are quadrature weights, not prior weights
   e_K <- NCOL(e_xtemp)
   Npat <- length(eventtime)
   quadweight <- unlist(lapply(quadpoints$weights, unstandardise_quadweights, entrytime, eventtime))
   
-  # Construct weights for event submodel
+  # Construct prior weights for event submodel
   if (has_weights) {
     flist_df <- data.frame(id = flist_event)
     weights_df <- merge(flist_df, weights, 
@@ -1039,7 +1027,7 @@ stan_jm <- function(formulaLong, dataLong,
          "event submodels. Perhaps you intended to use 'start/stop' notation ",
          "for the Surv() object.")
   
-  # Initial values
+  # Model based initial values
   e_beta <- e_mod$coef
   se_e_beta <- sqrt(diag(e_mod$var))
   
@@ -1093,28 +1081,28 @@ stan_jm <- function(formulaLong, dataLong,
   y_fr            <- list()   # model frame with the addition of time_var
   xq              <- list()   # design matrix before removing intercept and centering
   xqtemp          <- list()   # design matrix after removing intercept and possibly centred
-  Zq              <- list()   # random effects matrix
+  Ztlistq         <- list()   # random effects matrix at event and quad times
   y_cnmsq         <- list() 
   y_flistq        <- list()
   
   y_mod_q_eps     <- list()   # fitted long. submodels under time shift of epsilon
   xq_eps          <- list()   
   xqtemp_eps      <- list()  
-  Zq_eps          <- list()  
+  Ztlistq_eps     <- list()
   y_cnmsq_eps     <- list()
   y_flistq_eps    <- list()
   
   y_mod_q_lag     <- list()   # fitted long. submodels under time lag
   xq_lag          <- list()  
   xqtemp_lag      <- list()  
-  Zq_lag          <- list()  
+  Ztlistq_lag     <- list()  
   y_cnmsq_lag     <- list()
   y_flistq_lag    <- list()
   
   y_mod_q_auc     <- list()   # fitted long. submodels at subquadrature points
   xq_auc          <- list()  
   xqtemp_auc      <- list()  
-  Zq_auc          <- list()  
+  Ztlistq_auc     <- list()  
   y_cnmsq_auc     <- list()
   y_flistq_auc    <- list()  
   
@@ -1163,9 +1151,10 @@ stan_jm <- function(formulaLong, dataLong,
     
     xq[[m]] <- as.matrix(y_mod_q[[m]]$X)
     xqtemp[[m]] <- if (y_has_intercept[m]) xq[[m]][, -1L, drop=FALSE] else xq[[m]]  
-    Zq[[m]] <- Matrix::t(y_mod_q[[m]]$reTrms$Zt)
+    Ztlistq[[m]] <- y_mod_q[[m]]$reTrms$Ztlist
     y_cnmsq[[m]] <- y_mod_q[[m]]$reTrms$cnms
     y_flistq[[m]] <- y_mod_q[[m]]$reTrms$flist
+    
     #Needs working out to appropriately deal with offsets??
     #offset_quadtime <- model.offset(mod_quadtime$fr) %ORifNULL% double(0)
     
@@ -1184,7 +1173,7 @@ stan_jm <- function(formulaLong, dataLong,
       xq_eps[[m]] <- as.matrix(y_mod_q_eps[[m]]$X)
       xqtemp_eps[[m]] <- if (y_has_intercept[m]) xq_eps[[m]][, -1L, drop=FALSE] else xq_eps[[m]]  
       if (centreLong) xqtemp_eps[[m]] <- sweep(xqtemp_eps[[m]], 2, xbar[[m]], FUN = "-")
-      Zq_eps[[m]] <- Matrix::t(y_mod_q_eps[[m]]$reTrms$Zt)
+      Ztlistq_eps[[m]] <- y_mod_q_eps[[m]]$reTrms$Ztlist
       y_cnmsq_eps[[m]] <- y_mod_q_eps[[m]]$reTrms$cnms
       y_flistq_eps[[m]] <- y_mod_q_eps[[m]]$reTrms$flist
     } 
@@ -1205,7 +1194,7 @@ stan_jm <- function(formulaLong, dataLong,
       xq_lag[[m]] <- as.matrix(y_mod_q_lag[[m]]$X)
       xqtemp_lag[[m]] <- if (y_has_intercept[m]) xq_lag[[m]][, -1L, drop=FALSE] else xq_lag[[m]]  
       if (centreLong) xqtemp_lag[[m]] <- sweep(xqtemp_lag[[m]], 2, xbar[[m]], FUN = "-")
-      Zq_lag[[m]] <- Matrix::t(y_mod_q_lag[[m]]$reTrms$Zt)
+      Ztlistq_lag[[m]] <- y_mod_q_lag[[m]]$reTrms$Ztlist
       y_cnmsq_lag[[m]] <- y_mod_q_lag[[m]]$reTrms$cnms
       y_flistq_lag[[m]] <- y_mod_q_lag[[m]]$reTrms$flist
     } 
@@ -1224,7 +1213,7 @@ stan_jm <- function(formulaLong, dataLong,
       xq_auc[[m]] <- as.matrix(y_mod_q_auc[[m]]$X)
       xqtemp_auc[[m]] <- if (y_has_intercept[m]) xq_auc[[m]][, -1L, drop=FALSE] else xq_auc[[m]]  
       if (centreLong) xqtemp_auc[[m]] <- sweep(xqtemp_auc[[m]], 2, xbar[[m]], FUN = "-")
-      Zq_auc[[m]] <- Matrix::t(y_mod_q_auc[[m]]$reTrms$Zt)
+      Ztlistq_auc[[m]] <- y_mod_q_auc[[m]]$reTrms$Ztlist
       y_cnmsq_auc[[m]] <- y_mod_q_auc[[m]]$reTrms$cnms
       y_flistq_auc[[m]] <- y_mod_q_auc[[m]]$reTrms$flist
     }      
@@ -1279,10 +1268,8 @@ stan_jm <- function(formulaLong, dataLong,
   # Prior distributions
   #=====================
   
-  ok_dists <- nlist("normal", student_t = "t", "cauchy", "hs", "hs_plus",
-                    "informative_normal", informative_student_t = "informative_t",
-                    "informative_cauchy")
-  ok_intercept_dists <- if (length(ok_dists) > 5L) ok_dists[c(1:3,6:8)] else ok_dists[1:3]
+  ok_dists <- nlist("normal", student_t = "t", "cauchy", "hs", "hs_plus")
+  ok_intercept_dists <- ok_dists[1:3]
   
   # Priors for longitudinal submodel(s)
   priorLong_scaled <- priorLong_ops$scaled
@@ -1291,7 +1278,6 @@ stan_jm <- function(formulaLong, dataLong,
     as.array(maybe_broadcast(priorLong_ops$prior_scale_for_dispersion, sum_y_has_dispersion))
   
   if (is.null(priorLong)) {
-    priorLong_informative <- FALSE
     priorLong_dist <- 0L
     priorLong_mean <- as.array(rep(0, sum_y_K))
     priorLong_scale <- priorLong_df <- as.array(rep(1, sum_y_K))
@@ -1306,23 +1292,13 @@ stan_jm <- function(formulaLong, dataLong,
     if (!priorLong_dist %in% unlist(ok_dists)) {
       stop("The prior distribution for the coefficients should be one of ",
            paste(names(ok_dists), collapse = ", "))
-    } else if (priorLong_dist %in% c("informative_normal", "informative_t")) {
-      priorLong_informative <- TRUE
-      priorLong_dist <- ifelse(priorLong_dist == "informative_normal", 1L, 2L)
-      priorLong_mean <- unlist(y_beta)
-      priorLong_scale <- 
-        set_prior_scale(priorLong_scale * unlist(se_y_beta), 
-                        default = 10 * unlist(se_y_beta), 
-                        link = family[[1]]$link)
     } else if (priorLong_dist %in% c("normal", "t")) {
-      priorLong_informative <- FALSE
       priorLong_dist <- ifelse(priorLong_dist == "normal", 1L, 2L)
       # !!! Need to change this so that link can be specific to each submodel
       priorLong_scale <- 
         set_prior_scale(priorLong_scale, default = 2.5, 
                         link = family[[1]]$link)
     } else {
-      priorLong_informative <- FALSE
       priorLong_dist <- ifelse(priorLong_dist == "hs", 3L, 4L)
     }
     
@@ -1351,16 +1327,7 @@ stan_jm <- function(formulaLong, dataLong,
     if (!priorLong_dist_for_intercept %in% unlist(ok_intercept_dists)) {
       stop("The prior distribution for the intercept should be one of ",
            paste(names(ok_intercept_dists), collapse = ", "))
-    } else if (priorLong_dist_for_intercept %in% c("informative_normal", "informative_t")) {
-      priorLong_informative_for_intercept <- TRUE
-      priorLong_dist_for_intercept <- 
-        ifelse(priorLong_dist_for_intercept == "informative_normal", 1L, 2L)
-      priorLong_mean_for_intercept <- y_gamma
-      priorLong_scale_for_intercept <- 
-        set_prior_scale(priorLong_scale_for_intercept * se_y_gamma, 
-                        default = 10 * se_y_gamma, link = family[[1]]$link)
     } else {
-      priorLong_informative_for_intercept <- FALSE
       priorLong_dist_for_intercept <- 
         ifelse(priorLong_dist_for_intercept == "normal", 1L, 2L)
       priorLong_scale_for_intercept <- 
@@ -1388,7 +1355,6 @@ stan_jm <- function(formulaLong, dataLong,
     maybe_broadcast(priorEvent_scale_for_piecewise, piecewise_df)  
   
   if (is.null(priorEvent)) {
-    priorEvent_informative <- FALSE
     priorEvent_dist <- 0L
     priorEvent_mean <- as.array(rep(0, e_K))
     priorEvent_scale <- priorEvent_df <- as.array(rep(1, e_K))
@@ -1403,21 +1369,12 @@ stan_jm <- function(formulaLong, dataLong,
     if (!priorEvent_dist %in% unlist(ok_dists)) {
       stop("The prior distribution for the event model coefficients should be one of ",
            paste(names(ok_dists), collapse = ", "))
-    } else if (priorEvent_dist %in% c("informative_normal", "informative_t")) {
-      priorEvent_informative <- TRUE
-      priorEvent_dist <- ifelse(priorEvent_dist == "informative_normal", 1L, 2L)
-      priorEvent_mean <- e_beta
-      priorEvent_scale <- 
-        set_prior_scale(priorEvent_scale * se_e_beta, 
-                        default = 10 * se_e_beta, link = "none")
     } else if (priorEvent_dist %in% c("normal", "t")) {
-      priorEvent_informative <- FALSE
       priorEvent_dist <- ifelse(priorEvent_dist == "normal", 1L, 2L)
-      # !!! Need to think about whether 2.5 is appropriate default value here
+      # !!! Need to think about whether 2 is appropriate default value here
       priorEvent_scale <- set_prior_scale(priorEvent_scale, default = 2, 
                                           link = "none")
     } else {
-      priorEvent_informative <- FALSE
       priorEvent_dist <- ifelse(priorEvent_dist == "hs", 3L, 4L)
     }
     
@@ -1455,7 +1412,7 @@ stan_jm <- function(formulaLong, dataLong,
   }
   
   # Priors for association parameters
-  priorAssoc_scaled <- priorAssoc_ops$scaled
+  priorAssoc_scaled <- priorAssoc_ops$scaled  # not currently used
   priorAssoc_min_prior_scale <- priorAssoc_ops$min_prior_scale
   
   if (is.null(priorAssoc)) {
@@ -1504,22 +1461,19 @@ stan_jm <- function(formulaLong, dataLong,
         }
         if (is_gaussian[[m]]) {
           ss <- 2 * sd(y[[m]])
-          if (!priorLong_informative)
-            priorLong_scale[mark_start:mark_end] <- ss * priorLong_scale[mark_start:mark_end]
-          if (!priorLong_informative_for_intercept)
-            priorLong_scale_for_intercept[[m]] <-  ss * priorLong_scale_for_intercept[[m]]
+          priorLong_scale[mark_start:mark_end] <- ss * priorLong_scale[mark_start:mark_end]
+          priorLong_scale_for_intercept[[m]] <-  ss * priorLong_scale_for_intercept[[m]]
         }
         if (!QR) 
-          if (!priorLong_informative)
-            priorLong_scale[mark_start:mark_end] <- 
-              pmax(priorLong_min_prior_scale, priorLong_scale[mark_start:mark_end] / 
-                     apply(xtemp[[m]], 2L, FUN = function(x) {
-                       num.categories <- length(unique(x))
-                       x.scale <- 1
-                       if (num.categories == 2) x.scale <- diff(range(x))
-                       else if (num.categories > 2) x.scale <- 2 * sd(x)
-                       return(x.scale)
-                     }))      
+          priorLong_scale[mark_start:mark_end] <- 
+            pmax(priorLong_min_prior_scale, priorLong_scale[mark_start:mark_end] / 
+                   apply(xtemp[[m]], 2L, FUN = function(x) {
+                     num.categories <- length(unique(x))
+                     x.scale <- 1
+                     if (num.categories == 2) x.scale <- diff(range(x))
+                     else if (num.categories > 2) x.scale <- 2 * sd(x)
+                     return(x.scale)
+                   }))      
       }
       
     }
@@ -1530,15 +1484,14 @@ stan_jm <- function(formulaLong, dataLong,
   
   # Minimum scaling of priors for event submodel
   if (priorEvent_scaled && priorEvent_dist > 0L) {
-    if (!priorEvent_informative)
-      priorEvent_scale <- pmax(priorEvent_min_prior_scale, priorEvent_scale / 
-                                 apply(e_xtemp, 2L, FUN = function(x) {
-                                   num.categories <- length(unique(x))
-                                   e.x.scale <- 1
-                                   if (num.categories == 2) e.x.scale <- diff(range(x))
-                                   else if (num.categories > 2) e.x.scale <- 2 * sd(x)
-                                   return(e.x.scale)
-                                 }))
+    priorEvent_scale <- pmax(priorEvent_min_prior_scale, priorEvent_scale / 
+                               apply(e_xtemp, 2L, FUN = function(x) {
+                                 num.categories <- length(unique(x))
+                                 e.x.scale <- 1
+                                 if (num.categories == 2) e.x.scale <- diff(range(x))
+                                 else if (num.categories > 2) e.x.scale <- 2 * sd(x)
+                                 return(e.x.scale)
+                               }))
   }
   priorEvent_scale <- as.array(pmin(.Machine$double.xmax, priorEvent_scale))
   priorEvent_scale_for_intercept <- 
@@ -1707,7 +1660,7 @@ stan_jm <- function(formulaLong, dataLong,
   
   # data for random effects
   group <- lapply(1:M, function(x) {
-    pad_reTrms(Z = Z[[x]], 
+    pad_reTrms(Ztlist = Ztlist[[x]], 
                cnms = y_cnms[[x]], 
                flist = y_flist[[x]])})
   Z     <- lapply(1:M, function(x) group[[x]]$Z)
@@ -1775,7 +1728,7 @@ stan_jm <- function(formulaLong, dataLong,
   
   # data for random effects in GK quadrature
   groupq <- lapply(1:M, function(x) {
-    pad_reTrms(Z = Zq[[x]], 
+    pad_reTrms(Ztlist = Ztlistq[[x]], 
                cnms = y_cnmsq[[x]], 
                flist = y_flistq[[x]])})
   Zq <- lapply(1:M, function(x) groupq[[x]]$Z)
@@ -1790,9 +1743,9 @@ stan_jm <- function(formulaLong, dataLong,
   standata$eps <- eps  # time shift for numerically calculating derivative
   standata$y_Xq_eps <- if (sum(has_assoc$etaslope, has_assoc$muslope))
     as.array(as.matrix(Matrix::bdiag(xqtemp_eps))) else as.array(matrix(0,0,sum_y_K))
-  if (length(Zq_eps)) {
+  if (length(Ztlistq_eps)) {
     groupq_eps <- lapply(1:M, function(x) {
-      pad_reTrms(Z = Zq_eps[[x]], 
+      pad_reTrms(Ztlist = Ztlistq_eps[[x]], 
                  cnms = y_cnmsq_eps[[x]], 
                  flist = y_flistq_eps[[x]])})
     Zq_eps <- lapply(1:M, function(x) groupq_eps[[x]]$Z)
@@ -1807,9 +1760,9 @@ stan_jm <- function(formulaLong, dataLong,
   # data for calculating eta lag in GK quadrature 
   standata$y_Xq_lag <- if (sum(has_assoc$etalag, has_assoc$mulag))
     as.array(as.matrix(Matrix::bdiag(xqtemp_lag))) else as.array(matrix(0,0,sum_y_K))
-  if (length(Zq_lag)) {
+  if (length(Ztlistq_lag)) {
     groupq_lag <- lapply(1:M, function(x) {
-      pad_reTrms(Z = Zq_lag[[x]], 
+      pad_reTrms(Ztlist = Ztlistq_lag[[x]], 
                  cnms = y_cnmsq_lag[[x]], 
                  flist = y_flistq_lag[[x]])})
     Zq_lag <- lapply(1:M, function(x) groupq_lag[[x]]$Z)
@@ -1824,9 +1777,9 @@ stan_jm <- function(formulaLong, dataLong,
   # data for calculating eta auc in GK quadrature 
   standata$y_Xq_auc <- if (sum(has_assoc$etaauc, has_assoc$muauc))
     as.array(as.matrix(Matrix::bdiag(xqtemp_auc))) else as.array(matrix(0,0,sum_y_K))
-  if (length(Zq_auc)) {
+  if (length(Ztlistq_auc)) {
     groupq_auc <- lapply(1:M, function(x) {
-      pad_reTrms(Z = Zq_auc[[x]], 
+      pad_reTrms(Ztlist = Ztlistq_auc[[x]], 
                  cnms = y_cnmsq_auc[[x]], 
                  flist = y_flistq_auc[[x]])})
     Zq_auc <- lapply(1:M, function(x) groupq_auc[[x]]$Z)
@@ -1854,10 +1807,6 @@ stan_jm <- function(formulaLong, dataLong,
     standata$len_regularization <- sum(p > 1)
     standata$regularization <- 
       as.array(maybe_broadcast(decov_args$regularization, sum(p > 1))) 
-  } else if (prior_covariance$dist == "lkjcorr") {
-    lkj_args <- prior_covariance
-    standata$lkj_shape <- as.array(maybe_broadcast(lkj_args$shape, t))
-    standata$prior_scale_for_sd_b <- as.array(maybe_broadcast(lkj_args$scale, sum(p)))
   }
   
   standata$family <- as.array(sapply(1:M, function(x) {
@@ -1938,8 +1887,6 @@ stan_jm <- function(formulaLong, dataLong,
           normalised_zetas <- c(normalised_zetas, normalised_zetas_tmp)
         }
       }
-    } else if (prior_covariance$dist == "lkjcorr") { 
-      sd_b_unscaled <- (unlist(sd_b)) / standata$prior_scale_for_sd_b
     }
     
     model_based_inits <- Filter(function(x) (!is.null(x)), c(
@@ -1972,10 +1919,6 @@ stan_jm <- function(formulaLong, dataLong,
         rho = if ((sum(p) - t) > 0) as.array(rep(1 / (sum(p) - t + 1), (sum(p) - t))) else double(0),
         zeta = if (!is.null(normalised_zetas)) as.array(normalised_zetas) else double(0),
         tau = as.array(tau)
-      ),
-      if (prior_covariance$dist == "lkjcorr") list(
-        sd_b_unscaled = as.array(sd_b_unscaled),
-        L_b_Corr = t(chol(as.matrix(Matrix::bdiag(b_Corr))))
       )
     ))
     init <- function() model_based_inits
@@ -1985,11 +1928,9 @@ stan_jm <- function(formulaLong, dataLong,
   #===========
   # Fit model
   #===========
-  
-  standata$debug <- as.integer(debug)
-  
+    
   # call stan() to draw from posterior distribution
-  stanfit <- if (prior_covariance$dist == "lkjcorr") stanmodels$jmlkjcorr else stanmodels$jm
+  stanfit <- stanmodels$jm
   pars <- c(if (sum_y_has_intercept_unbound) "y_gamma_unbound",
             if (sum_y_has_intercept_lobound) "y_gamma_lobound",
             if (sum_y_has_intercept_upbound) "y_gamma_upbound",
@@ -2004,17 +1945,14 @@ stan_jm <- function(formulaLong, dataLong,
             "y_dispersion", 
             if (base_haz_weibull) "weibull_shape",
             if (base_haz_piecewise) "piecewise_coefs",
-            if (base_haz_bs) "bs_coefs",
-            #"mean_PPD",
-            "theta_L")
+            if (base_haz_bs) "bs_coefs")
   
-  #cat("\n--> Fitting joint model now...")
-  if (M == 1L) cat("Univariate joint model specified\n")
-  if (M > 1L)  cat("Multivariate joint model specified\n")
+  cat(paste0(if (M == 1L) "Uni" else "Multi", 
+             "variate joint model specified\n"))
   if (algorithm == "sampling") {
     cat("\nPlease note the warmup phase may be much slower than",
         "later iterations!\n")             
-    sampling_args <- set_sampling_args(
+    sampling_args <- set_sampling_args_for_jm(
       object = stanfit, 
       user_dots = list(...), 
       user_adapt_delta = adapt_delta,
@@ -2095,9 +2033,7 @@ stan_jm <- function(formulaLong, dataLong,
                  d_nms,
                  if (base_haz_weibull) "Event|weibull-shape",               
                  if (base_haz_piecewise) paste0("Event|basehaz-coef", seq(piecewise_df)),               
-                 if (base_haz_bs) paste0("Event|basehaz-coef", seq(bs_df)),               
-                 #"mean_PPD",
-                 paste0("theta_L", seq(standata$len_theta_L)),
+                 if (base_haz_bs) paste0("Event|basehaz-coef", seq(bs_df)),
                  "log-posterior")
   stanfit@sim$fnames_oi <- new_names
   
@@ -2110,7 +2046,7 @@ stan_jm <- function(formulaLong, dataLong,
     attr <- attributes(bs_basis)[c("degree", "knots", "Boundary.knots", "intercept")] 
   } else if (base_haz_piecewise) {
     attr <- list(df = piecewise_df, knots = knots)
-  } else NULL
+  } else attr <- NULL
   
   # Undo ordering of matrices if bernoulli
   for (m in 1:M) {
@@ -2147,6 +2083,62 @@ stan_jm <- function(formulaLong, dataLong,
   
   return(out)
 }
+
+
+# Set arguments for sampling for stan_jm
+#
+# Prepare a list of arguments to use with \code{rstan::sampling} via
+# \code{do.call}.
+#
+# @param object The stanfit object to use for sampling.
+# @param user_dots The contents of \code{...} from the user's call to
+#   the \code{stan_jm} modeling function.
+# @param user_adapt_delta The value for \code{adapt_delta} specified by the
+#   user.
+# @param user_max_treedepth The value for \code{max_treedepth} specified by the
+#   user.
+# @param sum_p The total number of random effects in the joint model. Should
+#   likely be passed as sum(standata$p)
+# @param ... Other arguments to \code{\link[rstan]{sampling}} not coming from
+#   \code{user_dots} (e.g. \code{pars}, \code{init}, etc.)
+# @return A list of arguments to use for the \code{args} argument for 
+#   \code{do.call(sampling, args)}.
+set_sampling_args_for_jm <- function(object, user_dots = list(), 
+                                     user_adapt_delta = NULL, 
+                                     user_max_treedepth = NULL, 
+                                     sum_p = NULL, ...) {
+  args <- list(object = object, ...)
+  unms <- names(user_dots)
+  for (j in seq_along(user_dots)) {
+    args[[unms[j]]] <- user_dots[[j]]
+  }
+  
+  if (is.null(sum_p) || (sum_p <= 0))
+    stop("Bug found: sum_p should specify the total number ",
+         "of random effects in the joint model (used for ",
+         "determining the default adapt_delta")
+  
+  default_adapt_delta <- if (sum_p > 2) 0.85 else 0.80
+  default_max_treedepth <- 9L
+  
+  if (!is.null(user_adapt_delta))
+    args$control$adapt_delta <- user_adapt_delta else 
+      if (is.null(args$control$adapt_delta))
+        args$control$adapt_delta <- default_adapt_delta
+  
+  if (!is.null(user_max_treedepth))
+    args$control$max_treedepth <- user_max_treedepth else
+      if (is.null(args$control$max_treedepth))
+        args$control$max_treedepth <- default_max_treedepth
+  
+  if (!"iter" %in% unms) args$iter <- 1000
+  if (!"chains" %in% unms) args$chains <- 1
+  #if (!"cores" %in% unms) args$cores <- parallel::detectCores()
+  if (!"refresh" %in% unms) args$refresh <- args$iter / 25
+  if (!"save_warmup" %in% unms) args$save_warmup <- TRUE  
+  
+  return(args)
+}  
 
 
 # Check the id_var argument is valid and is included appropriately in the
@@ -2633,57 +2625,62 @@ get_num_assoc_pars <- function(has_assoc, which_b_zindex, which_coef_zindex) {
 
 # Add extra level _NEW_ to each group
 # 
-# @param Z ranef indicator matrix
+# @param Ztlist ranef indicator matrices
 # @param cnms group$cnms
 # @param flist group$flist
-pad_reTrms <- function(Z, cnms, flist) {
+#' @importFrom Matrix rBind
+pad_reTrms <- function(Ztlist, cnms, flist) {
+  stopifnot(is.list(Ztlist))
   l <- sapply(attr(flist, "assign"), function(i) nlevels(flist[[i]]))
   p <- sapply(cnms, FUN = length)
-  last <- cumsum(l * p)
+  n <- ncol(Ztlist[[1]])
   for (i in attr(flist, "assign")) {
+    if (grepl("^Xr", names(p)[i])) next
     levels(flist[[i]]) <- c(gsub(" ", "_", levels(flist[[i]])), 
                             paste0("_NEW_", names(flist)[i]))
   }
-  n <- nrow(Z)
-  mark <- length(p) - 1L
-  if (getRversion() < "3.2.0") {
-    Z <- Matrix::cBind(Z, Matrix::Matrix(0, nrow = n, ncol = p[length(p)], sparse = TRUE))
-    for (i in rev(utils::head(last, -1))) {
-      Z <- Matrix::cBind(Matrix::cBind(Z[, 1:i, drop = FALSE],
-                                       Matrix::Matrix(0, n, p[mark], sparse = TRUE)),
-                         Z[, (i+1):ncol(Z), drop = FALSE])
-      mark <- mark - 1L
+  for (i in 1:length(p)) {
+    if (grepl("^Xr", names(p)[i])) next
+    Ztlist[[i]] <- if (getRversion() < "3.2.0") {
+      rBind( Ztlist[[i]], Matrix(0, nrow = p[i], ncol = n, sparse = TRUE))
+    } else {
+      rbind2(Ztlist[[i]], Matrix(0, nrow = p[i], ncol = n, sparse = TRUE))
     }
   }
-  else {
-    Z <- cbind2(Z, Matrix::Matrix(0, nrow = n, ncol = p[length(p)], sparse = TRUE))
-    for (i in rev(utils::head(last, -1))) {
-      Z <- cbind(Z[, 1:i, drop = FALSE],
-                 Matrix::Matrix(0, n, p[mark], sparse = TRUE),
-                 Z[, (i+1):ncol(Z), drop = FALSE])
-      mark <- mark - 1L
-    }
-  }
-  nlist(Z, cnms, flist)
+  Z <- t(do.call(rbind, args = Ztlist))
+  return(nlist(Z, cnms, flist))
 }
 
 # Drop the extra reTrms from a matrix x
 #
-# @param x A matrix (e.g. the posterior sample or matrix of summary stats)
-# @param columns Do the columns (TRUE) or rows (FALSE) correspond to the
+# @param x A matrix or array (e.g. the posterior sample or matrix of summary
+#   stats)
+# @param columns Do the columns (TRUE) or rows (FALSE) correspond to the 
 #   variables?
 unpad_reTrms <- function(x, ...) UseMethod("unpad_reTrms")
 unpad_reTrms.default <- function(x, ...) {
-  if (is.matrix(x))
-    return(unpad_reTrms.matrix(x, ...))
+  if (is.matrix(x) || is.array(x))
+    return(unpad_reTrms.array(x, ...))
   keep <- !grepl("_NEW_", names(x), fixed = TRUE)
   x[keep]
 }
-unpad_reTrms.matrix <- function(x, columns = TRUE, ...) {
+
+unpad_reTrms.array <- function(x, columns = TRUE, ...) {
+  ndim <- length(dim(x))
+  if (ndim > 3)
+    stop("'x' should be a matrix or 3-D array")
+  
   nms <- if (columns) 
-    colnames(x) else rownames(x)
+    last_dimnames(x) else rownames(x)
   keep <- !grepl("_NEW_", nms, fixed = TRUE)
-  if (columns) x[, keep, drop = FALSE] else x[keep, , drop = FALSE]
+  if (length(dim(x)) == 2) {
+    x_keep <- if (columns) 
+      x[, keep, drop = FALSE] else x[keep, , drop = FALSE]
+  } else {
+    x_keep <- if (columns) 
+      x[, , keep, drop = FALSE] else x[keep, , , drop = FALSE]
+  }
+  return(x_keep)
 }
 
 

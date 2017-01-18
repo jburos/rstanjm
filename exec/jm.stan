@@ -726,7 +726,6 @@ functions {
   
 }
 data {
-  int<lower=0,upper=1> debug;
   
   // dimensions
   int<lower=1> M;  // num. of long. submodels
@@ -1120,8 +1119,6 @@ transformed parameters {
   vector[len_b] b; 
   vector[len_b] b_by_model; 
 
-  if (debug == 1) print("Debug location 1")
-
   // parameters for longitudinal submodel(s)
   if      (priorLong_dist == 0) y_beta = y_z_beta;
   else if (priorLong_dist == 1) y_beta = y_z_beta .* priorLong_scale + priorLong_mean;
@@ -1163,8 +1160,6 @@ transformed parameters {
     }    
   }
 
-  if (debug == 1) print("Debug location 2")
-
   // parameters for event submodel
   if      (priorEvent_dist == 0) e_beta = e_z_beta;
   else if (priorEvent_dist == 1) e_beta = e_z_beta .* priorEvent_scale + priorEvent_mean;
@@ -1202,8 +1197,6 @@ transformed parameters {
     piecewise_coefs = priorEvent_scale_for_piecewise .* piecewise_coefs_unscaled;
   }  
 
-  if (debug == 1) print("Debug location 3")
-
   // parameters for association structure
   if      (priorAssoc_dist == 0) a_beta = a_z_beta;
   else if (priorAssoc_dist == 1) a_beta = a_z_beta .* priorAssoc_scale + priorAssoc_mean;
@@ -1231,8 +1224,6 @@ transformed parameters {
   else if (priorAssoc_dist == 3) a_beta = hs_prior(a_z_beta, a_global, a_local);
   else if (priorAssoc_dist == 4) a_beta = hsplus_prior(a_z_beta, a_global, a_local);
 
-  if (debug == 1) print("Debug location 4")
-
   // parameters for random effects model
   if (t > 0) {
     theta_L = make_theta_L(len_theta_L, p, 1.0, tau, scale, zeta, rho, z_T);
@@ -1241,8 +1232,6 @@ transformed parameters {
 	  else b_by_model = b;
   }
   
-  if (debug == 1) print("Debug location 5")
-
   //===============
   // GK quadrature
   //===============
@@ -1250,14 +1239,14 @@ transformed parameters {
   // Longitudinal submodel(s): linear predictor at event and quad times
   if (sum_y_K > 0) y_eta_q = y_Xq * y_beta;
   else y_eta_q = rep_vector(0.0, (M*nrow_y_Xq));
-  //if (y_has_offset == 1) y_eta_q = y_eta_q + y_offset;
+  //if (y_has_offset == 1) y_eta_q = y_eta_q + y_offset; # how to handle offset?
   y_eta_q = y_eta_q + csr_matrix_times_vector((M*nrow_y_Xq), len_b, w_Zq, v_Zq, u_Zq, b_by_model);
 
   // Longitudinal submodel(s): slope of linear predictor at event and quad times
   if ((sum_has_assoc_es > 0) || (sum_has_assoc_ms > 0)) {
     if (sum_y_K > 0) y_eta_q_eps = y_Xq_eps * y_beta;
     else y_eta_q_eps = rep_vector(0.0, (M*nrow_y_Xq));
-    // !!! if (y_has_offset == 1) y_eta_q_eps = y_eta_q_eps + y_offset; # ignore offset in derivative?
+    //if (y_has_offset == 1) y_eta_q_eps = y_eta_q_eps + y_offset; # how to handle offset?
     y_eta_q_eps = y_eta_q_eps + csr_matrix_times_vector((M*nrow_y_Xq), len_b, w_Zq_eps, v_Zq_eps, u_Zq_eps, b_by_model);
   }
 
@@ -1265,7 +1254,7 @@ transformed parameters {
   if ((sum_has_assoc_el > 0) || (sum_has_assoc_ml > 0)) {
     if (sum_y_K > 0) y_eta_q_lag = y_Xq_lag * y_beta;
     else y_eta_q_lag = rep_vector(0.0, (M*nrow_y_Xq));
-    // !!! if (y_has_offset == 1) y_eta_q_lag = y_eta_q_lag + y_offset; # ignore offset in lagged value?
+    //if (y_has_offset == 1) y_eta_q_lag = y_eta_q_lag + y_offset; # how to handle offset?
     y_eta_q_lag = y_eta_q_lag + csr_matrix_times_vector((M*nrow_y_Xq), len_b, w_Zq_lag, v_Zq_lag, u_Zq_lag, b_by_model);
   }  
   
@@ -1273,7 +1262,7 @@ transformed parameters {
   if ((sum_has_assoc_ea > 0) || (sum_has_assoc_ma > 0)) {
     if (sum_y_K > 0) y_eta_q_auc = y_Xq_auc * y_beta;
     else y_eta_q_auc = rep_vector(0.0, (M*nrow_y_Xq_auc));
-    // !!! if (y_has_offset == 1) y_eta_q_auc = y_eta_q_auc + y_offset; # ignore offset?
+    //if (y_has_offset == 1) y_eta_q_auc = y_eta_q_auc + y_offset; # how to handle offset?
     y_eta_q_auc = y_eta_q_auc + csr_matrix_times_vector((M*nrow_y_Xq_auc), len_b, w_Zq_auc, v_Zq_auc, u_Zq_auc, b_by_model);
   }   
   
@@ -1287,8 +1276,6 @@ transformed parameters {
     // correction to eta if model has no intercept (because X is centered)
     e_eta_q = e_eta_q + dot_product(e_xbar, e_beta); 
   }
-
-  if (debug == 1) print("Debug location 6")
 
   if (assoc == 1) {
     int mark;
@@ -1629,8 +1616,6 @@ transformed parameters {
     }    
   }
 
-  if (debug == 1) print("Debug location 7")
-
   // Calculate log hazard at event times and unstandardised quadrature points 
   // NB assumes Weibull baseline hazard
   if (basehaz_weibull == 1) 
@@ -1662,8 +1647,6 @@ transformed parameters {
   }
   ll_event = sum_ll_haz_eventtime - sum_ll_surv_eventtime;				  
 
-  if (debug == 1) print("Debug location 8")
-
 }
 
 model {
@@ -1681,8 +1664,6 @@ model {
   int_markun = 1;
   int_marklo = 1;
   int_markup = 1;
-
-  if (debug == 1) print("Debug location 9")
   
   // Longitudinal submodel(s): regression equations
 
@@ -1889,9 +1870,7 @@ model {
     int_mark = int_mark + 1;  
     }
   }
-  
-  if (debug == 1) print("Debug location 10")
-     
+       
   // Log-priors for coefficients in event submodel
   if (priorEvent_dist == 1) e_z_beta ~ normal(0, 1);
   else if (priorEvent_dist == 2) {
