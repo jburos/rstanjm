@@ -1869,7 +1869,7 @@ stan_jm <- function(formulaLong, dataLong,
       normalised_zetas <- c()
       rho_mark <- 1
       for (i in 1:t) {
-        L_b_Cov <- t(chol(as.matrix(Matrix::bdiag(b_Cov))))
+        L_b_Cov <- t(suppressWarnings(chol(as.matrix(Matrix::bdiag(b_Cov)), pivot = TRUE)))
         diag_L_b_Cov <- diag(L_b_Cov)
         trace <- sum(diag_L_b_Cov)  # equal to variance of RE if only one RE
         normalised_zetas_tmp <- diag_L_b_Cov / trace  # equal to 1 if only one random effect
