@@ -268,8 +268,7 @@ terms.stanjm <- function(x, ..., fixed.only = TRUE, random.only = FALSE) {
       Terms
     })      
   }
-  fr <- model.frame(x$coxmod)
-  Terms$Event <- attr(fr, "terms")
+  Terms$Event <- terms(fr)
   Terms <- list_nms(Terms, M)
   
   return(Terms)
