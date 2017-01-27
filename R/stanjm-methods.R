@@ -268,8 +268,8 @@ terms.stanjm <- function(x, ..., fixed.only = TRUE, random.only = FALSE) {
       Terms
     })      
   }
-  Terms$Event <- terms(fr)
   Terms <- list_nms(Terms, M)
+  Terms$Event <- terms(x$fr$Event)
   
   return(Terms)
 }
